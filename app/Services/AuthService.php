@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Repository\AuthRepository;
 use App\Repository\VerificationCodeRepository;
 use App\Http\Resources\UserResource;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -90,6 +91,77 @@ class AuthService
             'requires_2fa' => true,
             'user_uuid'    => $user->uuid,
         ];
+    }
+
+    /**
+     * Resend the login 2FA code, enforcing a 60s cooldown.
+     */
+    public function resendLoginCode(string $email): array
+    {
+        $user = $this->repo->findByEmail($email);
+
+        if (! $user) {
+            Log::channel('auth')->warning('Resend 2FA blocked — email not found.', ['email' => $email]);
+
+            return ['success' => false, 'message' => 'No account found with this email.'];
+        }
+
+        $cooldownCheck = $this->checkCooldown($user->user_id, 'login_2fa');
+
+        if (! $cooldownCheck['allowed']) {
+            return $cooldownCheck['response'];
+        }
+
+        $plainCode = (string) random_int(100000, 999999);
+        $this->codeRepo->createLoginCode($user->user_id, $plainCode);
+
+        Mail::to($user->email)->send(new LoginCodeMail($plainCode, $user->email));
+
+        Log::channel('auth')->info('Login 2FA code resent.', [
+            'email'   => $email,
+            'user_id' => $user->user_id,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'A new verification code has been sent to your email.',
+        ];
+    }
+
+    /**
+     * Shared cooldown checker.
+     * Returns ['allowed' => bool, 'response' => array|null]
+     */
+    private function checkCooldown(int $userId, string $purpose): array
+    {
+        $latestCode = $this->codeRepo->findLatestCode($userId, $purpose);
+
+        if (! $latestCode) {
+            return ['allowed' => true];
+        }
+
+        // Positive = seconds elapsed since the code was sent
+        $secondsSinceSent = $latestCode->created_at->diffInSeconds(Carbon::now(), false);
+
+        // Clamp negative values (clock skew / just-created codes) to 0
+        if ($secondsSinceSent < 0) {
+            $secondsSinceSent = 0;
+        }
+
+        if ($secondsSinceSent < 60) {
+            $remaining = (int) ceil(60 - $secondsSinceSent);
+
+            return [
+                'allowed'  => false,
+                'response' => [
+                    'success'             => false,
+                    'message'             => "Please wait {$remaining} second(s) before requesting a new code.",
+                    'retry_after_seconds' => $remaining,
+                ],
+            ];
+        }
+
+        return ['allowed' => true];
     }
 
     /**

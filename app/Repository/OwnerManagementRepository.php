@@ -12,7 +12,8 @@ class OwnerManagementRepository
      */
     public function listOwners(int $perPage = 15)
     {
-        return User::where('role_id', 2) // Cafe Owner
+        return User::where('role_id', 2)
+            ->with(['subscriptions' => fn ($q) => $q->latest('created_at')->limit(1)->with('plan')])
             ->latest()
             ->paginate($perPage);
     }

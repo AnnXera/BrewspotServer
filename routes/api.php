@@ -6,16 +6,19 @@ use App\Http\Controllers\VerificationCodeController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\PasswordSetupController;
 use App\Http\Controllers\OwnerManagementController;
+use App\Http\Controllers\OwnerProfileController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
     Route::post('/send-code',         [VerificationCodeController::class, 'sendCode']); // registration email verification code
+    Route::post('/resend-code',        [VerificationCodeController::class, 'resendCode']); // resend registration email verification code
     Route::post('/verify-code',       [VerificationCodeController::class, 'verifyCode']); // registration email verification code
     Route::post('/register/{user}',   [RegistrationController::class, 'register']);
 
     Route::post('/setup-password/{uuid}', [PasswordSetupController::class, 'setup']); // set password for cafe owner
 
     Route::post('/login',              [AuthController::class, 'login']); // login 2FA code
+    Route::post('/resend-login-code',  [AuthController::class, 'resendLoginCode']); // resend login 2FA code
     Route::post('/verify-login-code', [AuthController::class, 'verifyLoginCode']); // login 2FA code
 });
 
@@ -34,7 +37,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
-        // Route::get('/dashboard', [OwnerController::class, 'index']);
+        Route::get('/profile',         [OwnerProfileController::class, 'profile']); //get owner profile
+        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']); //get cafes owned by this owner
+        Route::get('/branches',        [OwnerProfileController::class, 'branches']); //get all branches owned by this owner
+        Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']); //get specific branch owned by this owner
     });
 
     // Manager only

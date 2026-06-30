@@ -160,6 +160,12 @@ return [
             'level'  => 'debug',
         ],
 
+        'owner' => [
+            'driver' => 'single',
+            'path'   => storage_path('logs/owner.log'),
+            'level'  => 'debug',
+        ],
+
     ],
 
 ];

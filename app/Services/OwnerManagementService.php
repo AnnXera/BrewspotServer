@@ -22,11 +22,19 @@ class OwnerManagementService
     {
         $owners = $this->repo->listOwners($perPage);
 
-        return $owners->through(fn ($owner) => [
-            'uuid'   => $owner->uuid,
-            'name'   => trim("{$owner->firstname} {$owner->lastname}"),
-            'status' => $owner->status,
-        ]);
+        return $owners->through(function ($owner) {
+            $latestSub = $owner->subscriptions->first();
+
+            return [
+                'uuid'         => $owner->uuid,
+                'name'         => trim("{$owner->firstname} {$owner->lastname}"),
+                'email'        => $owner->email,
+                'phone_number' => $owner->phone_number,
+                'status'       => $owner->status,
+                'subscription' => $latestSub?->plan->sub_name,
+                'date_joined'  => $owner->created_at?->toISOString(),
+            ];
+        });
     }
 
     /**

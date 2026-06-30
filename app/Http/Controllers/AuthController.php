@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\VerifyLoginCodeRequest;
+use App\Http\Requests\ResendCodeRequest;
+
 use App\Services\AuthService;
+
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -40,6 +43,13 @@ class AuthController extends Controller
         );
 
         return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function resendLoginCode(ResendCodeRequest $request): JsonResponse
+    {
+        $result = $this->service->resendLoginCode($request->validated('email'));
+
+        return response()->json($result, $result['success'] ? 200 : 429);
     }
 
     /**

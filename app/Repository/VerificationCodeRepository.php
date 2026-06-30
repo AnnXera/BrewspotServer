@@ -72,6 +72,17 @@ class VerificationCodeRepository
         ]);
     }
 
+    /**
+     * Get the most recent code (used or not) for cooldown checking.
+     */
+    public function findLatestCode(int $userId, string $purpose): ?VerificationCode
+    {
+        return VerificationCode::where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->latest('created_at')
+            ->first();
+    }
+
     public function findUserByEmail(string $email): ?User
     {
         return User::where('email', $email)->first();
