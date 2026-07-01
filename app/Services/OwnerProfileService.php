@@ -6,12 +6,9 @@ use App\Http\Resources\UserResource;
 use App\Http\Resources\CafeResource;
 use App\Http\Resources\CafeBranchResource;
 use App\Http\Resources\SubscriptionResource;
-
 use App\Models\User;
-
 use App\Repository\OwnerProfileRepository;
 use App\Repository\SubscriptionRepository;
-
 use Illuminate\Support\Facades\Log;
 
 class OwnerProfileService
@@ -78,11 +75,21 @@ class OwnerProfileService
         $subscription = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
 
         if (! $subscription) {
+            Log::channel('owner')->warning('Owner checked current plan — no active subscription.', [
+                'owner_uuid' => $owner->uuid,
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'You have no active subscription.',
             ];
         }
+
+        Log::channel('owner')->info('Owner viewed current subscription.', [
+            'owner_uuid'        => $owner->uuid,
+            'subscription_uuid' => $subscription->uuid,
+            'plan_name'         => $subscription->plan?->sub_name,
+        ]);
 
         return [
             'success'      => true,
@@ -92,6 +99,11 @@ class OwnerProfileService
 
     public function getPlanHistory(User $owner, int $perPage = 15)
     {
+        Log::channel('owner')->info('Owner viewed subscription history.', [
+            'owner_uuid' => $owner->uuid,
+            'per_page'   => $perPage,
+        ]);
+
         $history = $this->subscriptionRepo->findHistoryByUserId($owner->user_id, $perPage);
 
         return $history->through(fn ($subscription) => new SubscriptionResource($subscription));

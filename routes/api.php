@@ -47,16 +47,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
-        Route::get('/profile',         [OwnerProfileController::class, 'profile']); // get owner profile
-        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']); // get cafes owned by this owner
-        Route::get('/branches',        [OwnerProfileController::class, 'branches']); // get all branches owned by this owner
-        Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']); // get specific branch owned by this owner
+        Route::get('/profile',         [OwnerProfileController::class, 'profile']);
+        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
+        Route::get('/branches',        [OwnerProfileController::class, 'branches']);
+        Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']);
 
-        Route::get('/subscription-plans',        [SubscriptionPlanController::class, 'ownerIndex']); // list active subscription plans
-        Route::get('/subscription-plans/{uuid}', [SubscriptionPlanController::class, 'ownerShow']); // get active subscription plan by uuid
+        Route::get('/subscription-plans',        [SubscriptionPlanController::class, 'ownerIndex']);
+        Route::get('/subscription-plans/{uuid}', [SubscriptionPlanController::class, 'ownerShow']);
 
-        Route::get('/subscription/current', [OwnerProfileController::class, 'currentPlan']); // get current subscription plan
-        Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']); // get subscription history
+        Route::get('/subscription/current', [OwnerProfileController::class, 'currentPlan']);
+        Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
     });
 
     // Manager only

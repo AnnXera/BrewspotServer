@@ -25,9 +25,6 @@ class SubscriptionRepository
         ]);
     }
 
-    /**
-     * The owner's currently active subscription, if any.
-     */
     public function findCurrentByUserId(int $userId): ?Subscription
     {
         return Subscription::where('user_id', $userId)
@@ -37,14 +34,16 @@ class SubscriptionRepository
             ->first();
     }
 
-    /**
-     * Full subscription history for this owner, newest first.
-     */
     public function findHistoryByUserId(int $userId, int $perPage = 15)
     {
         return Subscription::where('user_id', $userId)
             ->with('plan')
             ->latest('start_date')
             ->paginate($perPage);
+    }
+
+    public function hasAnyByUserId(int $userId): bool
+    {
+        return Subscription::where('user_id', $userId)->exists();
     }
 }
