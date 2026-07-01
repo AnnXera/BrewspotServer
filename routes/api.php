@@ -1,12 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\VerificationCodeController;
 use App\Http\Controllers\RegistrationController;
 use App\Http\Controllers\PasswordSetupController;
 use App\Http\Controllers\OwnerManagementController;
 use App\Http\Controllers\OwnerProfileController;
+use App\Http\Controllers\SubscriptionPlanController;
+
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -33,14 +36,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/owners/{uuid}',          [OwnerManagementController::class, 'show']); //get cafe, branch, status of cafe owner
         Route::patch('/owners/{uuid}/status', [OwnerManagementController::class, 'updateStatus']); //update status of cafe, branch and send email notification to cafe owner
         Route::get('/approvals',              [OwnerManagementController::class, 'approvals']); //get approval list for the cafe owner with status pending_approval (filtered by status parameter)
+
+        Route::get('/subscription-plans',              [SubscriptionPlanController::class, 'index']); // list all subscription plans
+        Route::get('/subscription-plans/{uuid}',       [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid
+        Route::post('/subscription-plans/create',      [SubscriptionPlanController::class, 'store']); // create subscription plan
+        Route::patch('/subscription-plans/{uuid}/update',      [SubscriptionPlanController::class, 'update']); // update subscription plan by uuid
+        Route::delete('/subscription-plans/{uuid}/delete',     [SubscriptionPlanController::class, 'destroy']); // delete subscription plan by uuid
+        Route::patch('/subscription-plans/{uuid}/restore', [SubscriptionPlanController::class, 'restore']); // restore subscription plan by uuid
     });
 
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
-        Route::get('/profile',         [OwnerProfileController::class, 'profile']); //get owner profile
-        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']); //get cafes owned by this owner
-        Route::get('/branches',        [OwnerProfileController::class, 'branches']); //get all branches owned by this owner
-        Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']); //get specific branch owned by this owner
+        Route::get('/profile',         [OwnerProfileController::class, 'profile']); // get owner profile
+        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']); // get cafes owned by this owner
+        Route::get('/branches',        [OwnerProfileController::class, 'branches']); // get all branches owned by this owner
+        Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']); // get specific branch owned by this owner
+
+        Route::get('/subscription-plans',        [SubscriptionPlanController::class, 'ownerIndex']); // list active subscription plans
+        Route::get('/subscription-plans/{uuid}', [SubscriptionPlanController::class, 'ownerShow']); // get active subscription plan by uuid
+
+        Route::get('/subscription/current', [OwnerProfileController::class, 'currentPlan']); // get current subscription plan
+        Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']); // get subscription history
     });
 
     // Manager only

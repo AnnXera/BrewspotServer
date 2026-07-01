@@ -24,4 +24,27 @@ class SubscriptionRepository
             'cancel_at_period_end' => false,
         ]);
     }
+
+    /**
+     * The owner's currently active subscription, if any.
+     */
+    public function findCurrentByUserId(int $userId): ?Subscription
+    {
+        return Subscription::where('user_id', $userId)
+            ->where('status', 'active')
+            ->with('plan')
+            ->latest('start_date')
+            ->first();
+    }
+
+    /**
+     * Full subscription history for this owner, newest first.
+     */
+    public function findHistoryByUserId(int $userId, int $perPage = 15)
+    {
+        return Subscription::where('user_id', $userId)
+            ->with('plan')
+            ->latest('start_date')
+            ->paginate($perPage);
+    }
 }

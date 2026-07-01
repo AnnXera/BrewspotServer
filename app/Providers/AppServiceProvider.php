@@ -2,21 +2,17 @@
 
 namespace App\Providers;
 
+use App\Contracts\MailAdapterInterface;
+use App\Adapters\Mail\LaravelMailAdapter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
-        //
+        $this->app->bind(MailAdapterInterface::class, LaravelMailAdapter::class);
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         //

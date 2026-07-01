@@ -11,12 +11,14 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use App\Contracts\MailAdapterInterface;
 
 class AuthService
 {
     public function __construct(
         private readonly AuthRepository $repo,
-        private readonly VerificationCodeRepository $codeRepo
+        private readonly VerificationCodeRepository $codeRepo,
+        private readonly MailAdapterInterface $mailer
     ) {}
 
     /**
@@ -78,7 +80,7 @@ class AuthService
         $plainCode = (string) random_int(100000, 999999);
         $this->codeRepo->createLoginCode($user->user_id, $plainCode);
 
-        Mail::to($user->email)->send(new LoginCodeMail($plainCode, $user->email));
+        $this->mailer->sendMailable($user->email, new LoginCodeMail($plainCode, $user->email));
 
         Log::channel('auth')->info('Credentials valid — 2FA code sent.', [
             'email'   => $email,
@@ -115,7 +117,7 @@ class AuthService
         $plainCode = (string) random_int(100000, 999999);
         $this->codeRepo->createLoginCode($user->user_id, $plainCode);
 
-        Mail::to($user->email)->send(new LoginCodeMail($plainCode, $user->email));
+        $this->mailer->sendMailable($user->email, new LoginCodeMail($plainCode, $user->email));
 
         Log::channel('auth')->info('Login 2FA code resent.', [
             'email'   => $email,

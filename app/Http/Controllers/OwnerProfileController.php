@@ -51,4 +51,27 @@ class OwnerProfileController extends Controller
 
         return response()->json($result, $result['success'] ? 200 : 404);
     }
+
+    /**
+     * GET /api/owner/subscription/current
+     */
+    public function currentPlan(Request $request): JsonResponse
+    {
+        $result = $this->service->getCurrentPlan($request->user());
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
+
+    /**
+     * GET /api/owner/subscription/history
+     */
+    public function planHistory(Request $request): JsonResponse
+    {
+        $history = $this->service->getPlanHistory($request->user(), $request->input('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'history' => $history,
+        ]);
+    }
 }

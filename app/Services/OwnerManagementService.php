@@ -7,12 +7,13 @@ use App\Http\Resources\UserResource;
 use App\Http\Resources\ApprovalListResource;
 use App\Repository\OwnerManagementRepository;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
+use App\Contracts\MailAdapterInterface;
 
 class OwnerManagementService
 {
     public function __construct(
-        private readonly OwnerManagementRepository $repo
+        private readonly OwnerManagementRepository $repo,
+        private readonly MailAdapterInterface $mailer
     ) {}
 
     /**
@@ -81,6 +82,13 @@ class OwnerManagementService
     {
         $owner = $this->repo->findOwnerByUuid($uuid);
 
+        if (!$owner) {
+            return [
+                'success' => false,
+                'message' => 'Owner not found.',
+            ];
+        }
+
         $oldStatus = $owner->status;
         $owner     = $this->repo->updateStatus($owner, $status);
 
@@ -91,7 +99,7 @@ class OwnerManagementService
             $approval = $this->repo->updateApproval($approval, $status, $reviewerId);
         }
 
-        Mail::to($owner->email)->send(new OwnerStatusMail($owner->firstname, $status, $owner->uuid));
+        $this->mailer->sendMailable($owner->email, new OwnerStatusMail($owner->firstname, $status, $owner->uuid));
 
         Log::channel('admin')->info('Owner status updated.', [
             'owner_uuid'  => $owner->uuid,
