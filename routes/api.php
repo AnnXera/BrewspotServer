@@ -9,7 +9,8 @@ use App\Http\Controllers\PasswordSetupController;
 use App\Http\Controllers\OwnerManagementController;
 use App\Http\Controllers\OwnerProfileController;
 use App\Http\Controllers\SubscriptionPlanController;
-
+use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\SubscriptionCheckoutController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -57,6 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/subscription/current', [OwnerProfileController::class, 'currentPlan']);
         Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
+
+        Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
     });
 
     // Manager only
@@ -74,3 +77,5 @@ Route::middleware('auth:sanctum')->group(function () {
         //
     });
 });
+
+Route::post('/webhooks/paymongo', [PaymentWebhookController::class, 'handle']);

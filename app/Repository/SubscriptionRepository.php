@@ -46,4 +46,74 @@ class SubscriptionRepository
     {
         return Subscription::where('user_id', $userId)->exists();
     }
+
+    public function findByUuid(string $uuid): ?Subscription
+    {
+        return Subscription::where('uuid', $uuid)->with(['plan', 'user'])->first();
+    }
+
+    public function createPending(int $userId, SubscriptionPlan $plan): Subscription
+    {
+        return Subscription::create([
+            'user_id'              => $userId,
+            'sub_plan_id'          => $plan->sub_plan_id,
+            'start_date'           => null,
+            'end_date'             => null,
+            'status'               => 'pending',
+            'cancel_at_period_end' => false,
+        ]);
+    }
+
+    public function activate(Subscription $subscription): Subscription
+    {
+        $subscription->loadMissing('plan');
+
+        $subscription->update([
+            'start_date' => Carbon::now(),
+            'end_date'   => Carbon::now()->addDays($subscription->plan->duration_days),
+            'status'     => 'active',
+        ]);
+
+        return $subscription->fresh(['plan', 'user']);
+    }
+
+    public function markFailed(Subscription $subscription): Subscription
+    {
+        $subscription->update(['status' => 'cancelled']);
+
+        return $subscription->fresh(['plan', 'user']);
+    }
+
+    /**
+     * The owner's currently active subscription for this specific plan, if any.
+     * Used to block re-purchasing a plan the owner already has active.
+     */
+    public function findActiveByUserAndPlan(int $userId, int $subPlanId): ?Subscription
+    {
+        return Subscription::where('user_id', $userId)
+            ->where('sub_plan_id', $subPlanId)
+            ->where('status', 'active')
+            ->with('plan')
+            ->latest('end_date')
+            ->first();
+    }
+
+    /**
+     * Active subscriptions expiring within the given number of days that
+     * haven't already been sent a reminder.
+     */
+    public function findExpiringWithinDays(int $days)
+    {
+        return Subscription::where('status', 'active')
+            ->whereNotNull('end_date')
+            ->whereNull('expiration_reminder_sent_at')
+            ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays($days)])
+            ->with(['plan', 'user'])
+            ->get();
+    }
+
+    public function markReminderSent(Subscription $subscription): void
+    {
+        $subscription->update(['expiration_reminder_sent_at' => Carbon::now()]);
+    }
 }

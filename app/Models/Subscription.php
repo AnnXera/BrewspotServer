@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 
 class Subscription extends Model
@@ -23,12 +24,14 @@ class Subscription extends Model
         'end_date',
         'status',
         'cancel_at_period_end',
+        'expiration_reminder_sent_at',
     ];
 
     protected $casts = [
-        'start_date'            => 'datetime',
-        'end_date'               => 'datetime',
-        'cancel_at_period_end'   => 'boolean',
+        'start_date'                    => 'datetime',
+        'end_date'                       => 'datetime',
+        'cancel_at_period_end'           => 'boolean',
+        'expiration_reminder_sent_at'    => 'datetime',
     ];
 
     protected static function booted(): void
@@ -44,5 +47,10 @@ class Subscription extends Model
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'sub_plan_id', 'sub_plan_id');
+    }
+
+    public function payments(): MorphMany
+    {
+        return $this->morphMany(Payment::class, 'payable');
     }
 }
