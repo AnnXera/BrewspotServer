@@ -16,16 +16,22 @@ class PaymentRepository
         return Payment::where('gateway_transaction_id', $gatewayTransactionId)->first();
     }
 
-    public function markSucceeded(Payment $payment): Payment
+    public function markSucceeded(Payment $payment, ?string $paymentMethodType = null): Payment
     {
-        $payment->update(['status' => 'succeeded']);
+        $payment->update(array_filter([
+            'status'               => 'succeeded',
+            'payment_method_type'  => $paymentMethodType,
+        ], fn ($value) => $value !== null));
 
         return $payment->fresh();
     }
 
-    public function markFailed(Payment $payment): Payment
+    public function markFailed(Payment $payment, ?string $paymentMethodType = null): Payment
     {
-        $payment->update(['status' => 'failed']);
+        $payment->update(array_filter([
+            'status'               => 'failed',
+            'payment_method_type'  => $paymentMethodType,
+        ], fn ($value) => $value !== null));
 
         return $payment->fresh();
     }

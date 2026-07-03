@@ -28,15 +28,26 @@ class SubscriptionCheckoutService
 
     public function createCheckout(User $owner, string $planUuid): array
     {
-        $plan = $this->planRepo->findActiveByUuid($planUuid);
+        $plan = $this->planRepo->findByUuid($planUuid);
 
         if (! $plan) {
-            Log::channel('owner')->warning('Checkout blocked — plan not found or inactive.', [
+            Log::channel('owner')->warning('Checkout blocked — plan not found.', [
                 'owner_uuid' => $owner->uuid,
                 'plan_uuid'  => $planUuid,
             ]);
 
             return ['success' => false, 'message' => 'Subscription plan not found.'];
+        }
+
+        $activeSamePlan = $this->subscriptionRepo->findActiveByUserAndPlan($owner->user_id, $plan->sub_plan_id);
+
+        if (! $plan->is_active && ! $activeSamePlan) {
+            Log::channel('owner')->warning('Checkout blocked — plan is disabled and owner does not already hold it.', [
+                'owner_uuid' => $owner->uuid,
+                'plan_uuid'  => $plan->uuid,
+            ]);
+
+            return ['success' => false, 'message' => 'This subscription plan is no longer available.'];
         }
 
         $isTrial             = Str::contains(strtolower($plan->sub_name), 'trial');
@@ -54,16 +65,14 @@ class SubscriptionCheckoutService
             ];
         }
 
-        $activeSamePlan = $this->subscriptionRepo->findActiveByUserAndPlan($owner->user_id, $plan->sub_plan_id);
-
         if ($activeSamePlan && $activeSamePlan->end_date) {
             $renewalWindowStart = $activeSamePlan->end_date->copy()->subDays(self::RENEWAL_WINDOW_DAYS);
 
             if (Carbon::now()->lt($renewalWindowStart)) {
                 Log::channel('owner')->warning('Checkout blocked — plan already active and not yet within renewal window.', [
-                    'owner_uuid'         => $owner->uuid,
-                    'plan_uuid'          => $plan->uuid,
-                    'current_end_date'   => $activeSamePlan->end_date->toDateString(),
+                    'owner_uuid'       => $owner->uuid,
+                    'plan_uuid'        => $plan->uuid,
+                    'current_end_date' => $activeSamePlan->end_date->toDateString(),
                 ]);
 
                 return [
@@ -161,6 +170,7 @@ class SubscriptionCheckoutService
 
         $paymentId       = $eventData['id'] ?? null;
         $paymentIntentId = $eventData['attributes']['payment_intent_id'] ?? null;
+        $paymentMethod   = $eventData['attributes']['source']['type'] ?? null;
 
         if (! $paymentIntentId) {
             Log::channel('admin')->warning('PayMongo payment.paid — no payment_intent_id present.', [
@@ -189,7 +199,7 @@ class SubscriptionCheckoutService
             return;
         }
 
-        $this->paymentRepo->markSucceeded($payment);
+        $this->paymentRepo->markSucceeded($payment, $paymentMethod);
 
         $subscription = $payment->payable;
 
@@ -202,11 +212,16 @@ class SubscriptionCheckoutService
         }
 
         $subscription = $this->subscriptionRepo->activate($subscription);
-        $owner        = $subscription->user;
+
+        // Immediate switch: cancel any other plan this owner had active, no proration.
+        $this->subscriptionRepo->cancelOtherActiveSubscriptions($subscription->user_id, $subscription->sub_id);
+
+        $owner = $subscription->user;
 
         Log::channel('admin')->info('Subscription activated via PayMongo payment.paid webhook.', [
             'subscription_uuid' => $subscription->uuid,
             'payment_intent_id' => $paymentIntentId,
+            'payment_method'    => $paymentMethod,
         ]);
 
         if ($owner) {
@@ -233,6 +248,7 @@ class SubscriptionCheckoutService
 
         $paymentId       = $eventData['id'] ?? null;
         $paymentIntentId = $eventData['attributes']['payment_intent_id'] ?? null;
+        $paymentMethod   = $eventData['attributes']['source']['type'] ?? null;
 
         if (! $paymentIntentId) {
             Log::channel('admin')->warning('PayMongo payment.failed — no payment_intent_id present.', [
@@ -261,7 +277,7 @@ class SubscriptionCheckoutService
             return;
         }
 
-        $this->paymentRepo->markFailed($payment);
+        $this->paymentRepo->markFailed($payment, $paymentMethod);
 
         $subscription = $payment->payable;
 
@@ -275,6 +291,7 @@ class SubscriptionCheckoutService
         Log::channel('admin')->info('Subscription payment failed via PayMongo webhook.', [
             'subscription_uuid' => $subscription->uuid,
             'payment_intent_id' => $paymentIntentId,
+            'payment_method'    => $paymentMethod,
         ]);
 
         if ($owner) {

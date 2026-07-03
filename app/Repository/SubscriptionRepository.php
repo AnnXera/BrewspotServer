@@ -84,10 +84,6 @@ class SubscriptionRepository
         return $subscription->fresh(['plan', 'user']);
     }
 
-    /**
-     * The owner's currently active subscription for this specific plan, if any.
-     * Used to block re-purchasing a plan the owner already has active.
-     */
     public function findActiveByUserAndPlan(int $userId, int $subPlanId): ?Subscription
     {
         return Subscription::where('user_id', $userId)
@@ -98,10 +94,6 @@ class SubscriptionRepository
             ->first();
     }
 
-    /**
-     * Active subscriptions expiring within the given number of days that
-     * haven't already been sent a reminder.
-     */
     public function findExpiringWithinDays(int $days)
     {
         return Subscription::where('status', 'active')
@@ -115,5 +107,35 @@ class SubscriptionRepository
     public function markReminderSent(Subscription $subscription): void
     {
         $subscription->update(['expiration_reminder_sent_at' => Carbon::now()]);
+    }
+
+    public function listSubscribers(int $perPage = 15)
+    {
+        return Subscription::with(['user', 'plan', 'latestPayment'])
+            ->latest('created_at')
+            ->paginate($perPage);
+    }
+
+    public function findHistoryByOwnerUuid(string $ownerUuid, int $perPage = 15)
+    {
+        return Subscription::whereHas('user', fn ($q) => $q->where('uuid', $ownerUuid))
+            ->with(['plan', 'user'])
+            ->latest('created_at')
+            ->paginate($perPage);
+    }
+
+    /**
+     * Immediately cancel any other active subscription this owner has,
+     * except the one just activated. No proration — old plan simply ends now.
+     */
+    public function cancelOtherActiveSubscriptions(int $userId, int $exceptSubId): void
+    {
+        Subscription::where('user_id', $userId)
+            ->where('sub_id', '!=', $exceptSubId)
+            ->where('status', 'active')
+            ->update([
+                'status'   => 'cancelled',
+                'end_date' => Carbon::now(),
+            ]);
     }
 }

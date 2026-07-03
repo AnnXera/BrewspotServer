@@ -11,6 +11,7 @@ use App\Http\Controllers\OwnerProfileController;
 use App\Http\Controllers\SubscriptionPlanController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
+use App\Http\Controllers\SubscriptionController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -44,6 +45,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/subscription-plans/{uuid}/update',      [SubscriptionPlanController::class, 'update']); // update subscription plan by uuid
         Route::delete('/subscription-plans/{uuid}/delete',     [SubscriptionPlanController::class, 'destroy']); // delete subscription plan by uuid
         Route::patch('/subscription-plans/{uuid}/restore', [SubscriptionPlanController::class, 'restore']); // restore subscription plan by uuid
+    
+        Route::get('/subscribers', [SubscriptionController::class, 'subscribers']); // admin - get all subscribers
+        Route::get('/owners/{uuid}/subscription-history', [SubscriptionController::class, 'ownerHistory']); // admin - get owner's subscription history
     });
 
     // Cafe Owner only
