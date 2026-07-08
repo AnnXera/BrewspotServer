@@ -2,29 +2,46 @@
 
 namespace App\Http\Controllers;
 
+use App\Contracts\PaymentAdapterInterface;
+use App\Services\NativeSubscriptionService;
 use App\Services\SubscriptionCheckoutService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PaymentWebhookController extends Controller
 {
     public function __construct(
-        private readonly SubscriptionCheckoutService $service
+        private readonly SubscriptionCheckoutService $checkoutService,
+        private readonly NativeSubscriptionService $nativeSubscriptionService,
+        private readonly PaymentAdapterInterface $paymentAdapter
     ) {}
 
     /**
      * POST /api/webhooks/paymongo
-     * Public endpoint — PayMongo calls this directly, no Sanctum auth.
      */
     public function handle(Request $request): JsonResponse
     {
-        $this->service->handleWebhook(
-            $request->getContent(),
-            $request->header('Paymongo-Signature')
-        );
+        $rawPayload      = $request->getContent();
+        $signatureHeader = $request->header('Paymongo-Signature');
+        $webhookSecret   = config('services.paymongo.webhook_secret');
 
-        // Always acknowledge with 2xx so PayMongo doesn't retry — real
-        // failures are logged internally instead.
+        if (! $signatureHeader || ! $this->paymentAdapter->verifyWebhookSignature($rawPayload, $signatureHeader, $webhookSecret)) {
+            Log::channel('admin')->warning('PayMongo webhook rejected — invalid or missing signature.');
+
+            return response()->json(['statusCode' => 200, 'body' => ['message' => 'SUCCESS']], 200);
+        }
+
+        $payload   = json_decode($rawPayload, true);
+        $eventType = $payload['data']['attributes']['type'] ?? null;
+        $eventData = $payload['data']['attributes']['data'] ?? null;
+
+        if (str_starts_with((string) $eventType, 'subscription.')) {
+            $this->nativeSubscriptionService->handleWebhookEvent($eventType, $eventData ?? []);
+        } else {
+            $this->checkoutService->handleWebhook($rawPayload, $signatureHeader);
+        }
+
         return response()->json(['statusCode' => 200, 'body' => ['message' => 'SUCCESS']], 200);
     }
 }

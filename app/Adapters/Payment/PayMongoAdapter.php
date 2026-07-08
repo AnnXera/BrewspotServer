@@ -3,6 +3,7 @@
 namespace App\Adapters\Payment;
 
 use App\Contracts\PaymentAdapterInterface;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 class PayMongoAdapter implements PaymentAdapterInterface
@@ -12,7 +13,7 @@ class PayMongoAdapter implements PaymentAdapterInterface
         private readonly ?string $caBundlePath = null
     ) {}
 
-    public function createCheckoutSession(array $payload): array
+    private function client(): PendingRequest
     {
         $request = Http::withBasicAuth($this->secretKey, '')->acceptJson();
 
@@ -20,7 +21,12 @@ class PayMongoAdapter implements PaymentAdapterInterface
             $request = $request->withOptions(['verify' => $this->caBundlePath]);
         }
 
-        $response = $request->post('https://api.paymongo.com/v1/checkout_sessions', [
+        return $request;
+    }
+
+    public function createCheckoutSession(array $payload): array
+    {
+        $response = $this->client()->post('https://api.paymongo.com/v1/checkout_sessions', [
             'data' => [
                 'attributes' => [
                     'send_email_receipt'  => false,
@@ -50,9 +56,9 @@ class PayMongoAdapter implements PaymentAdapterInterface
         $data = $response->json('data');
 
         return [
-            'id'                 => $data['id'],
-            'checkout_url'       => $data['attributes']['checkout_url'],
-            'payment_intent_id'  => $data['attributes']['payment_intent']['id'] ?? null,
+            'id'                => $data['id'],
+            'checkout_url'      => $data['attributes']['checkout_url'],
+            'payment_intent_id' => $data['attributes']['payment_intent']['id'] ?? null,
         ];
     }
 
@@ -65,17 +71,16 @@ class PayMongoAdapter implements PaymentAdapterInterface
             $parts[$key] = $value;
         }
 
-        $timestamp      = $parts['t'] ?? null;
-        $testSignature  = $parts['te'] ?? null;
-        $liveSignature  = $parts['li'] ?? null;
+        $timestamp     = $parts['t'] ?? null;
+        $testSignature = $parts['te'] ?? null;
+        $liveSignature = $parts['li'] ?? null;
 
         if (! $timestamp) {
             return false;
         }
 
-        $signedPayload      = $timestamp . '.' . $rawPayload;
-        $computedSignature  = hash_hmac('sha256', $signedPayload, $webhookSecret);
-
+        $signedPayload     = $timestamp . '.' . $rawPayload;
+        $computedSignature = hash_hmac('sha256', $signedPayload, $webhookSecret);
         $providedSignature = ! empty($liveSignature) ? $liveSignature : $testSignature;
 
         if (! $providedSignature) {
@@ -83,5 +88,86 @@ class PayMongoAdapter implements PaymentAdapterInterface
         }
 
         return hash_equals($computedSignature, $providedSignature);
+    }
+
+    public function createCustomer(array $payload): array
+    {
+        $response = $this->client()->post('https://api.paymongo.com/v1/customers', [
+            'data' => ['attributes' => $payload],
+        ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('PayMongo customer creation failed: ' . $response->body());
+        }
+
+        return $response->json('data');
+    }
+
+    public function createPlan(array $payload): array
+    {
+        $response = $this->client()->post('https://api.paymongo.com/v1/plans', [
+            'data' => ['attributes' => $payload],
+        ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('PayMongo plan creation failed: ' . $response->body());
+        }
+
+        return $response->json('data');
+    }
+
+    public function createSubscription(string $customerId, string $planId): array
+    {
+        $response = $this->client()->post('https://api.paymongo.com/v1/subscriptions', [
+            'data' => [
+                'attributes' => [
+                    'customer_id' => $customerId,
+                    'plan_id'     => $planId,
+                ],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('PayMongo subscription creation failed: ' . $response->body());
+        }
+
+        return $response->json('data');
+    }
+
+    public function createCardPaymentMethod(array $card, array $billing): array
+    {
+        $response = $this->client()->post('https://api.paymongo.com/v1/payment_methods', [
+            'data' => [
+                'attributes' => [
+                    'type'    => 'card',
+                    'details' => $card, // card_number, exp_month, exp_year, cvc
+                    'billing' => $billing,
+                ],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('PayMongo payment method creation failed: ' . $response->body());
+        }
+
+        return $response->json('data');
+    }
+
+    public function attachPaymentMethodToIntent(string $paymentIntentId, string $paymentMethodId): array
+    {
+        $response = $this->client()->post("https://api.paymongo.com/v1/payment_intents/{$paymentIntentId}/attach", [
+            'data' => [
+                'attributes' => [
+                    'payment_method' => $paymentMethodId,
+                    'return_url'     => config('services.paymongo.success_url'),
+                ],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            throw new \RuntimeException('PayMongo payment intent attach failed: ' . $response->body());
+        }
+
+        return $response->json('data');
     }
 }

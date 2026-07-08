@@ -23,16 +23,12 @@ class SubscriptionPlanRepository
 
     public function listActive(int $perPage = 15)
     {
-        return SubscriptionPlan::where('is_active', true)
-            ->latest()
-            ->paginate($perPage);
+        return SubscriptionPlan::where('is_active', true)->latest()->paginate($perPage);
     }
 
     public function findActiveByUuid(string $uuid): ?SubscriptionPlan
     {
-        return SubscriptionPlan::where('uuid', $uuid)
-            ->where('is_active', true)
-            ->first();
+        return SubscriptionPlan::where('uuid', $uuid)->where('is_active', true)->first();
     }
 
     public function create(array $payload): SubscriptionPlan
@@ -69,6 +65,13 @@ class SubscriptionPlanRepository
     public function restore(SubscriptionPlan $plan): SubscriptionPlan
     {
         $plan->restore();
+
+        return $plan->fresh();
+    }
+
+    public function syncPayMongoPlanId(SubscriptionPlan $plan, string $paymongoPlanId): SubscriptionPlan
+    {
+        $plan->update(['paymongo_plan_id' => $paymongoPlanId]);
 
         return $plan->fresh();
     }

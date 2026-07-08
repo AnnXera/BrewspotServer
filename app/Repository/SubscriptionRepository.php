@@ -124,10 +124,6 @@ class SubscriptionRepository
             ->paginate($perPage);
     }
 
-    /**
-     * Immediately cancel any other active subscription this owner has,
-     * except the one just activated. No proration — old plan simply ends now.
-     */
     public function cancelOtherActiveSubscriptions(int $userId, int $exceptSubId): void
     {
         Subscription::where('user_id', $userId)
@@ -137,5 +133,56 @@ class SubscriptionRepository
                 'status'   => 'cancelled',
                 'end_date' => Carbon::now(),
             ]);
+    }
+
+    /**
+     * PayMongo-native: create a pending subscription tied to a real PayMongo subscription ID.
+     */
+    public function createPendingWithPayMongo(int $userId, SubscriptionPlan $plan, string $paymongoSubscriptionId): Subscription
+    {
+        return Subscription::create([
+            'user_id'                  => $userId,
+            'sub_plan_id'               => $plan->sub_plan_id,
+            'start_date'                => null,
+            'end_date'                  => null,
+            'status'                    => 'pending',
+            'cancel_at_period_end'      => false,
+            'paymongo_subscription_id'  => $paymongoSubscriptionId,
+        ]);
+    }
+
+    public function findByPayMongoSubscriptionId(string $paymongoSubscriptionId): ?Subscription
+    {
+        return Subscription::where('paymongo_subscription_id', $paymongoSubscriptionId)
+            ->with(['plan', 'user'])
+            ->first();
+    }
+
+    /**
+     * First invoice paid — subscription is now genuinely active.
+     */
+    public function activateFromPayMongo(Subscription $subscription, ?Carbon $nextBillingSchedule): Subscription
+    {
+        $subscription->update([
+            'start_date' => $subscription->start_date ?? Carbon::now(),
+            'end_date'   => $nextBillingSchedule,
+            'status'     => 'active',
+        ]);
+
+        return $subscription->fresh(['plan', 'user']);
+    }
+
+    public function markPastDue(Subscription $subscription): Subscription
+    {
+        $subscription->update(['status' => 'past_due']);
+
+        return $subscription->fresh(['plan', 'user']);
+    }
+
+    public function markCancelledByPayMongo(Subscription $subscription): Subscription
+    {
+        $subscription->update(['status' => 'cancelled']);
+
+        return $subscription->fresh(['plan', 'user']);
     }
 }

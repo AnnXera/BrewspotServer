@@ -12,6 +12,7 @@ use App\Http\Controllers\SubscriptionPlanController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\NativeSubscriptionController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -64,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
+        Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
     });
 
     // Manager only
