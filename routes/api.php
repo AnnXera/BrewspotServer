@@ -13,6 +13,7 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
+use App\Http\Controllers\DocumentController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -46,7 +47,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/subscription-plans/{uuid}/update',      [SubscriptionPlanController::class, 'update']); // update subscription plan by uuid
         Route::delete('/subscription-plans/{uuid}/delete',     [SubscriptionPlanController::class, 'destroy']); // delete subscription plan by uuid
         Route::patch('/subscription-plans/{uuid}/restore', [SubscriptionPlanController::class, 'restore']); // restore subscription plan by uuid
-    
+
         Route::get('/subscribers', [SubscriptionController::class, 'subscribers']); // admin - get all subscribers
         Route::get('/owners/{uuid}/subscription-history', [SubscriptionController::class, 'ownerHistory']); // admin - get owner's subscription history
     });
@@ -80,7 +81,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin and Cafe Owner shared
     Route::middleware('role:Admin,Cafe Owner')->group(function () {
-        //
+        Route::get('/documents/user/{userDocId}',     [DocumentController::class, 'userDocument']);
+        Route::get('/documents/cafe/{cafeDocId}',      [DocumentController::class, 'cafeDocument']);
+        Route::get('/documents/branch/{branchDocId}',  [DocumentController::class, 'branchDocument']);
     });
 });
 

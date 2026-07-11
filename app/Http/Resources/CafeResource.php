@@ -14,8 +14,9 @@ class CafeResource extends JsonResource
             'cafe_name'  => $this->cafe_name,
             'documents'  => $this->whenLoaded('documents', fn () =>
                 $this->documents->map(fn ($doc) => [
+                    'cafe_doc_id'   => $doc->cafe_doc_id,
                     'doc_type'      => $doc->doc_type,
-                    'file'          => $doc->file,
+                    'download_url'  => "/api/documents/cafe/{$doc->cafe_doc_id}",
                     'registered_at' => $doc->registered_at?->toISOString(),
                     'expired_at'    => $doc->expired_at?->toISOString(),
                 ])

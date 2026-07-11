@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\User;
 use App\Models\UserDocument;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
@@ -16,7 +17,7 @@ class RegisterRequest extends FormRequest
 
     public function rules(): array
     {
-        $userId = $this->route('user')?->user_id ?? null;
+        $userId = User::where('uuid', $this->route('uuid'))->value('user_id');
 
         return [
             // User Details

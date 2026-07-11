@@ -14,11 +14,19 @@ class RegistrationController extends Controller
     ) {}
 
     /**
-     * POST /api/auth/register/{user}
-     * {user} resolves via UUID through getRouteKeyName() on the User model.
+     * POST /api/auth/register/{uuid}
      */
-    public function register(RegisterRequest $request, User $user): JsonResponse
+    public function register(RegisterRequest $request, string $uuid): JsonResponse
     {
+        $user = User::where('uuid', $uuid)->first();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired registration link. No account found for this UUID.',
+            ], 404);
+        }
+
         $result = $this->service->register($user, $request->validated());
 
         return response()->json($result, $result['success'] ? 200 : 422);

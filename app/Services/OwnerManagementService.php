@@ -53,8 +53,9 @@ class OwnerManagementService
                     'uuid'      => $cafe->uuid,
                     'cafe_name' => $cafe->cafe_name,
                     'documents' => $cafe->documents->map(fn ($doc) => [
-                        'doc_type' => $doc->doc_type,
-                        'file'     => $doc->file,
+                        'cafe_doc_id'  => $doc->cafe_doc_id,
+                        'doc_type'     => $doc->doc_type,
+                        'download_url' => "/api/documents/cafe/{$doc->cafe_doc_id}",
                     ]),
                     'branches'  => $cafe->branches->map(fn ($branch) => [
                         'uuid'             => $branch->uuid,
@@ -66,8 +67,9 @@ class OwnerManagementService
                         'branch_type'      => $branch->branch_type,
                         'status'           => $branch->status,
                         'documents'        => $branch->documents->map(fn ($doc) => [
-                            'doc_type' => $doc->doc_type,
-                            'file'     => $doc->file,
+                            'branch_doc_id' => $doc->branch_doc_id,
+                            'doc_type'      => $doc->doc_type,
+                            'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
                         ]),
                     ]),
                 ];
