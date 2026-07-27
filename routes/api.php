@@ -14,6 +14,7 @@ use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\MenuCategoryController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -67,6 +68,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
+
+        Route::post('/menu-categories', [MenuCategoryController::class, 'store']);
     });
 
     // Manager only
