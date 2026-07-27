@@ -12,9 +12,6 @@ class OwnerProfileController extends Controller
         private readonly OwnerProfileService $service
     ) {}
 
-    /**
-     * GET /api/owner/profile
-     */
     public function profile(Request $request): JsonResponse
     {
         $result = $this->service->getProfile($request->user());
@@ -22,9 +19,6 @@ class OwnerProfileController extends Controller
         return response()->json($result);
     }
 
-    /**
-     * GET /api/owner/cafes
-     */
     public function cafes(Request $request): JsonResponse
     {
         $result = $this->service->getCafes($request->user());
@@ -32,9 +26,6 @@ class OwnerProfileController extends Controller
         return response()->json($result);
     }
 
-    /**
-     * GET /api/owner/branches
-     */
     public function branches(Request $request): JsonResponse
     {
         $result = $this->service->getBranches($request->user());
@@ -42,13 +33,27 @@ class OwnerProfileController extends Controller
         return response()->json($result);
     }
 
-    /**
-     * GET /api/owner/branches/{uuid}
-     */
     public function branch(Request $request, string $uuid): JsonResponse
     {
         $result = $this->service->getBranch($request->user(), $uuid);
 
         return response()->json($result, $result['success'] ? 200 : 404);
+    }
+
+    public function currentPlan(Request $request): JsonResponse
+    {
+        $result = $this->service->getCurrentPlan($request->user());
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
+
+    public function planHistory(Request $request): JsonResponse
+    {
+        $history = $this->service->getPlanHistory($request->user(), $request->input('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'history' => $history,
+        ]);
     }
 }

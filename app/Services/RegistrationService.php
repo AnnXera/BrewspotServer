@@ -39,7 +39,7 @@ class RegistrationService
                 // 1. Update user profile
                 $user = $this->repo->updateUserProfile($user, $payload);
 
-                // 2. Store user government ID
+                // 2. Store user government ID — PRIVATE
                 $idFilePath = $this->storeFile(
                     $payload['file'],
                     "{$userFolder}/user_documents"
@@ -54,7 +54,7 @@ class RegistrationService
                 $cafe       = $this->repo->createCafe($user->user_id, $payload['cafe_name']);
                 $cafeFolder = "{$userFolder}/cafes/{$cafe->uuid}";
 
-                // 4. Store cafe DTI/SEC document
+                // 4. Store cafe DTI/SEC document — PRIVATE
                 $dtiSecFilePath = $this->storeFile(
                     $payload['dti_sec_file'],
                     "{$cafeFolder}/cafe_documents"
@@ -69,16 +69,17 @@ class RegistrationService
                 $branch       = $this->repo->createBranch($cafe->cafe_id, $payload);
                 $branchFolder = "{$cafeFolder}/branches/{$branch->uuid}";
 
-                // 6. Store cafe picture if provided then update the branch record
+                // 6. Store cafe picture if provided — PUBLIC (meant to be displayed)
                 if (isset($payload['cafe_picture'])) {
                     $cafePicturePath = $this->storeFile(
                         $payload['cafe_picture'],
-                        "{$branchFolder}/cafe_pictures"
+                        "{$branchFolder}/cafe_pictures",
+                        'public'
                     );
                     $branch->update(['cafe_picture' => $cafePicturePath]);
                 }
 
-                // 7. Store branch documents
+                // 7. Store branch documents — PRIVATE
                 $birFilePath      = $this->storeFile($payload['bir_file'],             "{$branchFolder}/branch_documents");
                 $mayorsFilePath   = $this->storeFile($payload['mayors_permit_file'],   "{$branchFolder}/branch_documents");
                 $sanitaryFilePath = $this->storeFile($payload['sanitary_permit_file'], "{$branchFolder}/branch_documents");
@@ -120,15 +121,18 @@ class RegistrationService
             return [
                 'success' => false,
                 'message' => 'Registration failed. Please try again.',
-                'debug'   => $e->getMessage(), 
+                'debug'   => $e->getMessage(),
                 'line'    => $e->getLine(),
                 'file'    => $e->getFile(),
             ];
         }
     }
 
-    private function storeFile(UploadedFile $file, string $path): string
+    /**
+     * @param string $disk 'local' (private, default) or 'public'
+     */
+    private function storeFile(UploadedFile $file, string $path, string $disk = 'local'): string
     {
-        return $file->store($path, 'public');
+        return $file->store($path, $disk);
     }
 }

@@ -2,47 +2,42 @@
 
 namespace App\Http\Controllers;
 
-use App\Service\SubscriptionService;
-use Illuminate\Http\Request;
+use App\Services\SubscriptionService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SubscriptionController extends Controller
 {
-    private SubscriptionService $subscriptionService;
+    public function __construct(
+        private readonly SubscriptionService $service
+    ) {}
 
-    public function __construct(SubscriptionService $subscriptionService)
+    /**
+     * GET /api/admin/subscribers
+     * Admin — view all users with a subscription: name, email, phone,
+     * plan, mode of payment, and amount.
+     */
+    public function subscribers(Request $request): JsonResponse
     {
-        $this->subscriptionService = $subscriptionService;
+        $subscribers = $this->service->listSubscribers($request->input('per_page', 15));
+
+        return response()->json([
+            'success'     => true,
+            'subscribers' => $subscribers,
+        ]);
     }
 
-    public function index(Request $request)
+    /**
+     * GET /api/admin/owners/{uuid}/subscription-history
+     * Admin — view a specific owner's full subscription history.
+     */
+    public function ownerHistory(Request $request, string $uuid): JsonResponse
     {
-        return $this->subscriptionService->listSubscription($request->input('per_page', 15));
-    }
+        $history = $this->service->getOwnerSubscriptionHistory($uuid, $request->input('per_page', 15));
 
-    public function store(Request $request)
-    {
-        return $this->subscriptionService->createSubscription($request->all());
-    }
-
-    public function show(string $uuid)
-    {
-        return $this->subscriptionService->getSubscription($uuid);
-    }
-
-    public function update(Request $request, string $uuid)
-    {
-        return $this->subscriptionService->updateSubscription($uuid, $request->all());
-    }
-
-    public function destroy(string $uuid)
-    {
-        $this->subscriptionService->deleteSubscription($uuid);
-        return response()->json(['message' => 'Deleted successfully'], 200);
-    }
-    
-    public function restore(string $uuid)
-    {
-        return $this->subscriptionService->restoreSubscription($uuid);
+        return response()->json([
+            'success' => true,
+            'history' => $history,
+        ]);
     }
 }

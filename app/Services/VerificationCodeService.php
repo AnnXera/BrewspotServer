@@ -2,17 +2,18 @@
 
 namespace App\Services;
 
+use App\Contracts\MailAdapterInterface;
 use App\Mail\EmailVerificationMail;
 use App\Repository\VerificationCodeRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class VerificationCodeService
 {
     public function __construct(
-        private readonly VerificationCodeRepository $repo
+        private readonly VerificationCodeRepository $repo,
+        private readonly MailAdapterInterface $mailer
     ) {}
 
     public function sendCode(string $email): array
@@ -35,7 +36,7 @@ class VerificationCodeService
 
         $this->repo->createCode($user->user_id, $plainCode);
 
-        Mail::to($email)->send(new EmailVerificationMail($plainCode, $email));
+        $this->mailer->sendMailable($email, new EmailVerificationMail($plainCode, $email));
 
         Log::channel('verification')->info('Verification code sent successfully.', [
             'email'   => $email,
@@ -48,9 +49,6 @@ class VerificationCodeService
         ];
     }
 
-    /**
-     * Resend the email verification code, enforcing a 60s cooldown.
-     */
     public function resendVerificationCode(string $email): array
     {
         $user = $this->repo->findUserByEmail($email);
@@ -79,7 +77,7 @@ class VerificationCodeService
         $plainCode = (string) random_int(100000, 999999);
         $this->repo->createCode($user->user_id, $plainCode);
 
-        Mail::to($email)->send(new EmailVerificationMail($plainCode, $email));
+        $this->mailer->sendMailable($email, new EmailVerificationMail($plainCode, $email));
 
         Log::channel('verification')->info('Verification code resent successfully.', [
             'email'   => $email,
@@ -136,10 +134,6 @@ class VerificationCodeService
         ];
     }
 
-    /**
-     * Shared cooldown checker.
-     * Returns ['allowed' => bool, 'response' => array|null]
-     */
     private function checkCooldown(int $userId, string $purpose): array
     {
         $latestCode = $this->repo->findLatestCode($userId, $purpose);

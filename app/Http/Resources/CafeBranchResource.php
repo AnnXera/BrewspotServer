@@ -12,7 +12,7 @@ class CafeBranchResource extends JsonResource
         return [
             'uuid'             => $this->uuid,
             'branch_name'      => $this->branch_name,
-            'cafe_picture'     => $this->cafe_picture,
+            'cafe_picture'     => $this->cafe_picture, // public disk — safe to expose directly
             'cafe_email'       => $this->cafe_email,
             'cafe_phonenumber' => $this->cafe_phonenumber,
             'address'          => $this->address,
@@ -20,8 +20,9 @@ class CafeBranchResource extends JsonResource
             'status'           => $this->status,
             'documents'        => $this->whenLoaded('documents', fn () =>
                 $this->documents->map(fn ($doc) => [
+                    'branch_doc_id' => $doc->branch_doc_id,
                     'doc_type'      => $doc->doc_type,
-                    'file'          => $doc->file,
+                    'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
                     'registered_at' => $doc->registered_at?->toISOString(),
                     'expired_at'    => $doc->expired_at?->toISOString(),
                 ])

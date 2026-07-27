@@ -4,8 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateOwnerStatusRequest;
 use App\Services\OwnerManagementService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\JsonResponse;
 
 class OwnerManagementController extends Controller
 {
@@ -31,9 +32,17 @@ class OwnerManagementController extends Controller
      */
     public function show(string $uuid): JsonResponse
     {
-        $result = $this->service->getOwnerDetails($uuid);
+        try {
+            $result = $this->service->getOwnerDetails($uuid);
 
-        return response()->json($result);
+            return response()->json($result, 200);
+            
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "The owner profile with UUID '{$uuid}' does not exist or is not assigned as an owner."
+            ], 404);
+        }
     }
 
     /**
@@ -43,9 +52,17 @@ class OwnerManagementController extends Controller
     {
         $reviewerId = $request->user()->user_id;
 
-        $result = $this->service->updateStatus($uuid, $request->validated('status'), $reviewerId);
-
-        return response()->json($result, $result['success'] ? 200 : 422);
+        try {
+            $result = $this->service->updateStatus($uuid, $request->validated('status'), $reviewerId);
+            
+            return response()->json($result, $result['success'] ? 200 : 422);
+            
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "Owner status update failed. No owner found with UUID: {$uuid}."
+            ], 404);
+        }
     }
 
     /**

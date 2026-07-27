@@ -1,58 +1,42 @@
 <?php
 
-namespace App\Service;
+namespace App\Services;
 
-use App\Repository\SubscriptionRepository;
+use App\Http\Resources\AdminSubscriberResource;
 use App\Http\Resources\SubscriptionResource;
+use App\Repository\SubscriptionRepository;
+use Illuminate\Support\Facades\Log;
 
 class SubscriptionService
 {
-    private SubscriptionRepository $subscriptionRepository;
+    public function __construct(
+        private readonly SubscriptionRepository $subscriptionRepository
+    ) {}
 
-    public function __construct(SubscriptionRepository $subscriptionRepository) 
+    /**
+     * Admin — list all subscribers with user info, plan, and latest payment.
+     */
+    public function listSubscribers(int $perPage = 15)
     {
-        $this->subscriptionRepository = $subscriptionRepository;
+        Log::channel('admin')->info('Admin listed subscribers.', ['per_page' => $perPage]);
+
+        $subscriptions = $this->subscriptionRepository->listSubscribers($perPage);
+
+        return $subscriptions->through(fn ($subscription) => new AdminSubscriberResource($subscription));
     }
 
-    public function listSubscription(int $perPage = 15)
+    /**
+     * Admin — view a specific owner's full subscription history.
+     */
+    public function getOwnerSubscriptionHistory(string $ownerUuid, int $perPage = 15)
     {
-        $collection = $this->subscriptionRepository->paginate($perPage);
-        return SubscriptionResource::collection($collection);
-    }
+        Log::channel('admin')->info('Admin viewed owner subscription history.', [
+            'owner_uuid' => $ownerUuid,
+            'per_page'   => $perPage,
+        ]);
 
-    public function createSubscription(array $payload)
-    {
-        $model = $this->subscriptionRepository->create($payload);
-        return new SubscriptionResource($model);
-    }
+        $history = $this->subscriptionRepository->findHistoryByOwnerUuid($ownerUuid, $perPage);
 
-    public function getSubscription(string $uuid)
-    {
-        $model = $this->subscriptionRepository->findByUuid($uuid);
-        return new SubscriptionResource($model);
-    }
-
-    public function getSubscriptionByField(string $field, $value)
-    {
-        $model = $this->subscriptionRepository->findByField($field, $value);
-        return new SubscriptionResource($model);
-    }
-
-    public function updateSubscription(string $uuid, array $payload)
-    {
-        $model = $this->subscriptionRepository->update($uuid, $payload);
-        return new SubscriptionResource($model);
-    }
-
-    public function deleteSubscription(string $uuid)
-    {
-        $this->subscriptionRepository->delete($uuid);
-        return true;
-    }
-
-    public function restoreSubscription(string $uuid)
-    {
-        $model = $this->subscriptionRepository->restore($uuid);
-        return new SubscriptionResource($model);
+        return $history->through(fn ($subscription) => new SubscriptionResource($subscription));
     }
 }

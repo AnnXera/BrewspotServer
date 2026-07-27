@@ -32,6 +32,7 @@ class User extends Authenticatable
         'email_verified_at',
         'role_id',
         'status',
+        'paymongo_customer_id',
     ];
 
     protected $hidden = [
