@@ -16,7 +16,7 @@ return new class extends Migration
             $table->boolean('is_available')->default(true);
             $table->timestamps();
 
-            $table->unique(['branch_id', 'men_category_id']); // one override row per branch+category pair
+            $table->unique(['branch_id', 'men_category_id']);
         });
     }
 

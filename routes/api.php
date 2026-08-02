@@ -13,6 +13,7 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
+use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\CategoryBranchController;
@@ -69,6 +70,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
+
+        Route::post('/branches', [BranchController::class, 'store']); // add side branch
 
         Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
         Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
