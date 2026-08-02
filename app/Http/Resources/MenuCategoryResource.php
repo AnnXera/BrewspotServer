@@ -10,10 +10,12 @@ class MenuCategoryResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'uuid'       => $this->uuid,
-            'name'       => $this->name,
-            'cafe_uuid'  => $this->cafe->uuid ?? null,
-            'created_at' => $this->created_at?->toISOString(),
+            'uuid'         => $this->uuid,
+            'name'         => $this->name,
+            'is_available' => $this->is_available,
+            'cafe_uuid'    => $this->cafe->uuid ?? null,
+            'created_at'   => $this->created_at?->toISOString(),
+            'updated_at'   => $this->updated_at?->toISOString(),
         ];
     }
 }

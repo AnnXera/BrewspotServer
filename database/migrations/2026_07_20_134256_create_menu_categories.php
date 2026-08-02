@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('uuid')->unique();
             $table->foreignId('cafe_id')->constrained('cafes', 'cafe_id')->onDelete('cascade');
             $table->string('name');
+            $table->boolean('is_available')->default(true);
             $table->timestamps();
 
             $table->unique(['cafe_id', 'name']); // same name allowed across different cafes, not within one

@@ -15,6 +15,7 @@ use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
+use App\Http\Controllers\CategoryBranchController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -69,7 +70,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
 
-        Route::post('/menu-categories', [MenuCategoryController::class, 'store']);
+        Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
+        Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
+        Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
+
+        Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
+        Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
+        Route::patch('/menu-categories/{categoryUuid}/branches/{branchUuid}', [CategoryBranchController::class, 'update']);
     });
 
     // Manager only
