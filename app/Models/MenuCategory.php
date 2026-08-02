@@ -20,6 +20,11 @@ class MenuCategory extends Model
         'uuid',
         'cafe_id',
         'name',
+        'is_available',
+    ];
+
+    protected $casts = [
+        'is_available' => 'boolean',
     ];
 
     protected static function booted(): void
@@ -35,5 +40,10 @@ class MenuCategory extends Model
     public function items(): HasMany
     {
         return $this->hasMany(MenuItem::class, 'men_category_id', 'men_category_id');
+    }
+
+    public function branchOverrides(): HasMany
+    {
+        return $this->hasMany(CategoryBranch::class, 'men_category_id', 'men_category_id');
     }
 }

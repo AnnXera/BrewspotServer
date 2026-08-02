@@ -7,7 +7,7 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
-class StoreMenuCategoryRequest extends FormRequest
+class MenuCategoryRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -16,16 +16,20 @@ class StoreMenuCategoryRequest extends FormRequest
 
     public function rules(): array
     {
-        $cafe = $this->user()->cafes()->first();
+        $cafe     = $this->user()->cafes()->first();
+        $isUpdate = $this->isMethod('patch') || $this->isMethod('put');
 
         return [
             'name' => [
+                $isUpdate ? 'sometimes' : 'required',
                 'required',
                 'string',
                 'max:150',
                 Rule::unique('menu_categories', 'name')
-                    ->where('cafe_id', $cafe?->cafe_id),
+                    ->where('cafe_id', $cafe?->cafe_id)
+                    ->ignore($this->route('uuid'), 'uuid'),
             ],
+            'is_available' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -47,4 +51,4 @@ class StoreMenuCategoryRequest extends FormRequest
             ], 422)
         );
     }
-} 
+}
