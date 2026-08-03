@@ -47,6 +47,7 @@ class OwnerStatusMail extends Mailable
             'approved' => 'BrewSpot — Application Approved!',
             'rejected' => 'BrewSpot — Application Status',
             'inactive' => 'BrewSpot — Account Suspended',
+            'active'   => 'BrewSpot — Account Reinstated',
             default    => 'BrewSpot — Account Status Update',
         };
     }
@@ -57,6 +58,7 @@ class OwnerStatusMail extends Mailable
             'approved' => 'Your Application Has Been Approved! 🎉',
             'rejected' => 'Application Update',
             'inactive' => 'Account Suspended',
+            'active'   => 'Welcome Back! 🎉',
             default    => 'Account Status Update',
         };
     }
@@ -67,6 +69,7 @@ class OwnerStatusMail extends Mailable
             'approved' => 'Congratulations! Your cafe application has been approved. Click the button below to set up your password and start your free trial.',
             'rejected' => 'After careful review, we regret to inform you that your cafe application has not been approved at this time. If you believe this was a mistake, please contact our support team.',
             'inactive' => 'Your account has been suspended by our admin team. If you believe this is an error, please reach out to our support team for clarification.',
+            'active'   => 'Good news — your account has been reinstated by our admin team. You and your branches are back online and you can now log in as usual.',
             default    => 'Your account status has been updated. Please log in to view more details.',
         };
     }

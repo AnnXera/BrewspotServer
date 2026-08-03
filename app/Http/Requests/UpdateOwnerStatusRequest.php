@@ -16,7 +16,7 @@ class UpdateOwnerStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', 'in:approved,rejected,inactive'],
+            'status' => ['required', 'string', 'in:approved,rejected,inactive,active'],
         ];
     }
 
@@ -24,7 +24,7 @@ class UpdateOwnerStatusRequest extends FormRequest
     {
         return [
             'status.required' => 'Status is required.',
-            'status.in'       => 'Status must be one of: approved, rejected, inactive.',
+            'status.in'       => 'Status must be one of: approved, rejected, inactive, active.',
         ];
     }
 
