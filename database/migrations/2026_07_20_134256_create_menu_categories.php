@@ -16,7 +16,7 @@ return new class extends Migration
             $table->boolean('is_available')->default(true);
             $table->timestamps();
 
-            $table->unique(['cafe_id', 'name']); // same name allowed across different cafes, not within one
+            $table->unique(['cafe_id', 'name']);
         });
     }
 

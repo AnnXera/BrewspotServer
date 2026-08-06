@@ -3,6 +3,8 @@
 namespace App\Repository;
 
 use App\Models\ApprovalList;
+use App\Models\Cafe;
+use App\Models\CafeBranch;
 use App\Models\User;
 
 class OwnerManagementRepository
@@ -41,6 +43,23 @@ class OwnerManagementRepository
         $owner->update(['status' => $status]);
 
         return $owner->fresh(['cafes.branches']);
+    }
+
+    /**
+     * Bulk-update every branch under this owner's cafe(s) that currently
+     * has $fromStatus, setting it to $toStatus. Returns affected row count.
+     *
+     * Used to cascade owner-level suspension/reactivation down to branches
+     * without touching branches that are in an unrelated state
+     * (e.g. still pending_approval or rejected).
+     */
+    public function cascadeBranchStatus(User $owner, string $fromStatus, string $toStatus): int
+    {
+        $cafeIds = Cafe::where('user_id', $owner->user_id)->pluck('cafe_id');
+
+        return CafeBranch::whereIn('cafe_id', $cafeIds)
+            ->where('status', $fromStatus)
+            ->update(['status' => $toStatus]);
     }
 
     /**

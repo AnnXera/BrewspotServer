@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\CafeResource;
 use App\Http\Resources\CafeBranchResource;
+use App\Http\Resources\BranchSummaryResource;
 use App\Http\Resources\SubscriptionResource;
 use App\Models\User;
 use App\Repository\OwnerProfileRepository;
@@ -38,16 +39,23 @@ class OwnerProfileService
         ];
     }
 
-    public function getBranches(User $owner): array
+    /**
+     * List view — name and picture only, for the branch card grid.
+     * Paginated, 6 per page by default.
+     */
+    public function getBranches(User $owner, int $perPage = 6): array
     {
-        $branches = $this->repo->findBranchesByOwner($owner->user_id);
+        $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage);
 
         return [
             'success'  => true,
-            'branches' => CafeBranchResource::collection($branches),
+            'branches' => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
         ];
     }
 
+    /**
+     * Detail view — full branch info, documents, status, etc.
+     */
     public function getBranch(User $owner, string $branchUuid): array
     {
         $branch = $this->repo->findBranchByUuid($owner->user_id, $branchUuid);

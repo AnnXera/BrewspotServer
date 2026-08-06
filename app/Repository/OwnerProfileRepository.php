@@ -20,11 +20,14 @@ class OwnerProfileRepository
             ->get();
     }
 
-    public function findBranchesByOwner(int $userId)
+    /**
+     * Paginated for the branch card grid — defaults to 6 per page.
+     */
+    public function findBranchesByOwner(int $userId, int $perPage = 6)
     {
         return CafeBranch::whereHas('cafe', fn ($q) => $q->where('user_id', $userId))
-            ->with(['cafe', 'documents'])
-            ->get();
+            ->latest('created_at')
+            ->paginate($perPage);
     }
 
     public function findBranchByUuid(int $userId, string $branchUuid): ?CafeBranch
