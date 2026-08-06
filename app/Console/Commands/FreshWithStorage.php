@@ -36,7 +36,7 @@ class FreshWithStorage extends Command
         }
 
         foreach (File::files($path) as $file) {
-            // keep .gitignore so the empty folder stays tracked in git
+            // keep .gitignore so the empty folder stays tracked in git.
             if ($file->getFilename() !== '.gitignore') {
                 File::delete($file->getPathname());
             }
