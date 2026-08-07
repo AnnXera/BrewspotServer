@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin only
     Route::middleware('role:Admin')->prefix('admin')->group(function () {
+        Route::get('/owners/stats',           [OwnerManagementController::class, 'stats']); //get the total number of cafe owners for each status
         Route::get('/owners',                 [OwnerManagementController::class, 'index']); //list all cafe owners and show only firstname, lastname, status
         Route::get('/owners/{uuid}',          [OwnerManagementController::class, 'show']); //get cafe, branch, status of cafe owner
         Route::patch('/owners/{uuid}/status', [OwnerManagementController::class, 'updateStatus']); //update status of cafe, branch and send email notification to cafe owner

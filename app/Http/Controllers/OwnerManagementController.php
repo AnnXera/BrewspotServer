@@ -16,14 +16,31 @@ class OwnerManagementController extends Controller
 
     /**
      * GET /api/admin/owners
+     * Optional ?search= ?status= ?date= ?per_page=
      */
     public function index(Request $request): JsonResponse
     {
-        $owners = $this->service->listOwners($request->input('per_page', 15));
+        $owners = $this->service->listOwners(
+            $request->input('per_page', 15),
+            $request->input('search'),
+            $request->input('status'),
+            $request->input('date')
+        );
 
         return response()->json([
             'success' => true,
             'owners'  => $owners,
+        ]);
+    }
+
+    /**
+     * GET /api/admin/owners/stats
+     */
+    public function stats(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'stats'   => $this->service->getStats(),
         ]);
     }
 
@@ -36,7 +53,7 @@ class OwnerManagementController extends Controller
             $result = $this->service->getOwnerDetails($uuid);
 
             return response()->json($result, 200);
-            
+
         } catch (ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
@@ -54,9 +71,9 @@ class OwnerManagementController extends Controller
 
         try {
             $result = $this->service->updateStatus($uuid, $request->validated('status'), $reviewerId);
-            
+
             return response()->json($result, $result['success'] ? 200 : 422);
-            
+
         } catch (ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
@@ -67,7 +84,7 @@ class OwnerManagementController extends Controller
 
     /**
      * GET /api/admin/approvals
-     * Optional ?status= filter (pending_approval, active, rejected, inactive)
+     * Optional ?status= filter (pending_approval, approved, rejected)
      */
     public function approvals(Request $request): JsonResponse
     {
