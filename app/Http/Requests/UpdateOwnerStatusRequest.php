@@ -16,7 +16,9 @@ class UpdateOwnerStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', 'in:approved,rejected,inactive,active'],
+            // Admin-driven transitions only. 'inactive' is owner self-service
+            // and is never set by an admin — see OwnerManagementService::updateStatus().
+            'status' => ['required', 'string', 'in:approved,rejected,suspended,active'],
         ];
     }
 
@@ -24,7 +26,7 @@ class UpdateOwnerStatusRequest extends FormRequest
     {
         return [
             'status.required' => 'Status is required.',
-            'status.in'       => 'Status must be one of: approved, rejected, inactive, active.',
+            'status.in'       => 'Status must be one of: approved, rejected, suspended, active.',
         ];
     }
 

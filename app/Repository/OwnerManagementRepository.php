@@ -3,21 +3,56 @@
 namespace App\Repository;
 
 use App\Models\ApprovalList;
-use App\Models\Cafe;
-use App\Models\CafeBranch;
 use App\Models\User;
 
 class OwnerManagementRepository
 {
     /**
-     * Get all cafe owners with minimal fields for listing.
+     * List owners with optional search / status / date filters.
      */
-    public function listOwners(int $perPage = 15)
+    public function listOwners(int $perPage = 15, ?string $search = null, ?string $status = null, ?string $date = null)
     {
-        return User::where('role_id', 2)
-            ->with(['subscriptions' => fn ($q) => $q->latest('created_at')->limit(1)->with('plan')])
-            ->latest()
-            ->paginate($perPage);
+        $query = User::where('role_id', 2)
+            ->with([
+                'cafes' => fn ($q) => $q->select('cafe_id', 'user_id', 'cafe_name'),
+                'subscriptions' => fn ($q) => $q->latest('created_at')->limit(1)->with('plan'),
+            ]);
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('firstname', 'like', "%{$search}%")
+                  ->orWhere('lastname', 'like', "%{$search}%")
+                  ->orWhereHas('cafes', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"));
+            });
+        }
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($date) {
+            $query->whereDate('created_at', $date);
+        }
+
+        return $query->latest()->paginate($perPage);
+    }
+
+    /**
+     * Stats for the top cards. 'inactive_or_suspended' is the combined
+     * figure the UI card shows; the individual counts are included too
+     * in case the frontend wants to split them later.
+     */
+    public function getStats(): array
+    {
+        $base = User::where('role_id', 2);
+
+        return [
+            'total_owners'          => (clone $base)->count(),
+            'active'                => (clone $base)->where('status', 'active')->count(),
+            'suspended'             => (clone $base)->where('status', 'suspended')->count(),
+            'inactive'              => (clone $base)->where('status', 'inactive')->count(),
+            'inactive_or_suspended' => (clone $base)->whereIn('status', ['inactive', 'suspended'])->count(),
+        ];
     }
 
     /**
@@ -46,23 +81,6 @@ class OwnerManagementRepository
     }
 
     /**
-     * Bulk-update every branch under this owner's cafe(s) that currently
-     * has $fromStatus, setting it to $toStatus. Returns affected row count.
-     *
-     * Used to cascade owner-level suspension/reactivation down to branches
-     * without touching branches that are in an unrelated state
-     * (e.g. still pending_approval or rejected).
-     */
-    public function cascadeBranchStatus(User $owner, string $fromStatus, string $toStatus): int
-    {
-        $cafeIds = Cafe::where('user_id', $owner->user_id)->pluck('cafe_id');
-
-        return CafeBranch::whereIn('cafe_id', $cafeIds)
-            ->where('status', $fromStatus)
-            ->update(['status' => $toStatus]);
-    }
-
-    /**
      * Find the latest approval entry for this owner.
      */
     public function findLatestApproval(int $userId): ?ApprovalList
@@ -74,6 +92,7 @@ class OwnerManagementRepository
 
     /**
      * Update the approval entry to reflect the admin's decision.
+     * Only ever called for approved/rejected — see updateStatus() scoping rule.
      */
     public function updateApproval(ApprovalList $approval, string $status, int $reviewerId): ApprovalList
     {
