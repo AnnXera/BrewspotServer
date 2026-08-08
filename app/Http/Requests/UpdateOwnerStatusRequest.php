@@ -16,8 +16,9 @@ class UpdateOwnerStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Admin-driven transitions only. 'inactive' is owner self-service
-            // and is never set by an admin — see OwnerManagementService::updateStatus().
+            // Admin-driven transitions only. 'inactive' is owner self-service —
+            // admins can never set it, and per ALLOWED_TRANSITIONS, an inactive
+            // owner can only be reactivated by the owner themselves, not an admin.
             'status' => ['required', 'string', 'in:approved,rejected,suspended,active'],
         ];
     }

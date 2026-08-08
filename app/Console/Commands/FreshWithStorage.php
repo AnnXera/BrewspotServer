@@ -13,14 +13,14 @@ class FreshWithStorage extends Command
 
     public function handle(): int
     {
+        $this->clearDisk(storage_path('app/private'));
+        $this->clearDisk(storage_path('app/public'));
+
         $this->call('migrate:fresh', [
             '--seed' => $this->option('seed'),
         ]);
 
-        $this->clearDisk(storage_path('app/private'));
-        $this->clearDisk(storage_path('app/public'));
-
-        $this->info('Storage (private + public) cleared.');
+        $this->info('Storage (private + public) cleared, then migrate:fresh' . ($this->option('seed') ? ' + seed' : '') . ' ran.');
 
         return self::SUCCESS;
     }

@@ -18,8 +18,7 @@ class OwnerManagementService
     private const ALLOWED_TRANSITIONS = [
         'pending_approval' => ['approved', 'rejected'],
         'active'            => ['suspended'],
-        'suspended'         => ['active'],
-        'inactive'          => ['active'], // admin can still reinstate a self-deactivated owner
+        'suspended'         => ['active']
     ];
 
     public function __construct(

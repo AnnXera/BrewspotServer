@@ -135,6 +135,16 @@ class SubscriptionRepository
             ]);
     }
 
+    public function cancelForSuspension(int $userId): void
+    {
+        Subscription::where('user_id', $userId)
+            ->where('status', 'active')
+            ->update([
+                'status'   => 'cancelled',
+                'end_date' => Carbon::now(),
+            ]);
+    }
+
     /**
      * PayMongo-native: create a pending subscription tied to a real PayMongo subscription ID.
      */

@@ -3,10 +3,14 @@
 namespace App\Repository;
 
 use App\Models\ApprovalList;
+use App\Models\CafeBranch;
 use App\Models\User;
 
 class OwnerManagementRepository
 {
+    public function __construct(
+        private readonly SubscriptionRepository $subscriptionRepo
+    ) {}
     /**
      * List owners with optional search / status / date filters.
      */
@@ -71,11 +75,30 @@ class OwnerManagementRepository
     }
 
     /**
-     * Update the owner's status.
+     * Update the owner's status, cascading to their branches:
+     * - suspend   → any currently 'active' branch becomes 'suspended'
+     * - reinstate → any currently 'suspended' branch becomes 'active'
+     *
+     * Branches that are 'pending_approval' or 'rejected' are left alone —
+     * they were never live, so suspension/reinstatement doesn't apply to them.
      */
     public function updateStatus(User $owner, string $status): User
     {
         $owner->update(['status' => $status]);
+
+        $cafeIds = $owner->cafes()->pluck('cafe_id');
+
+        if ($status === 'suspended') {
+            CafeBranch::whereIn('cafe_id', $cafeIds)
+                ->where('status', 'active')
+                ->update(['status' => 'suspended']);
+
+            $this->subscriptionRepo->cancelForSuspension($owner->user_id);
+        } elseif ($status === 'active') {
+            CafeBranch::whereIn('cafe_id', $cafeIds)
+                ->where('status', 'suspended')
+                ->update(['status' => 'active']);
+        }
 
         return $owner->fresh(['cafes.branches']);
     }
