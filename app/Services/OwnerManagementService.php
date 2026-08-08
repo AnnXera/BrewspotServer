@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Storage;
+
 use App\Mail\OwnerStatusMail;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\ApprovalListResource;
@@ -92,7 +94,7 @@ class OwnerManagementService
                     'branches'  => $cafe->branches->map(fn ($branch) => [
                         'uuid'             => $branch->uuid,
                         'branch_name'      => $branch->branch_name,
-                        'cafe_picture'     => $branch->cafe_picture,
+                        'cafe_picture'     => $branch->cafe_picture ? Storage::disk('public')->url($branch->cafe_picture) : null,
                         'cafe_email'       => $branch->cafe_email,
                         'cafe_phonenumber' => $branch->cafe_phonenumber,
                         'address'          => $branch->address,

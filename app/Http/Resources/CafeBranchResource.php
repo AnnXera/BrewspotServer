@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 class CafeBranchResource extends JsonResource
 {
@@ -12,7 +13,7 @@ class CafeBranchResource extends JsonResource
         return [
             'uuid'             => $this->uuid,
             'branch_name'      => $this->branch_name,
-            'cafe_picture'     => $this->cafe_picture, // public disk — safe to expose directly
+            'cafe_picture'     => $this->cafe_picture ? Storage::disk('public')->url($this->cafe_picture) : null,
             'cafe_email'       => $this->cafe_email,
             'cafe_phonenumber' => $this->cafe_phonenumber,
             'address'          => $this->address,
