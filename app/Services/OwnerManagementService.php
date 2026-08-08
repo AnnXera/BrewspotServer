@@ -65,10 +65,21 @@ class OwnerManagementService
     {
         $owner = $this->repo->findOwnerByUuid($uuid);
 
+        $currentSubscription = $owner->subscriptions->firstWhere('status', 'active')
+            ?? $owner->subscriptions->first();
+
         return [
             'success' => true,
             'owner'   => new UserResource($owner),
-            'cafes'   => $owner->cafes->map(function ($cafe) {
+
+            'owner_documents' => $owner->documents->map(fn ($doc) => [
+                'user_doc_id'  => $doc->user_doc_id,
+                'id_type'      => $doc->id_type,
+                'download_url' => "/api/documents/user/{$doc->user_doc_id}",
+                'uploaded_at'  => $doc->created_at?->toISOString(),
+            ]),
+
+            'cafes' => $owner->cafes->map(function ($cafe) {
                 return [
                     'uuid'      => $cafe->uuid,
                     'cafe_name' => $cafe->cafe_name,
@@ -76,6 +87,7 @@ class OwnerManagementService
                         'cafe_doc_id'  => $doc->cafe_doc_id,
                         'doc_type'     => $doc->doc_type,
                         'download_url' => "/api/documents/cafe/{$doc->cafe_doc_id}",
+                        'registered_at' => $doc->registered_at?->toISOString(),
                     ]),
                     'branches'  => $cafe->branches->map(fn ($branch) => [
                         'uuid'             => $branch->uuid,
@@ -94,6 +106,31 @@ class OwnerManagementService
                     ]),
                 ];
             }),
+
+            'subscription' => $currentSubscription ? [
+                'uuid'           => $currentSubscription->uuid,
+                'status'         => $currentSubscription->status,
+                'plan_name'      => $currentSubscription->plan->sub_name ?? null,
+                'price'          => $currentSubscription->plan->price ?? null,
+                'max_branches'   => $currentSubscription->plan->max_branches ?? null,
+                'start_date'     => $currentSubscription->start_date?->toISOString(),
+                'end_date'       => $currentSubscription->end_date?->toISOString(),
+                'payment_method' => $currentSubscription->latestPayment->payment_method_type ?? null,
+            ] : null,
+
+            'payment_history' => $owner->subscriptions->map(function ($sub) {
+                $payment = $sub->latestPayment;
+
+                return [
+                    'transaction_id' => $payment?->uuid ?? $sub->uuid,
+                    'date'           => ($payment?->created_at ?? $sub->created_at)?->toISOString(),
+                    'description'    => 'Subscription - ' . ($sub->plan->sub_name ?? 'Plan'),
+                    'amount'         => $payment
+                        ? number_format($payment->amount / 100, 2)
+                        : number_format($sub->plan->price ?? 0, 2),
+                    'status'         => $payment?->status ?? $sub->status,
+                ];
+            })->values(),
         ];
     }
 

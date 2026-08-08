@@ -68,8 +68,10 @@ class OwnerManagementRepository
             ->where('role_id', 2)
             ->with([
                 'role',
+                'documents',
                 'cafes.documents',
                 'cafes.branches.documents',
+                'subscriptions' => fn ($q) => $q->latest('created_at')->with(['plan', 'latestPayment']),
             ])
             ->firstOrFail();
     }
