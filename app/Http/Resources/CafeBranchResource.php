@@ -12,7 +12,7 @@ class CafeBranchResource extends JsonResource
         return [
             'uuid'             => $this->uuid,
             'branch_name'      => $this->branch_name,
-            'cafe_picture'     => $this->cafe_picture, // public disk — safe to expose directly
+            'cafe_picture'     => $this->cafe_picture ? url("/api/storage/public/{$this->cafe_picture}") : null, // public disk — served via Laravel route for CORS/headers
             'cafe_email'       => $this->cafe_email,
             'cafe_phonenumber' => $this->cafe_phonenumber,
             'address'          => $this->address,

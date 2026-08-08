@@ -14,7 +14,7 @@ class BranchSummaryResource extends JsonResource
             'uuid'         => $this->uuid,
             'branch_name'  => $this->branch_name,
             'cafe_picture' => $this->cafe_picture
-                ? Storage::disk('public')->url($this->cafe_picture)
+                ? url("/api/storage/public/{$this->cafe_picture}")
                 : null,
             'status'       => $this->status,
         ];

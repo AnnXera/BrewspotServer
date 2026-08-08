@@ -17,6 +17,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\CategoryBranchController;
+use App\Http\Controllers\StorageController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -102,3 +103,6 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 Route::post('/webhooks/paymongo', [PaymentWebhookController::class, 'handle']);
+
+// Public route to serve public-disk storage files via Laravel (applies CORS middleware on api/*)
+Route::get('/storage/public/{path}', [StorageController::class, 'publicFile'])->where('path', '.*');
