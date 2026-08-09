@@ -17,6 +17,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\CategoryBranchController;
+use App\Http\Controllers\CafeStaffController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -54,6 +55,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/subscribers', [SubscriptionController::class, 'subscribers']); // admin - get all subscribers
         Route::get('/owners/{uuid}/subscription-history', [SubscriptionController::class, 'ownerHistory']); // admin - get owner's subscription history
+
+        Route::patch('/branches/{uuid}/status', [OwnerManagementController::class, 'updateBranchStatus']); //approve/reject a single branch (owner already active)
     });
 
     // Cafe Owner only
@@ -73,6 +76,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
+
+        Route::get('/staff',           [CafeStaffController::class, 'index']);
+        Route::post('/staff',          [CafeStaffController::class, 'store']);
+        Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']);
 
         Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
         Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);

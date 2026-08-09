@@ -8,11 +8,25 @@ use App\Models\User;
 
 class PasswordSetupRepository
 {
-    public function findApprovedOwnerByUuid(string $uuid): ?User
+    /**
+     * Was: findApprovedOwnerByUuid() — restricted to role_id 2 + status 'approved'.
+     * Renamed + broadened so the same /auth/setup-password/{uuid} endpoint
+     * also serves staff accounts (role Manager/Cashier, status 'pending_setup'),
+     * which the owner creates directly rather than via self-registration.
+     */
+    public function findAccountAwaitingSetupByUuid(string $uuid): ?User
     {
         return User::where('uuid', $uuid)
-            ->where('role_id', 2) // Cafe Owner
-            ->where('status', 'approved')
+            ->with('role')
+            ->where(function ($query) {
+                $query->where(function ($owner) {
+                    $owner->whereHas('role', fn ($r) => $r->where('role_name', 'Cafe Owner'))
+                          ->where('status', 'approved');
+                })->orWhere(function ($staff) {
+                    $staff->whereHas('role', fn ($r) => $r->whereIn('role_name', ['Manager', 'Cashier']))
+                          ->where('status', 'pending_setup');
+                });
+            })
             ->first();
     }
 

@@ -2,12 +2,17 @@
 
 namespace App\Services;
 
-use App\Mail\OwnerStatusMail;
-use App\Http\Resources\UserResource;
-use App\Http\Resources\ApprovalListResource;
-use App\Repository\OwnerManagementRepository;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+
+use App\Mail\OwnerStatusMail;
+
+use App\Http\Resources\UserResource;
+use App\Http\Resources\ApprovalListResource;
+use App\Http\Resources\CafeBranchResource;
+
+use App\Repository\OwnerManagementRepository;
+
 use App\Contracts\MailAdapterInterface;
 
 class OwnerManagementService
@@ -209,5 +214,62 @@ class OwnerManagementService
         $approvals = $this->repo->listApprovals($perPage, $status);
 
         return $approvals->through(fn ($approval) => new ApprovalListResource($approval));
+    }
+
+    /**
+     * Review a single branch created *after* the owner is already active
+     * (e.g. a side branch). Independent of owner status — does not touch
+     * the owner's User.status at all.
+     */
+    public function updateBranchStatus(string $branchUuid, string $status, int $reviewerId): array
+    {
+        $branch = $this->repo->findBranchByUuid($branchUuid);
+
+        if (! $branch) {
+            return ['success' => false, 'message' => 'Branch not found.'];
+        }
+
+        if ($branch->status !== 'pending_approval') {
+            Log::channel('admin')->warning('Branch status update rejected — branch not pending.', [
+                'branch_uuid'   => $branch->uuid,
+                'current_status' => $branch->status,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => "Cannot review a branch with status '{$branch->status}'.",
+            ];
+        }
+
+        // approval_lists records use 'approved'/'rejected'; the branch record
+        // itself uses 'active'/'rejected' — matching PasswordSetupRepository::activateBranches().
+        $branchStatus = $status === 'approved' ? 'active' : 'rejected';
+        $branch       = $this->repo->updateBranchStatus($branch, $branchStatus);
+
+        $approval = $this->repo->findLatestApprovalForBranch($branch->branch_id);
+
+        if ($approval) {
+            $approval = $this->repo->updateApproval($approval, $status, $reviewerId);
+        }
+
+        $owner = $branch->cafe->owner ?? null;
+
+        if ($owner) {
+            $this->mailer->sendMailable($owner->email, new OwnerStatusMail($owner->firstname, $status, $owner->uuid));
+        }
+
+        Log::channel('admin')->info('Branch status updated.', [
+            'branch_uuid' => $branch->uuid,
+            'new_status'  => $branchStatus,
+            'approval_id' => $approval?->approval_id,
+            'reviewed_by' => $reviewerId,
+        ]);
+
+        return [
+            'success'  => true,
+            'message'  => "Branch '{$branch->branch_name}' has been {$status}.",
+            'branch'   => new CafeBranchResource($branch),
+            'approval' => $approval ? new ApprovalListResource($approval->load(['user', 'cafe', 'branch', 'reviewer'])) : null,
+        ];
     }
 }

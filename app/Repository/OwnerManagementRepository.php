@@ -144,4 +144,25 @@ class OwnerManagementRepository
 
         return $query->paginate($perPage);
     }
+
+    public function findBranchByUuid(string $uuid): ?CafeBranch
+    {
+        return CafeBranch::where('uuid', $uuid)
+            ->with('cafe.owner')
+            ->first();
+    }
+
+    public function updateBranchStatus(CafeBranch $branch, string $branchStatus): CafeBranch
+    {
+        $branch->update(['status' => $branchStatus]);
+
+        return $branch->fresh();
+    }
+
+    public function findLatestApprovalForBranch(int $branchId): ?ApprovalList
+    {
+        return ApprovalList::where('branch_id', $branchId)
+            ->latest('created_at')
+            ->first();
+    }
 }

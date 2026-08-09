@@ -42,4 +42,9 @@ class CafeBranch extends Model
     {
         return $this->hasMany(BranchDocument::class, 'branch_id', 'branch_id');
     }
+
+    public function staff(): HasMany
+    {
+        return $this->hasMany(CafeStaff::class, 'branch_id', 'branch_id');
+    }
 }

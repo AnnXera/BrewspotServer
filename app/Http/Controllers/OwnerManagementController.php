@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateOwnerStatusRequest;
+use App\Http\Requests\UpdateBranchStatusRequest;
+
 use App\Services\OwnerManagementService;
+
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
@@ -97,5 +100,17 @@ class OwnerManagementController extends Controller
             'success'   => true,
             'approvals' => $approvals,
         ]);
+    }
+
+    /**
+     * PATCH /api/admin/branches/{uuid}/status
+     */
+    public function updateBranchStatus(UpdateBranchStatusRequest $request, string $uuid): JsonResponse
+    {
+        $reviewerId = $request->user()->user_id;
+
+        $result = $this->service->updateBranchStatus($uuid, $request->validated('status'), $reviewerId);
+
+        return response()->json($result, $result['success'] ? 200 : 422);
     }
 }
