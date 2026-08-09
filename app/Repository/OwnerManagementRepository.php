@@ -132,8 +132,9 @@ class OwnerManagementRepository
 
     /**
      * List all approval entries (pending, approved, rejected) for admin overview.
+     * $type: 'owner' = main branch (initial application), 'branch' = side branch submissions
      */
-    public function listApprovals(int $perPage = 15, ?string $status = null)
+    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null)
     {
         $query = ApprovalList::with(['user', 'cafe', 'branch', 'reviewer'])
             ->latest('created_at');
@@ -142,7 +143,34 @@ class OwnerManagementRepository
             $query->where('status', $status);
         }
 
+        if ($type === 'owner') {
+            $query->whereHas('branch', fn ($q) => $q->where('branch_type', 'main'));
+        } elseif ($type === 'branch') {
+            $query->whereHas('branch', fn ($q) => $q->where('branch_type', 'side'));
+        }
+
         return $query->paginate($perPage);
+    }
+
+    /**
+     * Counts for the tab badges (General/Pending/Approved/Rejected), scoped
+     * to the same 'owner' vs 'branch' distinction as listApprovals().
+     */
+    public function getApprovalStats(?string $type = null): array
+    {
+        $base = ApprovalList::query();
+
+        if ($type === 'owner') {
+            $base->whereHas('branch', fn ($q) => $q->where('branch_type', 'main'));
+        } elseif ($type === 'branch') {
+            $base->whereHas('branch', fn ($q) => $q->where('branch_type', 'side'));
+        }
+
+        return [
+            'pending_approval' => (clone $base)->where('status', 'pending_approval')->count(),
+            'approved'          => (clone $base)->where('status', 'approved')->count(),
+            'rejected'          => (clone $base)->where('status', 'rejected')->count(),
+        ];
     }
 
     public function findBranchByUuid(string $uuid): ?CafeBranch

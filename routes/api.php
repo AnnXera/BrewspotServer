@@ -44,7 +44,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/owners',                 [OwnerManagementController::class, 'index']); //list all cafe owners and show only firstname, lastname, status
         Route::get('/owners/{uuid}',          [OwnerManagementController::class, 'show']); //get cafe, branch, status of cafe owner
         Route::patch('/owners/{uuid}/status', [OwnerManagementController::class, 'updateStatus']); //update status of cafe, branch and send email notification to cafe owner
+        
         Route::get('/approvals',              [OwnerManagementController::class, 'approvals']); //get approval list for the cafe owner with status pending_approval (filtered by status parameter)
+        Route::get('/approvals/stats', [OwnerManagementController::class, 'approvalStats']);
 
         Route::get('/subscription-plans',              [SubscriptionPlanController::class, 'index']); // list all subscription plans
         Route::get('/subscription-plans/{uuid}',       [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid

@@ -25,6 +25,7 @@ class RegisterRequest extends FormRequest
             'middlename'            => ['nullable', 'string', 'max:100'],
             'lastname'              => ['required', 'string', 'max:100'],
             'phone_number'          => ['required', 'string', 'max:20'],
+            'owner_address'         => ['required', 'string', 'max:500'],
             'username'              => [
                 'required',
                 'string',
@@ -60,6 +61,7 @@ class RegisterRequest extends FormRequest
             'firstname.required'            => 'First name is required.',
             'lastname.required'             => 'Last name is required.',
             'phone_number.required'         => 'Phone number is required.',
+            'owner_address.required'        => 'Your address is required.',
             'username.required'             => 'Username is required.',
             'username.unique'               => 'This username is already taken.',
 

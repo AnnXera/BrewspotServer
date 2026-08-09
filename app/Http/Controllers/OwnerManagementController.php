@@ -88,17 +88,31 @@ class OwnerManagementController extends Controller
     /**
      * GET /api/admin/approvals
      * Optional ?status= filter (pending_approval, approved, rejected)
+     * Optional ?type= filter (owner = main branch applications, branch = side branch submissions)
      */
     public function approvals(Request $request): JsonResponse
     {
         $approvals = $this->service->listApprovals(
             $request->input('per_page', 15),
-            $request->input('status')
+            $request->input('status'),
+            $request->input('type')
         );
 
         return response()->json([
             'success'   => true,
             'approvals' => $approvals,
+        ]);
+    }
+
+    /**
+     * GET /api/admin/approvals/stats
+     * Optional ?type= filter, same as above
+     */
+    public function approvalStats(Request $request): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'stats'   => $this->service->getApprovalStats($request->input('type')),
         ]);
     }
 

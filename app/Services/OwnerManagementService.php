@@ -206,14 +206,16 @@ class OwnerManagementService
         ];
     }
 
-    /**
-     * List all approval entries for admin review screen.
-     */
-    public function listApprovals(int $perPage = 15, ?string $status = null)
+    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null)
     {
-        $approvals = $this->repo->listApprovals($perPage, $status);
+        $approvals = $this->repo->listApprovals($perPage, $status, $type);
 
         return $approvals->through(fn ($approval) => new ApprovalListResource($approval));
+    }
+
+    public function getApprovalStats(?string $type = null): array
+    {
+        return $this->repo->getApprovalStats($type);
     }
 
     /**

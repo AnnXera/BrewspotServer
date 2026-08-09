@@ -20,6 +20,7 @@ class RegistrationRepository
             'lastname'     => $payload['lastname'],
             'username'     => $payload['username'],
             'phone_number' => $payload['phone_number'],
+            'address'      => $payload['owner_address'],
             'status'       => 'pending_approval',
         ]);
 

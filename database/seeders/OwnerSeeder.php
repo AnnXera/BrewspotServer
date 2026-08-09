@@ -34,6 +34,7 @@ class OwnerSeeder extends Seeder
                 'username'           => 'juandelacruz',
                 'password_hash'      => Hash::make('Password123!'),
                 'phone_number'       => '09171234567',
+                'address'            => '456 Bonifacio St, Davao City',
                 'email_verified_at'  => Carbon::now(),
                 'status'             => 'active',
                 'role_id'            => $role->role_id,
