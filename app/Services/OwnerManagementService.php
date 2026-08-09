@@ -7,6 +7,7 @@ use App\Http\Resources\UserResource;
 use App\Http\Resources\ApprovalListResource;
 use App\Repository\OwnerManagementRepository;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use App\Contracts\MailAdapterInterface;
 
 class OwnerManagementService
@@ -59,7 +60,7 @@ class OwnerManagementService
     }
 
     /**
-     * Get full owner profile with cafes and branches.
+     * Get full owner profile with cafes, branches, documents, subscription, and payment history.
      */
     public function getOwnerDetails(string $uuid): array
     {
@@ -84,15 +85,17 @@ class OwnerManagementService
                     'uuid'      => $cafe->uuid,
                     'cafe_name' => $cafe->cafe_name,
                     'documents' => $cafe->documents->map(fn ($doc) => [
-                        'cafe_doc_id'  => $doc->cafe_doc_id,
-                        'doc_type'     => $doc->doc_type,
-                        'download_url' => "/api/documents/cafe/{$doc->cafe_doc_id}",
+                        'cafe_doc_id'   => $doc->cafe_doc_id,
+                        'doc_type'      => $doc->doc_type,
+                        'download_url'  => "/api/documents/cafe/{$doc->cafe_doc_id}",
                         'registered_at' => $doc->registered_at?->toISOString(),
                     ]),
                     'branches'  => $cafe->branches->map(fn ($branch) => [
                         'uuid'             => $branch->uuid,
                         'branch_name'      => $branch->branch_name,
-                        'cafe_picture'     => $branch->cafe_picture,
+                        'cafe_picture' => $branch->cafe_picture
+                            ? url("/api/branch-picture/{$branch->uuid}")
+                            : null,
                         'cafe_email'       => $branch->cafe_email,
                         'cafe_phonenumber' => $branch->cafe_phonenumber,
                         'address'          => $branch->address,

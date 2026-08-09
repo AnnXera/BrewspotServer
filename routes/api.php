@@ -101,4 +101,6 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
+Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
+
 Route::post('/webhooks/paymongo', [PaymentWebhookController::class, 'handle']);

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CafeBranch;
 use App\Models\UserDocument;
 use App\Models\CafeDocument;
 use App\Models\BranchDocument;
@@ -46,6 +47,21 @@ class DocumentController extends Controller
         $this->authorizeAccess($request, $document->branch->cafe->user_id);
 
         return $this->streamFile($document->file);
+    }
+
+    /**
+     * GET /api/branch-picture/{uuid}
+     * Public — serves the branch's display picture with correct Content-Type.
+     */
+    public function branchPicture(string $uuid): StreamedResponse
+    {
+        $branch = CafeBranch::where('uuid', $uuid)->firstOrFail();
+
+        if (! $branch->cafe_picture || ! Storage::disk('public')->exists($branch->cafe_picture)) {
+            abort(404, 'Picture not found.');
+        }
+
+        return Storage::disk('public')->response($branch->cafe_picture);
     }
 
     /**
