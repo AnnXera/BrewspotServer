@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 use App\Mail\OwnerStatusMail;
+use App\Mail\BranchStatusMail;
 
 use App\Http\Resources\UserResource;
 use App\Http\Resources\ApprovalListResource;
@@ -257,7 +258,13 @@ class OwnerManagementService
         $owner = $branch->cafe->owner ?? null;
 
         if ($owner) {
-            $this->mailer->sendMailable($owner->email, new OwnerStatusMail($owner->firstname, $status, $owner->uuid));
+            // Branch approvals get their own mail — the owner already has an
+            // active account/password, so OwnerStatusMail's "set up your
+            // password / free trial started" copy doesn't apply here.
+            $this->mailer->sendMailable(
+                $owner->email,
+                new BranchStatusMail($owner->firstname, $branch->branch_name, $status)
+            );
         }
 
         Log::channel('admin')->info('Branch status updated.', [
