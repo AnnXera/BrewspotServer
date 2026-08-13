@@ -4,9 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CafeDocument extends Model
 {
+    use SoftDeletes;
+    
     protected $primaryKey = 'cafe_doc_id';
 
     protected $fillable = [

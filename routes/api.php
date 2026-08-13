@@ -47,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
         
         Route::get('/approvals',              [OwnerManagementController::class, 'approvals']); //get approval list for the cafe owner with status pending_approval (filtered by status parameter)
         Route::get('/approvals/stats', [OwnerManagementController::class, 'approvalStats']);
+        Route::get('/owners/{uuid}/application-history', [OwnerManagementController::class, 'applicationHistory']);
+        Route::get('/approvals/{uuid}/snapshot', [OwnerManagementController::class, 'approvalSnapshot']);
 
         Route::get('/subscription-plans',              [SubscriptionPlanController::class, 'index']); // list all subscription plans
         Route::get('/subscription-plans/{uuid}',       [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid

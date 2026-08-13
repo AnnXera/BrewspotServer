@@ -11,9 +11,7 @@ class OwnerManagementRepository
     public function __construct(
         private readonly SubscriptionRepository $subscriptionRepo
     ) {}
-    /**
-     * List owners with optional search / status / date filters.
-     */
+
     public function listOwners(int $perPage = 15, ?string $search = null, ?string $status = null, ?string $date = null)
     {
         $query = User::where('role_id', 2)
@@ -41,11 +39,6 @@ class OwnerManagementRepository
         return $query->latest()->paginate($perPage);
     }
 
-    /**
-     * Stats for the top cards. 'inactive_or_suspended' is the combined
-     * figure the UI card shows; the individual counts are included too
-     * in case the frontend wants to split them later.
-     */
     public function getStats(): array
     {
         $base = User::where('role_id', 2);
@@ -59,9 +52,6 @@ class OwnerManagementRepository
         ];
     }
 
-    /**
-     * Get one owner with full profile, cafe, and branches.
-     */
     public function findOwnerByUuid(string $uuid): User
     {
         return User::where('uuid', $uuid)
@@ -76,14 +66,6 @@ class OwnerManagementRepository
             ->firstOrFail();
     }
 
-    /**
-     * Update the owner's status, cascading to their branches:
-     * - suspend   → any currently 'active' branch becomes 'suspended'
-     * - reinstate → any currently 'suspended' branch becomes 'active'
-     *
-     * Branches that are 'pending_approval' or 'rejected' are left alone —
-     * they were never live, so suspension/reinstatement doesn't apply to them.
-     */
     public function updateStatus(User $owner, string $status): User
     {
         $owner->update(['status' => $status]);
@@ -105,9 +87,6 @@ class OwnerManagementRepository
         return $owner->fresh(['cafes.branches']);
     }
 
-    /**
-     * Find the latest approval entry for this owner.
-     */
     public function findLatestApproval(int $userId): ?ApprovalList
     {
         return ApprovalList::where('user_id', $userId)
@@ -119,10 +98,11 @@ class OwnerManagementRepository
      * Update the approval entry to reflect the admin's decision.
      * Only ever called for approved/rejected — see updateStatus() scoping rule.
      */
-    public function updateApproval(ApprovalList $approval, string $status, int $reviewerId): ApprovalList
+    public function updateApproval(ApprovalList $approval, string $status, int $reviewerId, ?string $reason = null): ApprovalList
     {
         $approval->update([
             'status'      => $status,
+            'reason'      => $status === 'rejected' ? $reason : null,
             'reviewed_by' => $reviewerId,
             'reviewed_at' => now(),
         ]);
@@ -133,6 +113,13 @@ class OwnerManagementRepository
     /**
      * List all approval entries (pending, approved, rejected) for admin overview.
      * $type: 'owner' = main branch (initial application), 'branch' = side branch submissions
+     *
+     * NOTE: withTrashed() inside whereHas() is required — CafeBranch uses
+     * SoftDeletes, and once an owner is rejected + reapplies, their old
+     * branch is archived (soft-deleted). Without withTrashed() here, the
+     * EXISTS subquery excludes trashed branches and the whole approval
+     * row silently disappears from the list, even though it was never
+     * deleted itself.
      */
     public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null)
     {
@@ -144,9 +131,9 @@ class OwnerManagementRepository
         }
 
         if ($type === 'owner') {
-            $query->whereHas('branch', fn ($q) => $q->where('branch_type', 'main'));
+            $query->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'main'));
         } elseif ($type === 'branch') {
-            $query->whereHas('branch', fn ($q) => $q->where('branch_type', 'side'));
+            $query->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'side'));
         }
 
         return $query->paginate($perPage);
@@ -155,15 +142,16 @@ class OwnerManagementRepository
     /**
      * Counts for the tab badges (General/Pending/Approved/Rejected), scoped
      * to the same 'owner' vs 'branch' distinction as listApprovals().
+     * Same withTrashed() fix applies here for the same reason.
      */
     public function getApprovalStats(?string $type = null): array
     {
         $base = ApprovalList::query();
 
         if ($type === 'owner') {
-            $base->whereHas('branch', fn ($q) => $q->where('branch_type', 'main'));
+            $base->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'main'));
         } elseif ($type === 'branch') {
-            $base->whereHas('branch', fn ($q) => $q->where('branch_type', 'side'));
+            $base->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'side'));
         }
 
         return [
@@ -191,6 +179,42 @@ class OwnerManagementRepository
     {
         return ApprovalList::where('branch_id', $branchId)
             ->latest('created_at')
+            ->first();
+    }
+
+    public function findApplicationHistory(int $userId)
+    {
+        return ApprovalList::where('user_id', $userId)
+            ->with([
+                'cafe'             => fn ($q) => $q->withTrashed(),
+                'cafe.documents'   => fn ($q) => $q->withTrashed(),
+                'branch'           => fn ($q) => $q->withTrashed(),
+                'branch.documents' => fn ($q) => $q->withTrashed(),
+                'reviewer',
+            ])
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    /**
+     * Snapshot of the cafe/branch/documents exactly as they were for THIS
+     * approval row — including trashed data from a since-superseded
+     * (rejected + reapplied) application. Unlike findOwnerByUuid(), this
+     * never falls through to the owner's current live cafe/branch, so an
+     * admin reviewing an old rejected row always sees what was actually
+     * submitted at that time, not whatever the owner has now.
+     */
+    public function findApprovalSnapshot(string $approvalUuid): ?ApprovalList
+    {
+        return ApprovalList::where('uuid', $approvalUuid)
+            ->with([
+                'user',
+                'reviewer',
+                'cafe'             => fn ($q) => $q->withTrashed(),
+                'cafe.documents'   => fn ($q) => $q->withTrashed(),
+                'branch'           => fn ($q) => $q->withTrashed(),
+                'branch.documents' => fn ($q) => $q->withTrashed(),
+            ])
             ->first();
     }
 }

@@ -84,4 +84,39 @@ class RegistrationRepository
             'status'    => 'pending_approval',
         ]);
     }
+
+    public function findLatestCafeForUser(int $userId): ?Cafe
+    {
+        return Cafe::where('user_id', $userId)->latest('cafe_id')->first();
+    }
+
+    /**
+     * Archives (soft-deletes) the owner's most recent rejected application —
+     * cafe, branches, and every associated document. The user_documents and
+     * approval_lists rows are left untouched so the audit trail survives.
+     */
+    public function archiveRejectedApplication(User $user): void
+    {
+        $cafe = $this->findLatestCafeForUser($user->user_id);
+
+        if (! $cafe) {
+            return;
+        }
+
+        $cafe->loadMissing('branches.documents', 'documents');
+
+        foreach ($cafe->branches as $branch) {
+            $branch->documents()->delete(); // soft delete
+            $branch->delete();
+        }
+
+        $cafe->documents()->delete();
+        $cafe->delete();
+
+        // Owner's gov't ID — optional. Keep this line only if you want them
+        // to re-upload ID on every reapplication; drop it if the old ID
+        // should just carry over to the new application.
+        $user->documents()->delete();
+    }
+
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Contracts\MailAdapterInterface;
 use App\Mail\EmailVerificationMail;
 use App\Repository\VerificationCodeRepository;
+use App\Repository\RegistrationRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -13,12 +14,25 @@ class VerificationCodeService
 {
     public function __construct(
         private readonly VerificationCodeRepository $repo,
+        private readonly RegistrationRepository $registrationRepo,
         private readonly MailAdapterInterface $mailer
     ) {}
 
     public function sendCode(string $email): array
     {
         $user = $this->repo->findOrCreatePendingUser($email);
+
+        // Reapplication path: same email, previously rejected. Archive the
+        // old application (never delete it outright) and let them start fresh.
+        if ($user->status === 'rejected') {
+            $this->registrationRepo->archiveRejectedApplication($user);
+            $user->update(['status' => 'email_unverified']);
+
+            Log::channel('registration')->info('Rejected application archived — owner reapplying.', [
+                'user_uuid' => $user->uuid,
+                'email'     => $email,
+            ]);
+        }
 
         if (! in_array($user->status, ['email_unverified'])) {
             Log::channel('verification')->warning('Send code blocked — user not in email_unverified status.', [

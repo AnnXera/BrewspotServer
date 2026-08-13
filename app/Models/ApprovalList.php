@@ -21,6 +21,7 @@ class ApprovalList extends Model
         'cafe_id',
         'branch_id',
         'status',
+        'reason',
         'reviewed_by',
         'reviewed_at',
     ];

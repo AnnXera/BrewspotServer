@@ -15,7 +15,8 @@ class OwnerStatusMail extends Mailable
     public function __construct(
         public readonly string $firstname,
         public readonly string $status,
-        public readonly ?string $ownerUuid = null
+        public readonly ?string $ownerUuid = null,
+        public readonly ?string $reason = null
     ) {}
 
     public function envelope(): Envelope
@@ -34,6 +35,7 @@ class OwnerStatusMail extends Mailable
                 'status'      => $this->status,
                 'heading'     => $this->headingForStatus(),
                 'bodyMessage' => $this->messageForStatus(),
+                'reason'      => $this->status === 'rejected' ? $this->reason : null,
                 'setupUrl'    => $this->status === 'approved'
                     ? rtrim(config('app.frontend_url'), '/') . "/setup-password/{$this->ownerUuid}"
                     : null,

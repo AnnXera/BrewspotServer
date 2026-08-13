@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class UserDocument extends Model
 {
+    use SoftDeletes;
+    
     protected $primaryKey = 'user_doc_id';
 
     public static array $allowedIds = [

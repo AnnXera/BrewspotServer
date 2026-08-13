@@ -26,6 +26,21 @@
                                 {{ $bodyMessage }}
                             </p>
 
+                            @if (isset($reason) && $reason)
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 24px 0; background-color: #FDF3E7; border-left: 4px solid #B4846C; border-radius: 6px;">
+                                    <tr>
+                                        <td style="padding: 16px 20px;">
+                                            <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: bold; color: #7a5c44; text-transform: uppercase; letter-spacing: 0.5px;">
+                                                Reason
+                                            </p>
+                                            <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #4a2e1a;">
+                                                {{ $reason }}
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
+                            @endif
+
                             @if ($setupUrl)
                                 <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 30px auto;">
                                     <tr>

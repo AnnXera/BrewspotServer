@@ -16,18 +16,17 @@ class UpdateOwnerStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Admin-driven transitions only. 'inactive' is owner self-service —
-            // admins can never set it, and per ALLOWED_TRANSITIONS, an inactive
-            // owner can only be reactivated by the owner themselves, not an admin.
             'status' => ['required', 'string', 'in:approved,rejected,suspended,active'],
+            'reason' => ['required_if:status,rejected', 'nullable', 'string', 'max:1000'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'status.required' => 'Status is required.',
-            'status.in'       => 'Status must be one of: approved, rejected, suspended, active.',
+            'status.required'      => 'Status is required.',
+            'status.in'            => 'Status must be one of: approved, rejected, suspended, active.',
+            'reason.required_if'   => 'A reason is required when rejecting an application.',
         ];
     }
 

@@ -73,7 +73,12 @@ class OwnerManagementController extends Controller
         $reviewerId = $request->user()->user_id;
 
         try {
-            $result = $this->service->updateStatus($uuid, $request->validated('status'), $reviewerId);
+            $result = $this->service->updateStatus(
+                $uuid,
+                $request->validated('status'),
+                $reviewerId,
+                $request->validated('reason')
+            );
 
             return response()->json($result, $result['success'] ? 200 : 422);
 
@@ -123,8 +128,41 @@ class OwnerManagementController extends Controller
     {
         $reviewerId = $request->user()->user_id;
 
-        $result = $this->service->updateBranchStatus($uuid, $request->validated('status'), $reviewerId);
+        $result = $this->service->updateBranchStatus(
+            $uuid,
+            $request->validated('status'),
+            $reviewerId,
+            $request->validated('reason')
+        );
 
         return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * GET /api/admin/owners/{uuid}/application-history
+     */
+    public function applicationHistory(string $uuid): JsonResponse
+    {
+        try {
+            $result = $this->service->getApplicationHistory($uuid);
+
+            return response()->json($result, 200);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "No owner found with UUID: {$uuid}.",
+            ], 404);
+        }
+    }
+
+    /**
+     * GET /api/admin/approvals/{uuid}/snapshot
+     */
+    public function approvalSnapshot(string $uuid): JsonResponse
+    {
+        $result = $this->service->getApprovalSnapshot($uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 404);
     }
 }

@@ -7,6 +7,7 @@ use App\Models\UserDocument;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
 {
@@ -45,7 +46,12 @@ class RegisterRequest extends FormRequest
             // Main Branch Details
             'cafe_picture'          => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'branch_name'           => ['required', 'string', 'max:150'],
-            'cafe_email'            => ['required', 'email', 'max:255', 'unique:cafe_branches,cafe_email'],
+            'cafe_email'            => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at'),
+            ],
             'cafe_phonenumber'      => ['required', 'string', 'max:20'],
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],

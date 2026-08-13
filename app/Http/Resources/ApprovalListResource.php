@@ -12,6 +12,7 @@ class ApprovalListResource extends JsonResource
         return [
             'uuid'        => $this->uuid,
             'status'      => $this->status,
+            'reason'      => $this->reason,
             'reviewed_at' => $this->reviewed_at?->toISOString(),
             'user'        => new UserResource($this->whenLoaded('user')),
             'cafe'        => new CafeResource($this->whenLoaded('cafe')),

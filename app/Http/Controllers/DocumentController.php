@@ -18,7 +18,7 @@ class DocumentController extends Controller
      */
     public function userDocument(Request $request, int $userDocId): StreamedResponse
     {
-        $document = UserDocument::findOrFail($userDocId);
+        $document = UserDocument::withTrashed()->findOrFail($userDocId);
 
         $this->authorizeAccess($request, $document->user_id);
 
@@ -30,7 +30,13 @@ class DocumentController extends Controller
      */
     public function cafeDocument(Request $request, int $cafeDocId): StreamedResponse
     {
-        $document = CafeDocument::with('cafe')->findOrFail($cafeDocId);
+        $document = CafeDocument::withTrashed()
+            ->with(['cafe' => fn ($q) => $q->withTrashed()])
+            ->findOrFail($cafeDocId);
+
+        if (! $document->cafe) {
+            abort(404, 'Document not found.');
+        }
 
         $this->authorizeAccess($request, $document->cafe->user_id);
 
@@ -42,7 +48,13 @@ class DocumentController extends Controller
      */
     public function branchDocument(Request $request, int $branchDocId): StreamedResponse
     {
-        $document = BranchDocument::with('branch.cafe')->findOrFail($branchDocId);
+        $document = BranchDocument::withTrashed()
+            ->with(['branch' => fn ($q) => $q->withTrashed()->with(['cafe' => fn ($q2) => $q2->withTrashed()])])
+            ->findOrFail($branchDocId);
+
+        if (! $document->branch || ! $document->branch->cafe) {
+            abort(404, 'Document not found.');
+        }
 
         $this->authorizeAccess($request, $document->branch->cafe->user_id);
 
@@ -55,7 +67,7 @@ class DocumentController extends Controller
      */
     public function branchPicture(string $uuid): StreamedResponse
     {
-        $branch = CafeBranch::where('uuid', $uuid)->firstOrFail();
+        $branch = CafeBranch::withTrashed()->where('uuid', $uuid)->firstOrFail();
 
         if (! $branch->cafe_picture || ! Storage::disk('public')->exists($branch->cafe_picture)) {
             abort(404, 'Picture not found.');

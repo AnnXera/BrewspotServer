@@ -147,7 +147,7 @@ class OwnerManagementService
      * Update owner status, cascade to approval_list ONLY for approved/rejected,
      * and send the matching notification email.
      */
-    public function updateStatus(string $uuid, string $status, int $reviewerId): array
+    public function updateStatus(string $uuid, string $status, int $reviewerId, ?string $reason = null): array
     {
         $owner = $this->repo->findOwnerByUuid($uuid);
 
@@ -177,24 +177,28 @@ class OwnerManagementService
 
         $owner = $this->repo->updateStatus($owner, $status);
 
-        // approval_lists scoping rule: only approved/rejected transitions touch it.
-        // suspend/reinstate must never overwrite the original application review record.
         $approval = null;
 
         if (in_array($status, ['approved', 'rejected'], true)) {
             $approval = $this->repo->findLatestApproval($owner->user_id);
 
             if ($approval) {
-                $approval = $this->repo->updateApproval($approval, $status, $reviewerId);
+                $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason);
             }
         }
 
-        $this->mailer->sendMailable($owner->email, new OwnerStatusMail($owner->firstname, $status, $owner->uuid));
+        $this->mailer->sendMailable($owner->email, new OwnerStatusMail(
+            firstname: $owner->firstname,
+            status: $status,
+            ownerUuid: $owner->uuid,
+            reason: $status === 'rejected' ? $reason : null,
+        ));
 
         Log::channel('admin')->info('Owner status updated.', [
             'owner_uuid'  => $owner->uuid,
             'old_status'  => $oldStatus,
             'new_status'  => $status,
+            'reason'      => $status === 'rejected' ? $reason : null,
             'approval_id' => $approval?->approval_id,
             'reviewed_by' => $reviewerId,
         ]);
@@ -224,7 +228,7 @@ class OwnerManagementService
      * (e.g. a side branch). Independent of owner status — does not touch
      * the owner's User.status at all.
      */
-    public function updateBranchStatus(string $branchUuid, string $status, int $reviewerId): array
+    public function updateBranchStatus(string $branchUuid, string $status, int $reviewerId, ?string $reason = null): array
     {
         $branch = $this->repo->findBranchByUuid($branchUuid);
 
@@ -244,32 +248,33 @@ class OwnerManagementService
             ];
         }
 
-        // approval_lists records use 'approved'/'rejected'; the branch record
-        // itself uses 'active'/'rejected' — matching PasswordSetupRepository::activateBranches().
         $branchStatus = $status === 'approved' ? 'active' : 'rejected';
         $branch       = $this->repo->updateBranchStatus($branch, $branchStatus);
 
         $approval = $this->repo->findLatestApprovalForBranch($branch->branch_id);
 
         if ($approval) {
-            $approval = $this->repo->updateApproval($approval, $status, $reviewerId);
+            $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason);
         }
 
         $owner = $branch->cafe->owner ?? null;
 
         if ($owner) {
-            // Branch approvals get their own mail — the owner already has an
-            // active account/password, so OwnerStatusMail's "set up your
-            // password / free trial started" copy doesn't apply here.
             $this->mailer->sendMailable(
                 $owner->email,
-                new BranchStatusMail($owner->firstname, $branch->branch_name, $status)
+                new BranchStatusMail(
+                    firstname: $owner->firstname,
+                    branchName: $branch->branch_name,
+                    status: $status,
+                    reason: $status === 'rejected' ? $reason : null,
+                )
             );
         }
 
         Log::channel('admin')->info('Branch status updated.', [
             'branch_uuid' => $branch->uuid,
             'new_status'  => $branchStatus,
+            'reason'      => $status === 'rejected' ? $reason : null,
             'approval_id' => $approval?->approval_id,
             'reviewed_by' => $reviewerId,
         ]);
@@ -279,6 +284,103 @@ class OwnerManagementService
             'message'  => "Branch '{$branch->branch_name}' has been {$status}.",
             'branch'   => new CafeBranchResource($branch),
             'approval' => $approval ? new ApprovalListResource($approval->load(['user', 'cafe', 'branch', 'reviewer'])) : null,
+        ];
+    }
+
+    public function getApplicationHistory(string $uuid): array
+    {
+        $owner   = $this->repo->findOwnerByUuid($uuid); // throws ModelNotFoundException if invalid
+        $history = $this->repo->findApplicationHistory($owner->user_id);
+
+        return [
+            'success' => true,
+            'history' => $history->map(fn ($approval) => [
+                'approval_uuid' => $approval->uuid,
+                'status'        => $approval->status,
+                'reviewed_at'   => $approval->reviewed_at?->toISOString(),
+                'reviewer'      => $approval->reviewer
+                    ? trim("{$approval->reviewer->firstname} {$approval->reviewer->lastname}")
+                    : null,
+                'cafe_name'     => $approval->cafe?->cafe_name,
+                'branch_name'   => $approval->branch?->branch_name,
+                'branch_type'   => $approval->branch?->branch_type,
+                'is_archived'   => $approval->cafe?->trashed() ?? false,
+                'submitted_at'  => $approval->created_at?->toISOString(),
+            ])->values(),
+        ];
+    }
+
+    /**
+     * Full detail snapshot for a single approval row — used by the admin
+     * detail modal instead of getOwnerDetails(), so a rejected/archived
+     * application always shows its own cafe/branch/documents rather than
+     * whatever the owner's current live application happens to be.
+     */
+    public function getApprovalSnapshot(string $approvalUuid): array
+    {
+        $approval = $this->repo->findApprovalSnapshot($approvalUuid);
+
+        if (! $approval) {
+            return ['success' => false, 'message' => 'Approval record not found.'];
+        }
+
+        $owner  = $approval->user;
+        $cafe   = $approval->cafe;
+        $branch = $approval->branch;
+
+        return [
+            'success' => true,
+
+            'owner' => $owner ? new UserResource($owner) : null,
+
+            'owner_documents' => $owner?->documents->map(fn ($doc) => [
+                'user_doc_id'  => $doc->user_doc_id,
+                'id_type'      => $doc->id_type,
+                'download_url' => "/api/documents/user/{$doc->user_doc_id}",
+                'uploaded_at'  => $doc->created_at?->toISOString(),
+            ])->values() ?? [],
+
+            'cafe' => $cafe ? [
+                'uuid'        => $cafe->uuid,
+                'cafe_name'   => $cafe->cafe_name,
+                'is_archived' => $cafe->trashed(),
+                'documents'   => $cafe->documents->map(fn ($doc) => [
+                    'cafe_doc_id'   => $doc->cafe_doc_id,
+                    'doc_type'      => $doc->doc_type,
+                    'download_url'  => "/api/documents/cafe/{$doc->cafe_doc_id}",
+                    'registered_at' => $doc->registered_at?->toISOString(),
+                ])->values(),
+            ] : null,
+
+            'branch' => $branch ? [
+                'uuid'             => $branch->uuid,
+                'branch_name'      => $branch->branch_name,
+                'branch_type'      => $branch->branch_type,
+                'status'           => $branch->status,
+                'is_archived'      => $branch->trashed(),
+                'cafe_picture'     => $branch->cafe_picture
+                    ? url("/api/branch-picture/{$branch->uuid}")
+                    : null,
+                'cafe_email'       => $branch->cafe_email,
+                'cafe_phonenumber' => $branch->cafe_phonenumber,
+                'address'          => $branch->address,
+                'documents'        => $branch->documents->map(fn ($doc) => [
+                    'branch_doc_id' => $doc->branch_doc_id,
+                    'doc_type'      => $doc->doc_type,
+                    'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
+                ])->values(),
+            ] : null,
+
+            'approval' => [
+                'uuid'         => $approval->uuid,
+                'status'       => $approval->status,
+                'reason'       => $approval->reason,
+                'reviewed_at'  => $approval->reviewed_at?->toISOString(),
+                'reviewer'     => $approval->reviewer
+                    ? trim("{$approval->reviewer->firstname} {$approval->reviewer->lastname}")
+                    : null,
+                'submitted_at' => $approval->created_at?->toISOString(),
+            ],
         ];
     }
 }

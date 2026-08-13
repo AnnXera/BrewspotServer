@@ -6,9 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CafeBranch extends Model
 {
+    use SoftDeletes;
+
     protected $primaryKey = 'branch_id';
 
     public function getRouteKeyName(): string
