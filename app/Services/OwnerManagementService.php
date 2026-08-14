@@ -211,9 +211,9 @@ class OwnerManagementService
         ];
     }
 
-    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null)
+    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null, ?string $search = null)
     {
-        $approvals = $this->repo->listApprovals($perPage, $status, $type);
+        $approvals = $this->repo->listApprovals($perPage, $status, $type, $search);
 
         return $approvals->through(fn ($approval) => new ApprovalListResource($approval));
     }
@@ -222,7 +222,7 @@ class OwnerManagementService
     {
         return $this->repo->getApprovalStats($type);
     }
-
+    
     /**
      * Review a single branch created *after* the owner is already active
      * (e.g. a side branch). Independent of owner status — does not touch

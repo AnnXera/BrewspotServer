@@ -92,15 +92,15 @@ class OwnerManagementController extends Controller
 
     /**
      * GET /api/admin/approvals
-     * Optional ?status= filter (pending_approval, approved, rejected)
-     * Optional ?type= filter (owner = main branch applications, branch = side branch submissions)
+     * Optional ?search= ?status= ?type= ?per_page=
      */
     public function approvals(Request $request): JsonResponse
     {
         $approvals = $this->service->listApprovals(
             $request->input('per_page', 15),
             $request->input('status'),
-            $request->input('type')
+            $request->input('type'),
+            $request->input('search')
         );
 
         return response()->json([

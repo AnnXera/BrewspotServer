@@ -8,6 +8,13 @@ use App\Models\User;
 
 class OwnerManagementRepository
 {
+    /**
+     * Owner Management only ever shows accounts that have actually onboarded
+     * onto the platform — i.e. gone through approval and set up a password.
+     * Anyone still mid-application (email_unverified, filling_application,
+     * pending_approval, approved-but-not-yet-set-up) or rejected outright
+     * belongs in the Approval Status screens, not here.
+     */
     private const SAAS_STATUSES = ['active', 'inactive', 'suspended'];
 
     public function __construct(
@@ -30,7 +37,7 @@ class OwnerManagementRepository
                   ->orWhereHas('cafes', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"));
             });
         }
-        
+
         if ($status) {
             $query->where('status', $status);
         }
@@ -55,6 +62,12 @@ class OwnerManagementRepository
         ];
     }
 
+    /**
+     * Get one owner with full profile, cafe, and branches.
+     * Scoped to SAAS_STATUSES so a direct-URL visit to /admin/owners/{uuid}
+     * for a still-applying or rejected user 404s instead of leaking data
+     * outside the intended Owner Management surface.
+     */
     public function findOwnerByUuid(string $uuid): User
     {
         return User::where('uuid', $uuid)
@@ -70,6 +83,14 @@ class OwnerManagementRepository
             ->firstOrFail();
     }
 
+    /**
+     * Update the owner's status, cascading to their branches:
+     * - suspend   → any currently 'active' branch becomes 'suspended'
+     * - reinstate → any currently 'suspended' branch becomes 'active'
+     *
+     * Branches that are 'pending_approval' or 'rejected' are left alone —
+     * they were never live, so suspension/reinstatement doesn't apply to them.
+     */
     public function updateStatus(User $owner, string $status): User
     {
         $owner->update(['status' => $status]);
@@ -91,10 +112,18 @@ class OwnerManagementRepository
         return $owner->fresh(['cafes.branches']);
     }
 
+    /**
+     * Find the approval row for the owner's CURRENT, active application cycle.
+     * Filtering by status='pending_approval' guarantees we never accidentally
+     * target a stale/already-decided row from a prior attempt. Ordering by
+     * approval_id (not created_at) sidesteps second-precision timestamp ties
+     * when testing rejections in quick succession.
+     */
     public function findLatestApproval(int $userId): ?ApprovalList
     {
         return ApprovalList::where('user_id', $userId)
-            ->latest('created_at')
+            ->where('status', 'pending_approval')
+            ->latest('approval_id')
             ->first();
     }
 
@@ -117,15 +146,16 @@ class OwnerManagementRepository
     /**
      * List all approval entries (pending, approved, rejected) for admin overview.
      * $type: 'owner' = main branch (initial application), 'branch' = side branch submissions
+     * $search: matches against the applicant's name or cafe name (including
+     * archived cafes from a rejected-and-reapplied attempt).
      *
-     * NOTE: withTrashed() inside whereHas() is required — CafeBranch uses
+     * withTrashed() inside whereHas() is required — CafeBranch/Cafe use
      * SoftDeletes, and once an owner is rejected + reapplies, their old
-     * branch is archived (soft-deleted). Without withTrashed() here, the
-     * EXISTS subquery excludes trashed branches and the whole approval
-     * row silently disappears from the list, even though it was never
-     * deleted itself.
+     * branch/cafe is archived. Without withTrashed(), the EXISTS subquery
+     * excludes trashed rows and the whole approval row (or search match)
+     * silently disappears, even though it was never deleted itself.
      */
-    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null)
+    public function listApprovals(int $perPage = 15, ?string $status = null, ?string $type = null, ?string $search = null)
     {
         $query = ApprovalList::with(['user', 'cafe', 'branch', 'reviewer'])
             ->latest('created_at');
@@ -140,13 +170,27 @@ class OwnerManagementRepository
             $query->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'side'));
         }
 
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('user', fn ($uq) => $uq
+                        ->where('firstname', 'like', "%{$search}%")
+                        ->orWhere('lastname', 'like', "%{$search}%")
+                    )
+                    ->orWhereHas('cafe', fn ($cq) => $cq
+                        ->withTrashed()
+                        ->where('cafe_name', 'like', "%{$search}%")
+                    );
+            });
+        }
+
         return $query->paginate($perPage);
     }
 
     /**
      * Counts for the tab badges (General/Pending/Approved/Rejected), scoped
      * to the same 'owner' vs 'branch' distinction as listApprovals().
-     * Same withTrashed() fix applies here for the same reason.
+     * Intentionally NOT filtered by search — badge counts always reflect
+     * the full set for that registration type, independent of the search box.
      */
     public function getApprovalStats(?string $type = null): array
     {
@@ -179,10 +223,15 @@ class OwnerManagementRepository
         return $branch->fresh();
     }
 
+    /**
+     * Same status filter applied as findLatestApproval() — guarantees we
+     * never target a stale/already-decided row from a prior branch attempt.
+     */
     public function findLatestApprovalForBranch(int $branchId): ?ApprovalList
     {
         return ApprovalList::where('branch_id', $branchId)
-            ->latest('created_at')
+            ->where('status', 'pending_approval')
+            ->latest('approval_id')
             ->first();
     }
 
