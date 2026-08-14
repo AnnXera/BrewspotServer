@@ -8,6 +8,8 @@ use App\Models\User;
 
 class OwnerManagementRepository
 {
+    private const SAAS_STATUSES = ['active', 'inactive', 'suspended'];
+
     public function __construct(
         private readonly SubscriptionRepository $subscriptionRepo
     ) {}
@@ -15,6 +17,7 @@ class OwnerManagementRepository
     public function listOwners(int $perPage = 15, ?string $search = null, ?string $status = null, ?string $date = null)
     {
         $query = User::where('role_id', 2)
+            ->whereIn('status', self::SAAS_STATUSES)
             ->with([
                 'cafes' => fn ($q) => $q->select('cafe_id', 'user_id', 'cafe_name'),
                 'subscriptions' => fn ($q) => $q->latest('created_at')->limit(1)->with('plan'),
@@ -27,7 +30,7 @@ class OwnerManagementRepository
                   ->orWhereHas('cafes', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"));
             });
         }
-
+        
         if ($status) {
             $query->where('status', $status);
         }
@@ -41,7 +44,7 @@ class OwnerManagementRepository
 
     public function getStats(): array
     {
-        $base = User::where('role_id', 2);
+        $base = User::where('role_id', 2)->whereIn('status', self::SAAS_STATUSES);
 
         return [
             'total_owners'          => (clone $base)->count(),
@@ -56,6 +59,7 @@ class OwnerManagementRepository
     {
         return User::where('uuid', $uuid)
             ->where('role_id', 2)
+            ->whereIn('status', self::SAAS_STATUSES)
             ->with([
                 'role',
                 'documents',
