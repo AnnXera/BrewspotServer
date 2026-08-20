@@ -17,16 +17,15 @@ class UpdateBranchStatusRequest extends FormRequest
     {
         return [
             'status' => ['required', 'string', 'in:approved,rejected'],
-            'reason' => ['required_if:status,rejected', 'nullable', 'string', 'max:1000'],
+            'reason' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'status.required'    => 'Status is required.',
-            'status.in'          => 'Status must be either approved or rejected.',
-            'reason.required_if' => 'A reason is required when rejecting a branch.',
+            'status.required' => 'Status is required.',
+            'status.in'       => 'Status must be either approved or rejected.',
         ];
     }
 

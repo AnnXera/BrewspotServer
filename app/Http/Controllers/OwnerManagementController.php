@@ -72,22 +72,14 @@ class OwnerManagementController extends Controller
     {
         $reviewerId = $request->user()->user_id;
 
-        try {
-            $result = $this->service->updateStatus(
-                $uuid,
-                $request->validated('status'),
-                $reviewerId,
-                $request->validated('reason')
-            );
+        $result = $this->service->updateStatus(
+            $uuid,
+            $request->validated('status'),
+            $reviewerId,
+            $request->validated('reason')
+        );
 
-            return response()->json($result, $result['success'] ? 200 : 422);
-
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Owner status update failed. No owner found with UUID: {$uuid}."
-            ], 404);
-        }
+        return response()->json($result, $result['success'] ? 200 : 422);
     }
 
     /**

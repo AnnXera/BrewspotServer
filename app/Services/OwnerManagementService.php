@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 use App\Mail\OwnerStatusMail;
 use App\Mail\BranchStatusMail;
@@ -149,12 +150,21 @@ class OwnerManagementService
      */
     public function updateStatus(string $uuid, string $status, int $reviewerId, ?string $reason = null): array
     {
-        $owner = $this->repo->findOwnerByUuid($uuid);
+        $isApplicationDecision = in_array($status, ['approved', 'rejected'], true);
 
-        if (! $owner) {
+        try {
+            $owner = $isApplicationDecision
+                ? $this->repo->findPendingApplicantByUuid($uuid)
+                : $this->repo->findSaasOwnerForStatusChange($uuid);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            Log::channel('admin')->warning('Owner status update blocked — owner not found or not eligible for this transition.', [
+                'owner_uuid' => $uuid,
+                'to_status'  => $status,
+            ]);
+
             return [
                 'success' => false,
-                'message' => 'Owner not found.',
+                'message' => "No eligible owner found with UUID '{$uuid}' for status '{$status}'.",
             ];
         }
 
@@ -179,7 +189,7 @@ class OwnerManagementService
 
         $approval = null;
 
-        if (in_array($status, ['approved', 'rejected'], true)) {
+        if ($isApplicationDecision) {
             $approval = $this->repo->findLatestApproval($owner->user_id);
 
             if ($approval) {

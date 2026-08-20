@@ -67,6 +67,10 @@ class OwnerManagementRepository
      * Scoped to SAAS_STATUSES so a direct-URL visit to /admin/owners/{uuid}
      * for a still-applying or rejected user 404s instead of leaking data
      * outside the intended Owner Management surface.
+     *
+     * NOTE: This is for the Owner Management list/detail pages ONLY.
+     * Do not reuse this for updateStatus() — see findPendingApplicantByUuid()
+     * and findSaasOwnerForStatusChange() below.
      */
     public function findOwnerByUuid(string $uuid): User
     {
@@ -80,6 +84,35 @@ class OwnerManagementRepository
                 'cafes.branches.documents',
                 'subscriptions' => fn ($q) => $q->latest('created_at')->with(['plan', 'latestPayment']),
             ])
+            ->firstOrFail();
+    }
+
+    /**
+     * Used by updateStatus() for the approve/reject decision only.
+     * A user is only ever actionable here while still pending_approval —
+     * once already decided, re-hitting the same uuid should 404 rather
+     * than silently re-applying a decision on an owner who has since
+     * moved into a SAAS status.
+     */
+    public function findPendingApplicantByUuid(string $uuid): User
+    {
+        return User::where('uuid', $uuid)
+            ->where('role_id', 2)
+            ->where('status', 'pending_approval')
+            ->firstOrFail();
+    }
+
+    /**
+     * Used by updateStatus() for suspend/reactivate only.
+     * Kept separate from findOwnerByUuid() (which eager-loads the full
+     * profile graph for the detail page) since this call only needs the
+     * bare User row before mutating its status.
+     */
+    public function findSaasOwnerForStatusChange(string $uuid): User
+    {
+        return User::where('uuid', $uuid)
+            ->where('role_id', 2)
+            ->whereIn('status', self::SAAS_STATUSES)
             ->firstOrFail();
     }
 

@@ -3,10 +3,15 @@
 namespace App\Services;
 
 use App\Contracts\MailAdapterInterface;
+
 use App\Http\Resources\CafeStaffResource;
+
 use App\Mail\StaffAccountCreatedMail;
+
 use App\Models\User;
+
 use App\Repository\CafeStaffRepository;
+
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 

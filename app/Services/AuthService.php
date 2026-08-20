@@ -4,13 +4,16 @@ namespace App\Services;
 
 use App\Mail\LoginCodeMail;
 use App\Models\User;
+
 use App\Repository\AuthRepository;
 use App\Repository\VerificationCodeRepository;
 use App\Http\Resources\UserResource;
+
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+
 use App\Contracts\MailAdapterInterface;
 
 class AuthService
