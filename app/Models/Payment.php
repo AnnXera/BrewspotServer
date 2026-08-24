@@ -19,7 +19,6 @@ class Payment extends Model
     protected $fillable = [
         'uuid',
         'user_id',
-        'branch_id',
         'payable_type',
         'payable_id',
         'amount',

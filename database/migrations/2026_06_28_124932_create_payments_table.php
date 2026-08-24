@@ -20,9 +20,6 @@ return new class extends Migration
 
             // Foreign Keys (assuming bigIntegers matching Laravel defaults)
             $table->foreignId('user_id')->constrained('users', 'user_id')->onDelete('cascade');
-            
-            // branch_id is nullable because SaaS Subscriptions won't have a branch
-            $table->foreignId('branch_id')->nullable()->constrained('cafe_branches', 'branch_id')->onDelete('set null');
 
             /**
              * Laravel Polymorphic Helper
