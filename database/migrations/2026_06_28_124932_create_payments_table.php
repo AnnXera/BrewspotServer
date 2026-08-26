@@ -33,13 +33,13 @@ return new class extends Migration
             // Financial amounts stored in cents/centavos (Integer)
             $table->integer('amount');
             
-            // POS Cash auditing columns (nullable since they are skipped for PayMongo/online payments)
+            // POS Cash auditing columns (nullable since they are skipped for online payments)
             $table->integer('amount_tendered')->nullable()->comment('Cash received from customer');
             $table->integer('amount_change')->nullable()->comment('Change returned to customer');
 
             // Payment tracking
-            $table->string('payment_method_type'); // 'card', 'gcash', 'paymaya', 'qrph', 'cash'
-            $table->string('gateway_transaction_id')->nullable()->unique(); // PayMongo Payment Intent ID (pi_...)
+            $table->string('payment_method_type'); // 'paypal_order', 'paypal_subscription', 'cash'
+            $table->string('gateway_transaction_id')->nullable()->unique(); // PayPal Transaction/Order ID
             $table->string('status')->default('pending'); // 'pending', 'succeeded', 'failed', 'refunded'
 
             $table->timestamps();

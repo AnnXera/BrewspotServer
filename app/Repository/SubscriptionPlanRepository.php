@@ -69,9 +69,9 @@ class SubscriptionPlanRepository
         return $plan->fresh();
     }
 
-    public function syncPayMongoPlanId(SubscriptionPlan $plan, string $paymongoPlanId): SubscriptionPlan
+    public function syncPayPalPlanId(SubscriptionPlan $plan, string $paypalPlanId): SubscriptionPlan
     {
-        $plan->update(['paymongo_plan_id' => $paymongoPlanId]);
+        $plan->update(['paypal_plan_id' => $paypalPlanId]);
 
         return $plan->fresh();
     }

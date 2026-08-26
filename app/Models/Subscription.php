@@ -26,7 +26,7 @@ class Subscription extends Model
         'status',
         'cancel_at_period_end',
         'expiration_reminder_sent_at',
-        'paymongo_subscription_id',
+        'paypal_subscription_id',
     ];
 
     protected $casts = [

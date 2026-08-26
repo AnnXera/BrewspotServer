@@ -2,18 +2,6 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
-    */
-
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],
@@ -35,13 +23,13 @@ return [
         ],
     ],
 
-    'paymongo' => [
-        'public_key'     => env('PAYMONGO_PUBLIC_KEY'),
-        'secret_key'     => env('PAYMONGO_SECRET_KEY'),
-        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
-        'success_url'    => env('PAYMONGO_SUCCESS_URL', 'https://example.com/subscription/success'),
-        'cancel_url'     => env('PAYMONGO_CANCEL_URL', 'https://example.com/subscription/cancel'),
-        'ca_bundle'      => env('PAYMONGO_CA_BUNDLE'),
+    'paypal' => [
+        'client_id'     => env('PAYPAL_CLIENT_ID'),
+        'client_secret' => env('PAYPAL_CLIENT_SECRET'),
+        'mode'          => env('PAYPAL_MODE', 'sandbox'), // 'sandbox' or 'live'
+        'webhook_id'    => env('PAYPAL_WEBHOOK_ID'),
+        'success_url'   => env('PAYPAL_SUCCESS_URL', 'https://example.com/subscription/success'),
+        'cancel_url'    => env('PAYPAL_CANCEL_URL', 'https://example.com/subscription/cancel'),
     ],
 
 ];

@@ -26,7 +26,7 @@ class SubscriptionPlan extends Model
         'description',
         'duration_days',
         'is_active',
-        'paymongo_plan_id',
+        'paypal_plan_id',
     ];
 
     protected $casts = [

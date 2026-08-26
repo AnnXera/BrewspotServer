@@ -84,15 +84,15 @@ class SubscriptionCheckoutService
 
         $subscription = $this->subscriptionRepo->createPending($owner->user_id, $plan);
 
-        $amount = (int) round($plan->price * 100); // PayMongo expects the smallest currency unit (centavos)
+        $amount = (int) round($plan->price * 100); // stored in centavos, same convention as before
 
         try {
             $checkout = $this->paymentAdapter->createCheckoutSession([
                 'amount'      => $amount,
                 'plan_name'   => $plan->sub_name,
                 'description' => "Subscription - {$plan->sub_name}",
-                'success_url' => config('services.paymongo.success_url'),
-                'cancel_url'  => config('services.paymongo.cancel_url'),
+                'success_url' => config('services.paypal.success_url'),
+                'cancel_url'  => config('services.paypal.cancel_url'),
                 'metadata'    => [
                     'subscription_uuid' => $subscription->uuid,
                     'owner_uuid'        => $owner->uuid,
@@ -102,7 +102,7 @@ class SubscriptionCheckoutService
         } catch (\Throwable $e) {
             $this->subscriptionRepo->markFailed($subscription);
 
-            Log::channel('owner')->error('Checkout session creation failed.', [
+            Log::channel('owner')->error('Checkout order creation failed.', [
                 'owner_uuid'        => $owner->uuid,
                 'subscription_uuid' => $subscription->uuid,
                 'error'             => $e->getMessage(),
@@ -111,117 +111,118 @@ class SubscriptionCheckoutService
             return ['success' => false, 'message' => 'Unable to start checkout. Please try again.'];
         }
 
-        $trackingId = $checkout['payment_intent_id'] ?? $checkout['id'];
-
+        // PayPal Order id is our tracking id — matched against in the webhook.
         $this->paymentRepo->create([
             'user_id'                => $owner->user_id,
             'payable_type'           => Subscription::class,
             'payable_id'             => $subscription->sub_id,
             'amount'                 => $amount,
-            'payment_method_type'    => 'checkout_session',
-            'gateway_transaction_id' => $trackingId,
+            'payment_method_type'    => 'paypal_order',
+            'gateway_transaction_id' => $checkout['id'],
             'status'                 => 'pending',
         ]);
 
-        Log::channel('owner')->info('Checkout session created.', [
-            'owner_uuid'          => $owner->uuid,
-            'subscription_uuid'   => $subscription->uuid,
-            'plan_uuid'           => $plan->uuid,
-            'checkout_session_id' => $checkout['id'],
-            'payment_intent_id'   => $checkout['payment_intent_id'] ?? null,
+        Log::channel('owner')->info('PayPal checkout order created.', [
+            'owner_uuid'        => $owner->uuid,
+            'subscription_uuid' => $subscription->uuid,
+            'plan_uuid'         => $plan->uuid,
+            'order_id'          => $checkout['id'],
         ]);
 
         return [
             'success'           => true,
-            'message'           => 'Checkout session created. Open the link below to complete payment.',
+            'message'           => 'Checkout order created. Open the link below to approve payment.',
             'checkout_url'      => $checkout['checkout_url'],
             'subscription_uuid' => $subscription->uuid,
         ];
     }
 
-    public function handleWebhook(string $rawPayload, ?string $signatureHeader): void
+    /**
+     * Called by PaymentWebhookController after signature verification.
+     * $resource is the PayPal webhook 'resource' object.
+     */
+    public function handleWebhook(string $eventType, array $resource): void
     {
-        $webhookSecret = config('services.paymongo.webhook_secret');
-
-        if (! $signatureHeader || ! $this->paymentAdapter->verifyWebhookSignature($rawPayload, $signatureHeader, $webhookSecret)) {
-            Log::channel('admin')->warning('PayMongo webhook rejected — invalid or missing signature.');
-
-            return;
-        }
-
-        $payload   = json_decode($rawPayload, true);
-        $eventType = $payload['data']['attributes']['type'] ?? null;
-        $eventData = $payload['data']['attributes']['data'] ?? null;
-
-        Log::channel('admin')->info('PayMongo webhook received.', ['event_type' => $eventType]);
-
         match ($eventType) {
-            'payment.paid'   => $this->handlePaymentPaid($eventData),
-            'payment.failed' => $this->handlePaymentFailed($eventData),
-            default          => null,
+            // Order approved by the buyer — capture the funds now.
+            'CHECKOUT.ORDER.APPROVED' => $this->handleOrderApproved($resource),
+            'PAYMENT.CAPTURE.DENIED'  => $this->handleCaptureDenied($resource),
+            default                    => null,
         };
     }
 
-    private function handlePaymentPaid(?array $eventData): void
+    private function handleOrderApproved(array $resource): void
     {
-        if (! $eventData) {
-            return;
-        }
+        $orderId = $resource['id'] ?? null;
 
-        $paymentId       = $eventData['id'] ?? null;
-        $paymentIntentId = $eventData['attributes']['payment_intent_id'] ?? null;
-        $paymentMethod   = $eventData['attributes']['source']['type'] ?? null;
-
-        if (! $paymentIntentId) {
-            Log::channel('admin')->warning('PayMongo payment.paid — no payment_intent_id present.', [
-                'payment_id' => $paymentId,
-            ]);
+        if (! $orderId) {
+            Log::channel('admin')->warning('PayPal order.approved — no order id present in resource.');
 
             return;
         }
 
-        $payment = $this->paymentRepo->findByGatewayTransactionId($paymentIntentId);
+        $payment = $this->paymentRepo->findByGatewayTransactionId($orderId);
 
         if (! $payment) {
-            Log::channel('admin')->warning('PayMongo payment.paid — no matching payment record found.', [
-                'payment_id'        => $paymentId,
-                'payment_intent_id' => $paymentIntentId,
+            Log::channel('admin')->warning('PayPal order.approved — no matching payment record found.', [
+                'order_id' => $orderId,
             ]);
 
             return;
         }
 
         if ($payment->status === 'succeeded') {
-            Log::channel('admin')->info('PayMongo payment.paid — already processed, ignoring duplicate.', [
-                'payment_intent_id' => $paymentIntentId,
+            Log::channel('admin')->info('PayPal order.approved — already processed, ignoring duplicate.', [
+                'order_id' => $orderId,
             ]);
 
             return;
         }
 
-        $this->paymentRepo->markSucceeded($payment, $paymentMethod);
+        try {
+            $capture = app(\App\Contracts\PaymentAdapterInterface::class)->captureOrder($orderId);
+        } catch (\Throwable $e) {
+            Log::channel('admin')->error('PayPal order capture failed.', [
+                'order_id' => $orderId,
+                'error'    => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $captureStatus = $capture['purchase_units'][0]['payments']['captures'][0]['status'] ?? null;
+
+        if ($captureStatus !== 'COMPLETED') {
+            Log::channel('admin')->warning('PayPal capture did not complete.', [
+                'order_id' => $orderId,
+                'status'   => $captureStatus,
+            ]);
+
+            $this->paymentRepo->markFailed($payment, 'paypal');
+
+            return;
+        }
+
+        $this->paymentRepo->markSucceeded($payment, 'paypal');
 
         $subscription = $payment->payable;
 
         if (! $subscription instanceof Subscription) {
-            Log::channel('admin')->warning('PayMongo payment.paid — payable is not a Subscription.', [
-                'payment_intent_id' => $paymentIntentId,
+            Log::channel('admin')->warning('PayPal order.approved — payable is not a Subscription.', [
+                'order_id' => $orderId,
             ]);
 
             return;
         }
 
         $subscription = $this->subscriptionRepo->activate($subscription);
-
-        // Immediate switch: cancel any other plan this owner had active, no proration.
         $this->subscriptionRepo->cancelOtherActiveSubscriptions($subscription->user_id, $subscription->sub_id);
 
         $owner = $subscription->user;
 
-        Log::channel('admin')->info('Subscription activated via PayMongo payment.paid webhook.', [
+        Log::channel('admin')->info('Subscription activated via PayPal order capture.', [
             'subscription_uuid' => $subscription->uuid,
-            'payment_intent_id' => $paymentIntentId,
-            'payment_method'    => $paymentMethod,
+            'order_id'          => $orderId,
         ]);
 
         if ($owner) {
@@ -240,44 +241,31 @@ class SubscriptionCheckoutService
         }
     }
 
-    private function handlePaymentFailed(?array $eventData): void
+    private function handleCaptureDenied(array $resource): void
     {
-        if (! $eventData) {
-            return;
-        }
+        $orderId = $resource['supplementary_data']['related_ids']['order_id'] ?? null;
 
-        $paymentId       = $eventData['id'] ?? null;
-        $paymentIntentId = $eventData['attributes']['payment_intent_id'] ?? null;
-        $paymentMethod   = $eventData['attributes']['source']['type'] ?? null;
-
-        if (! $paymentIntentId) {
-            Log::channel('admin')->warning('PayMongo payment.failed — no payment_intent_id present.', [
-                'payment_id' => $paymentId,
-            ]);
+        if (! $orderId) {
+            Log::channel('admin')->warning('PayPal capture.denied — no order_id present.');
 
             return;
         }
 
-        $payment = $this->paymentRepo->findByGatewayTransactionId($paymentIntentId);
+        $payment = $this->paymentRepo->findByGatewayTransactionId($orderId);
 
         if (! $payment) {
-            Log::channel('admin')->warning('PayMongo payment.failed — no matching payment record found.', [
-                'payment_id'        => $paymentId,
-                'payment_intent_id' => $paymentIntentId,
+            Log::channel('admin')->warning('PayPal capture.denied — no matching payment record found.', [
+                'order_id' => $orderId,
             ]);
 
             return;
         }
 
         if ($payment->status === 'failed') {
-            Log::channel('admin')->info('PayMongo payment.failed — already processed, ignoring duplicate.', [
-                'payment_intent_id' => $paymentIntentId,
-            ]);
-
             return;
         }
 
-        $this->paymentRepo->markFailed($payment, $paymentMethod);
+        $this->paymentRepo->markFailed($payment, 'paypal');
 
         $subscription = $payment->payable;
 
@@ -288,10 +276,9 @@ class SubscriptionCheckoutService
         $subscription = $this->subscriptionRepo->markFailed($subscription);
         $owner        = $subscription->user;
 
-        Log::channel('admin')->info('Subscription payment failed via PayMongo webhook.', [
+        Log::channel('admin')->info('Subscription payment denied via PayPal webhook.', [
             'subscription_uuid' => $subscription->uuid,
-            'payment_intent_id' => $paymentIntentId,
-            'payment_method'    => $paymentMethod,
+            'order_id'          => $orderId,
         ]);
 
         if ($owner) {
@@ -300,11 +287,6 @@ class SubscriptionCheckoutService
                 planName: $subscription->plan->sub_name,
                 status: 'failed',
             ));
-
-            Log::channel('owner')->info('Subscription payment failure email sent.', [
-                'owner_uuid'        => $owner->uuid,
-                'subscription_uuid' => $subscription->uuid,
-            ]);
         }
     }
 }

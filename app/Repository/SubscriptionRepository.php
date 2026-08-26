@@ -146,36 +146,36 @@ class SubscriptionRepository
     }
 
     /**
-     * PayMongo-native: create a pending subscription tied to a real PayMongo subscription ID.
+     * PayPal-native: create a pending subscription tied to a real PayPal subscription ID.
      */
-    public function createPendingWithPayMongo(int $userId, SubscriptionPlan $plan, string $paymongoSubscriptionId): Subscription
+    public function createPendingWithPayPal(int $userId, SubscriptionPlan $plan, string $paypalSubscriptionId): Subscription
     {
         return Subscription::create([
-            'user_id'                  => $userId,
-            'sub_plan_id'               => $plan->sub_plan_id,
-            'start_date'                => null,
-            'end_date'                  => null,
-            'status'                    => 'pending',
-            'cancel_at_period_end'      => false,
-            'paymongo_subscription_id'  => $paymongoSubscriptionId,
+            'user_id'                 => $userId,
+            'sub_plan_id'              => $plan->sub_plan_id,
+            'start_date'               => null,
+            'end_date'                 => null,
+            'status'                   => 'pending',
+            'cancel_at_period_end'     => false,
+            'paypal_subscription_id'   => $paypalSubscriptionId,
         ]);
     }
 
-    public function findByPayMongoSubscriptionId(string $paymongoSubscriptionId): ?Subscription
+    public function findByPayPalSubscriptionId(string $paypalSubscriptionId): ?Subscription
     {
-        return Subscription::where('paymongo_subscription_id', $paymongoSubscriptionId)
+        return Subscription::where('paypal_subscription_id', $paypalSubscriptionId)
             ->with(['plan', 'user'])
             ->first();
     }
 
     /**
-     * First invoice paid — subscription is now genuinely active.
+     * First billing cycle activated — subscription is now genuinely active.
      */
-    public function activateFromPayMongo(Subscription $subscription, ?Carbon $nextBillingSchedule): Subscription
+    public function activateFromPayPal(Subscription $subscription, ?Carbon $nextBillingTime): Subscription
     {
         $subscription->update([
             'start_date' => $subscription->start_date ?? Carbon::now(),
-            'end_date'   => $nextBillingSchedule,
+            'end_date'   => $nextBillingTime,
             'status'     => 'active',
         ]);
 
@@ -189,7 +189,7 @@ class SubscriptionRepository
         return $subscription->fresh(['plan', 'user']);
     }
 
-    public function markCancelledByPayMongo(Subscription $subscription): Subscription
+    public function markCancelledByPayPal(Subscription $subscription): Subscription
     {
         $subscription->update(['status' => 'cancelled']);
 
