@@ -21,13 +21,29 @@ class PasswordSetupService
         $account = $this->repo->findAccountAwaitingSetupByUuid($uuid);
 
         if (! $account) {
+            $existing = $this->repo->findAccountByUuid($uuid);
+
+            // Link is for a real account, just not awaiting setup anymore —
+            // most commonly because the password was already set.
+            if ($existing && $existing->status === 'active') {
+                Log::channel('auth')->info('Password setup blocked — already completed.', [
+                    'uuid' => $uuid,
+                ]);
+
+                return [
+                    'success'        => false,
+                    'already_active' => true,
+                    'message'        => 'Your password has already been set up. Please sign in instead.',
+                ];
+            }
+
             Log::channel('auth')->warning('Password setup blocked — account not found or not awaiting setup.', [
                 'uuid' => $uuid,
             ]);
 
             return [
                 'success' => false,
-                'message' => 'This link is invalid or has already been used.',
+                'message' => 'This link is invalid or has expired.',
             ];
         }
 

@@ -30,6 +30,18 @@ class PasswordSetupRepository
             ->first();
     }
 
+    /**
+     * Finds the account by uuid regardless of status — used only to figure out
+     * *why* setup isn't available (already active vs. genuinely invalid link),
+     * so we can show a more specific message than findAccountAwaitingSetupByUuid().
+     */
+    public function findAccountByUuid(string $uuid): ?User
+    {
+        return User::where('uuid', $uuid)
+            ->with('role')
+            ->first();
+    }
+
     public function activateOwner(User $owner, string $hashedPassword): User
     {
         $owner->update([
