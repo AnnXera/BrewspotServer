@@ -16,6 +16,43 @@ class PasswordSetupService
         private readonly SubscriptionRepository $subscriptionRepo
     ) {}
 
+    public function checkSetupStatus(string $uuid): array
+    {
+        $account = $this->repo->findAccountAwaitingSetupByUuid($uuid);
+
+        if ($account) {
+            return [
+                'success' => true,
+                'status'  => 'awaiting_setup',
+                'role'    => $account->role?->role_name,
+                'email'   => $account->email,
+            ];
+        }
+
+        $existing = $this->repo->findAccountByUuid($uuid);
+
+        if ($existing && $existing->status === 'active') {
+            Log::channel('auth')->info('Password setup link check — already active.', [
+                'uuid' => $uuid,
+            ]);
+
+            return [
+                'success'        => false,
+                'already_active' => true,
+                'message'        => 'Your password has already been set up. Please sign in instead.',
+            ];
+        }
+
+        Log::channel('auth')->warning('Password setup link check — invalid or not awaiting setup.', [
+            'uuid' => $uuid,
+        ]);
+
+        return [
+            'success' => false,
+            'message' => 'This link is invalid or has expired.',
+        ];
+    }
+
     public function setupPassword(string $uuid, string $plainPassword): array
     {
         $account = $this->repo->findAccountAwaitingSetupByUuid($uuid);

@@ -26,6 +26,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/verify-code',       [VerificationCodeController::class, 'verifyCode']); // registration email verification code
     Route::post('/register/{user}',   [RegistrationController::class, 'register']);
 
+    Route::get('/setup-password/{uuid}',  [PasswordSetupController::class, 'show']); // check password setup link status
     Route::post('/setup-password/{uuid}', [PasswordSetupController::class, 'setup']); // set password for cafe owner
 
     Route::post('/login',              [AuthController::class, 'login']); // login 2FA code

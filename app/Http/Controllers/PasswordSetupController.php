@@ -13,6 +13,21 @@ class PasswordSetupController extends Controller
     ) {}
 
     /**
+     * GET /api/auth/setup-password/{uuid}
+     */
+    public function show(string $uuid): JsonResponse
+    {
+        $result = $this->service->checkSetupStatus($uuid);
+
+        $status = 200;
+        if (! $result['success'] && empty($result['already_active'])) {
+            $status = 404;
+        }
+
+        return response()->json($result, $status);
+    }
+
+    /**
      * POST /api/auth/setup-password/{uuid}
      */
     public function setup(SetupPasswordRequest $request, string $uuid): JsonResponse
