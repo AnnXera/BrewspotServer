@@ -82,6 +82,11 @@ class User extends Authenticatable
         return $this->hasMany(UserDocument::class, 'user_id', 'user_id');
     }
 
+    public function verificationCodes(): HasMany
+    {
+        return $this->hasMany(VerificationCode::class, 'user_id', 'user_id');
+    }
+
     public function staffAssignments(): HasMany
     {
         return $this->hasMany(CafeStaff::class, 'user_id', 'user_id');
