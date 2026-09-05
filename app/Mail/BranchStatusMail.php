@@ -23,8 +23,8 @@ class BranchStatusMail extends Mailable
     {
         return new Envelope(
             subject: $this->status === 'approved'
-                ? 'BrewSpot — Branch Approved!'
-                : 'BrewSpot — Branch Application Status',
+                ? 'BrewSpot — Branch Application Approved'
+                : 'BrewSpot — Branch Application Status Update',
         );
     }
 
@@ -36,10 +36,10 @@ class BranchStatusMail extends Mailable
                 'firstname'   => $this->firstname,
                 'branchName'  => $this->branchName,
                 'status'      => $this->status,
-                'heading'     => $this->status === 'approved' ? 'Your Branch Has Been Approved! 🎉' : 'Branch Application Update',
+                'heading'     => $this->status === 'approved' ? 'Branch Application Approved' : 'Branch Application Status Update',
                 'bodyMessage' => $this->status === 'approved'
-                    ? "Great news! Your branch \"{$this->branchName}\" has been approved and is now active."
-                    : "After careful review, your branch \"{$this->branchName}\" application has not been approved at this time.",
+                    ? "We are pleased to inform you that your branch \"{$this->branchName}\" has been approved and is now active on the BrewSpot platform."
+                    : "Following a comprehensive review of your submission, we regret to inform you that the application for branch \"{$this->branchName}\" has not been approved at this time.",
                 'reason'      => $this->status === 'rejected' ? $this->reason : null,
             ],
         );

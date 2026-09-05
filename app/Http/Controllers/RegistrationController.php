@@ -31,4 +31,14 @@ class RegistrationController extends Controller
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
+
+    /**
+     * GET /api/auth/application/{uuid}
+     */
+    public function showApplication(string $uuid): JsonResponse
+    {
+        $result = $this->service->getApplicationDetails($uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
 }

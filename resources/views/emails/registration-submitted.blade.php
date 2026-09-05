@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Subscription Expiration Notice</title>
+    <title>Registration Application Acknowledgment</title>
 </head>
 <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f7f5f0; -webkit-text-size-adjust: none; text-size-adjust: none;">
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f7f5f0; padding: 40px 16px;">
@@ -18,7 +18,7 @@
                                 BREWSPOT
                             </div>
                             <div style="color: #d1bba9; font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 4px;">
-                                Subscription &amp; Billing Notice
+                                Registration & Compliance Notice
                             </div>
                         </td>
                     </tr>
@@ -27,36 +27,36 @@
                     <tr>
                         <td style="padding: 36px 32px; color: #3d281d;">
                             <h2 style="margin-top: 0; margin-bottom: 18px; color: #23150d; font-size: 19px; font-weight: 600; letter-spacing: -0.2px;">
-                                Notice of Upcoming Subscription Expiration
+                                Business Registration Acknowledgment
                             </h2>
                             <p style="font-size: 15px; line-height: 1.6; margin-top: 0; margin-bottom: 16px; color: #4a382d;">
-                                Dear {{ $ownerName }},
+                                Dear {{ $firstname }},
                             </p>
                             <p style="font-size: 15px; line-height: 1.6; margin-bottom: 24px; color: #4a382d;">
-                                This notice is to inform you that your active BrewSpot subscription plan is scheduled to expire in <strong>{{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }}</strong>. To ensure uninterrupted access to your business operations and management tools, please renew your subscription prior to the scheduled expiration date.
+                                Thank you for submitting your business registration application to BrewSpot. We hereby confirm receipt of your application and all accompanying documentation. Our verification and compliance team has initiated the formal review process.
                             </p>
 
-                            <!-- Subscription Details Card -->
+                            <!-- Submission Summary Card -->
                             <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #faf7f2; border: 1px solid #e8e0d5; border-radius: 6px; margin-bottom: 24px;">
                                 <tr>
                                     <td style="padding: 18px 20px;">
                                         <p style="margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: #786050; text-transform: uppercase; letter-spacing: 0.5px;">
-                                            Current Subscription Details
+                                            Application Details
                                         </p>
                                         <table border="0" cellpadding="4" cellspacing="0" width="100%" style="font-size: 14px;">
                                             <tr>
-                                                <td width="35%" style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Plan Tier:</td>
-                                                <td style="color: #26160e; font-weight: 600;">{{ $planName }}</td>
+                                                <td width="35%" style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Café Name:</td>
+                                                <td style="color: #26160e; font-weight: 600;">{{ $cafeName }}</td>
                                             </tr>
                                             <tr>
-                                                <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Expiration Date:</td>
-                                                <td style="color: #26160e; font-weight: 600;">{{ $endDate }}</td>
+                                                <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Primary Branch:</td>
+                                                <td style="color: #26160e; font-weight: 600;">{{ $branchName }}</td>
                                             </tr>
                                             <tr>
-                                                <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Time Remaining:</td>
+                                                <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Review Status:</td>
                                                 <td>
                                                     <span style="display: inline-block; background-color: #fff8eb; color: #8f5b12; border: 1px solid #edd5a6; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 12px;">
-                                                        {{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }} remaining
+                                                        Pending Administrative Review
                                                     </span>
                                                 </td>
                                             </tr>
@@ -65,23 +65,41 @@
                                 </tr>
                             </table>
 
-                            <!-- Important Notice Block -->
-                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #faf8f5; border-left: 3px solid #9c7356; border-radius: 4px; margin-bottom: 24px;">
+                            <p style="font-size: 15px; line-height: 1.6; color: #4a382d; margin-bottom: 20px;">
+                                You may access the submitted records and monitor the real-time status of your verification at any time via the secure portal:
+                            </p>
+
+                            <!-- CTA Button -->
+                            <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 28px auto;">
                                 <tr>
-                                    <td style="padding: 14px 18px; font-size: 13px; line-height: 1.5; color: #6e5849;">
-                                        <strong>Notice:</strong> Should the subscription expire without renewal, access to certain management services and reporting features will be temporarily restricted until renewed.
+                                    <td align="center" style="border-radius: 5px; background-color: #2b1810;">
+                                        <a href="{{ $applicationUrl }}" target="_blank" style="display: inline-block; padding: 13px 30px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #ffffff; text-decoration: none; border-radius: 5px;">
+                                            Review Application Status
+                                        </a>
                                     </td>
                                 </tr>
                             </table>
 
-                            <p style="font-size: 13px; line-height: 1.6; color: #8c7668; margin-top: 20px; margin-bottom: 0;">
-                                For renewal instructions or invoicing assistance, please sign in to your merchant dashboard or reach out to our billing support department.
+                            <p style="font-size: 12px; line-height: 1.5; color: #8c7668; text-align: center; margin-bottom: 28px;">
+                                Direct access URL:<br>
+                                <a href="{{ $applicationUrl }}" style="color: #5c483c; font-family: monospace; word-break: break-all;">{{ $applicationUrl }}</a>
                             </p>
+
+                            <!-- Verification Protocol -->
+                            <div style="border-top: 1px solid #eee8df; padding-top: 20px; margin-top: 20px;">
+                                <h3 style="font-size: 14px; font-weight: 600; color: #23150d; margin-top: 0; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                    Next Steps in Review Process
+                                </h3>
+                                <ol style="font-size: 13px; line-height: 1.6; color: #5c483c; padding-left: 20px; margin: 0;">
+                                    <li style="margin-bottom: 6px;"><strong>Document Verification:</strong> Our compliance team verifies submitted business permits and identification documents within 1–3 business days.</li>
+                                    <li><strong>Account Credentialing:</strong> Upon successful approval, you will receive an official notification to configure your administrator credentials and initialize your merchant portal.</li>
+                                </ol>
+                            </div>
 
                             <!-- Sign-off -->
                             <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #eee8df; font-size: 14px; line-height: 1.6; color: #5c483c;">
                                 Sincerely,<br>
-                                <strong style="color: #2c1a0e;">BrewSpot Billing Department</strong><br>
+                                <strong style="color: #2c1a0e;">BrewSpot Verification &amp; Compliance Team</strong><br>
                                 <span style="font-size: 12px; color: #8c7668;">BrewSpot Platform</span>
                             </div>
                         </td>

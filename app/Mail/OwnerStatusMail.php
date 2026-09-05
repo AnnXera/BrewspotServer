@@ -46,11 +46,11 @@ class OwnerStatusMail extends Mailable
     private function subjectForStatus(): string
     {
         return match ($this->status) {
-            'approved'  => 'BrewSpot — Application Approved!',
-            'rejected'  => 'BrewSpot — Application Status',
-            'suspended' => 'BrewSpot — Account Suspended by Admin',
-            'active'    => 'BrewSpot — Account Reactivated',
-            'inactive'  => 'BrewSpot — Account Deactivated',
+            'approved'  => 'BrewSpot — Registration Application Approved',
+            'rejected'  => 'BrewSpot — Registration Application Status',
+            'suspended' => 'BrewSpot — Notice of Account Suspension',
+            'active'    => 'BrewSpot — Notice of Account Reactivation',
+            'inactive'  => 'BrewSpot — Notice of Account Deactivation',
             default     => 'BrewSpot — Account Status Update',
         };
     }
@@ -58,11 +58,11 @@ class OwnerStatusMail extends Mailable
     private function headingForStatus(): string
     {
         return match ($this->status) {
-            'approved'  => 'Your Application Has Been Approved! 🎉',
-            'rejected'  => 'Application Update',
-            'suspended' => 'Account Suspended',
-            'active'    => 'Account Reactivated 🎉',
-            'inactive'  => 'Account Deactivated',
+            'approved'  => 'Registration Application Approved',
+            'rejected'  => 'Registration Application Status',
+            'suspended' => 'Notice of Account Suspension',
+            'active'    => 'Notice of Account Reactivation',
+            'inactive'  => 'Notice of Account Deactivation',
             default     => 'Account Status Update',
         };
     }
@@ -70,12 +70,12 @@ class OwnerStatusMail extends Mailable
     private function messageForStatus(): string
     {
         return match ($this->status) {
-            'approved'  => 'Congratulations! Your cafe application has been approved. Click the button below to set up your password and start your free trial.',
-            'rejected'  => 'After careful review, we regret to inform you that your cafe application has not been approved at this time. If you believe this was a mistake, please contact our support team.',
-            'suspended' => 'Your account has been suspended by our admin team, typically due to a policy or compliance concern. If you believe this is an error, please reach out to our support team for clarification.',
-            'active'    => 'Good news! Your account has been reactivated and you now have full access to your BrewSpot dashboard.',
-            'inactive'  => 'Your account has been deactivated as requested. You can reactivate it anytime by logging back in or contacting our support team.',
-            default     => 'Your account status has been updated. Please log in to view more details.',
+            'approved'  => 'We are pleased to inform you that your café registration application has been reviewed and approved. Please proceed to establish your account password and initialize your management portal using the link below.',
+            'rejected'  => 'Thank you for your interest in the BrewSpot platform. Following a formal review of your application, we regret to inform you that we are unable to approve your registration at this time.',
+            'suspended' => 'Please be advised that your BrewSpot merchant account has been suspended by system administration pending review. If you believe this action was taken in error or require further clarification, please contact our support team.',
+            'active'    => 'We are pleased to notify you that your BrewSpot merchant account has been reactivated. Full access to the administration portal and associated services has been restored.',
+            'inactive'  => 'This notice confirms that your BrewSpot account has been deactivated in accordance with administrative records or your formal request. To restore your account services in the future, please contact our support desk.',
+            default     => 'This is a notification that your account status has been updated. Please sign in to your dashboard to review your account details.',
         };
     }
 }

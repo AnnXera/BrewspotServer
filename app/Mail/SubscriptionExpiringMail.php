@@ -4,6 +4,8 @@ namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class SubscriptionExpiringMail extends Mailable
@@ -17,9 +19,23 @@ class SubscriptionExpiringMail extends Mailable
         public readonly int $daysRemaining,
     ) {}
 
-    public function build()
+    public function envelope(): Envelope
     {
-        return $this->subject('Your BrewSpot Subscription is Expiring Soon')
-            ->view('emails.subscription-expiring');
+        return new Envelope(
+            subject: 'BrewSpot — Notice of Upcoming Subscription Expiration',
+        );
+    }
+
+    public function content(): Content
+    {
+        return new Content(
+            view: 'emails.subscription-expiring',
+            with: [
+                'ownerName'     => $this->ownerName,
+                'planName'      => $this->planName,
+                'endDate'       => $this->endDate,
+                'daysRemaining' => $this->daysRemaining,
+            ],
+        );
     }
 }

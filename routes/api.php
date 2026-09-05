@@ -25,6 +25,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/resend-code',        [VerificationCodeController::class, 'resendCode']); // resend registration email verification code
     Route::post('/verify-code',       [VerificationCodeController::class, 'verifyCode']); // registration email verification code
     Route::post('/register/{user}',   [RegistrationController::class, 'register']);
+    Route::get('/application/{uuid}',  [RegistrationController::class, 'showApplication']); // view submitted application details
 
     Route::get('/setup-password/{uuid}',  [PasswordSetupController::class, 'show']); // check password setup link status
     Route::post('/setup-password/{uuid}', [PasswordSetupController::class, 'setup']); // set password for cafe owner

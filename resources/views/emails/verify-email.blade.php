@@ -2,48 +2,76 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Verify Your Email</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
 </head>
-<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f0eb; -webkit-text-size-adjust: none; text-size-adjust: none;">
-    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f5f0eb; padding: 40px 20px;">
+<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f7f5f0; -webkit-text-size-adjust: none; text-size-adjust: none;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f7f5f0; padding: 40px 16px;">
         <tr>
             <td align="center">
-                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #fffdf9; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 6px; overflow: hidden; border: 1px solid #e7e0d8; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
                     
+                    <!-- Header -->
                     <tr>
-                        <td style="background-color: #3b1f0e; padding: 30px; text-align: center;">
-                            <h1 style="color: #f5e6d3; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 2px;">☕ BrewSpot</h1>
+                        <td style="background-color: #2b1810; padding: 28px 30px; text-align: center;">
+                            <div style="color: #f5ede4; font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">
+                                BREWSPOT
+                            </div>
+                            <div style="color: #d1bba9; font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 4px;">
+                                Authentication & Security Notice
+                            </div>
                         </td>
                     </tr>
 
+                    <!-- Body -->
                     <tr>
-                        <td style="padding: 40px 30px; color: #4a2e1a;">
-                            <h2 style="margin-top: 0; color: #2c1a0e; font-size: 20px;">Confirm Your Email Registration</h2>
-                            <p style="font-size: 16px; line-height: 1.6; margin-bottom: 25px; color: #5c3d2e;">
-                                Thank you for starting your account setup with us! To proceed with building your system profile, please verify your email identity using the 6-digit authentication token below:
+                        <td style="padding: 36px 32px; color: #3d281d;">
+                            <h2 style="margin-top: 0; margin-bottom: 18px; color: #23150d; font-size: 19px; font-weight: 600; letter-spacing: -0.2px;">
+                                Email Verification Request
+                            </h2>
+                            <p style="font-size: 15px; line-height: 1.6; margin-top: 0; margin-bottom: 16px; color: #4a382d;">
+                                Dear User,
+                            </p>
+                            <p style="font-size: 15px; line-height: 1.6; margin-bottom: 24px; color: #4a382d;">
+                                Thank you for initiating your registration with BrewSpot. To complete your identity verification and proceed with account creation, please enter the one-time authentication code provided below:
                             </p>
 
-                            {{-- Code Block --}}
-                            <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 30px auto;">
+                            <!-- Code Block -->
+                            <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 28px auto; width: 100%; max-width: 320px;">
                                 <tr>
-                                    <td align="center" style="background-color: #fdf3e7; border-radius: 6px; padding: 15px 40px; letter-spacing: 8px; font-family: monospace; font-size: 32px; font-weight: bold; color: #3b1f0e; border: 1px solid #d4a574;">
+                                    <td align="center" style="background-color: #faf7f2; border-radius: 6px; padding: 18px 24px; letter-spacing: 8px; font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 700; color: #2b1810; border: 1px solid #dccdbf;">
                                         {{ $code }}
                                     </td>
                                 </tr>
                             </table>
 
-                            <p style="font-size: 14px; line-height: 1.5; color: #7a5c44; margin-top: 25px;">
-                                ⚠️ This code is highly time-sensitive and remains functional for exactly <strong>15 minutes</strong> from generation before automatically expiring.
+                            <!-- Important Notice Block -->
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #faf8f5; border-left: 3px solid #9c7356; border-radius: 4px; margin-top: 24px;">
+                                <tr>
+                                    <td style="padding: 14px 18px; font-size: 13px; line-height: 1.5; color: #6e5849;">
+                                        <strong>Security Notice:</strong> This verification code is time-sensitive and will expire in <strong>15 minutes</strong>. For your security, never share this code with any third party.
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="font-size: 13px; line-height: 1.5; color: #8c7668; margin-top: 20px; margin-bottom: 0;">
+                                If you did not request this verification, please disregard this email. No changes will be made to your account.
                             </p>
-                            <p style="font-size: 14px; line-height: 1.5; color: #a0846c; margin-bottom: 0;">
-                                If you did not execute this request, you may safely disregard this notice.
-                            </p>
+
+                            <!-- Sign-off -->
+                            <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #eee8df; font-size: 14px; line-height: 1.6; color: #5c483c;">
+                                Sincerely,<br>
+                                <strong style="color: #2c1a0e;">BrewSpot Security Team</strong><br>
+                                <span style="font-size: 12px; color: #8c7668;">BrewSpot Platform</span>
+                            </div>
                         </td>
                     </tr>
 
+                    <!-- Footer -->
                     <tr>
-                        <td style="background-color: #f5ede3; padding: 20px 30px; text-align: center; font-size: 12px; color: #a0846c; border-top: 1px solid #e8d5c0;">
-                            &copy; {{ date('Y') }} BrewSpot Platform. All rights reserved.
+                        <td style="background-color: #f7f3ed; padding: 22px 30px; text-align: center; font-size: 12px; line-height: 1.6; color: #8c7668; border-top: 1px solid #e7ded3;">
+                            <p style="margin: 0 0 4px 0;">This is an automated system notification. Please do not reply directly to this email.</p>
+                            <p style="margin: 0; color: #a39083;">&copy; {{ date('Y') }} BrewSpot Platform. All rights reserved.</p>
                         </td>
                     </tr>
 

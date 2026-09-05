@@ -21,7 +21,7 @@ class StaffAccountCreatedMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "BrewSpot — You've Been Added as {$this->roleName}",
+            subject: "BrewSpot — Account Invitation: {$this->roleName}",
         );
     }
 

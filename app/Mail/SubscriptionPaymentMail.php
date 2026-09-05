@@ -4,6 +4,8 @@ namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 class SubscriptionPaymentMail extends Mailable
@@ -18,12 +20,28 @@ class SubscriptionPaymentMail extends Mailable
         public readonly ?string $endDate = null,
     ) {}
 
-    public function build()
+    public function envelope(): Envelope
     {
         $subject = $this->status === 'active'
-            ? 'Your BrewSpot Subscription is Active'
-            : 'Your BrewSpot Subscription Payment Failed';
+            ? 'BrewSpot — Subscription Payment Confirmation'
+            : 'BrewSpot — Notice of Unsuccessful Subscription Payment';
 
-        return $this->subject($subject)->view('emails.subscription-payment');
+        return new Envelope(
+            subject: $subject,
+        );
+    }
+
+    public function content(): Content
+    {
+        return new Content(
+            view: 'emails.subscription-payment',
+            with: [
+                'ownerName' => $this->ownerName,
+                'planName'  => $this->planName,
+                'status'    => $this->status,
+                'amount'    => $this->amount,
+                'endDate'   => $this->endDate,
+            ],
+        );
     }
 }
