@@ -22,6 +22,7 @@ class SubscriptionPlan extends Model
         'uuid',
         'sub_name',
         'price',
+        'yearly_price',
         'max_branches',
         'features',
         'description',
@@ -31,9 +32,10 @@ class SubscriptionPlan extends Model
     ];
 
     protected $casts = [
-        'price'     => 'decimal:2',
-        'is_active' => 'boolean',
-        'features'  => 'array',
+        'price'        => 'decimal:2',
+        'yearly_price' => 'decimal:2',
+        'is_active'    => 'boolean',
+        'features'     => 'array',
     ];
 
     protected static function booted(): void

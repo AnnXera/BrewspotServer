@@ -12,6 +12,7 @@ class SubscriptionResource extends JsonResource
         return [
             'uuid'                  => $this->uuid,
             'status'                => $this->status,
+            'billing_cycle'         => $this->billing_cycle ?? 'monthly',
             'start_date'            => $this->start_date?->toISOString(),
             'end_date'              => $this->end_date?->toISOString(),
             'cancel_at_period_end'  => $this->cancel_at_period_end,
@@ -19,8 +20,11 @@ class SubscriptionResource extends JsonResource
                 'uuid'          => $this->plan->uuid,
                 'sub_name'      => $this->plan->sub_name,
                 'price'         => $this->plan->price,
+                'monthly_price' => $this->plan->price,
+                'yearly_price'  => $this->plan->yearly_price ?? 0.00,
                 'max_branches'  => $this->plan->max_branches,
                 'duration_days' => $this->plan->duration_days,
+                'features'      => $this->plan->features ?? [],
             ]),
             'created_at'            => $this->created_at?->toISOString(),
         ];

@@ -23,6 +23,7 @@ class UpdateSubscriptionPlanRequest extends FormRequest
                 'unique:subscription_plans,sub_name,' . $planId . ',uuid',
             ],
             'price'         => ['sometimes', 'required', 'numeric', 'min:0'],
+            'yearly_price'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'max_branches'  => ['sometimes', 'required', 'integer', 'min:1'],
             'features'      => ['nullable', 'array'],
             'features.*'    => ['string'],

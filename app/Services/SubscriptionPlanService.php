@@ -77,14 +77,14 @@ class SubscriptionPlanService
             return ['success' => false, 'message' => 'Subscription plan not found.'];
         }
 
-        $before = $plan->only(['sub_name', 'price', 'max_branches', 'features', 'duration_days', 'is_active']);
+        $before = $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'features', 'duration_days', 'is_active']);
 
         $plan = $this->repo->update($plan, $payload);
 
         Log::channel('admin')->info('Subscription plan updated.', [
             'plan_uuid' => $plan->uuid,
             'before'    => $before,
-            'after'     => $plan->only(['sub_name', 'price', 'max_branches', 'features', 'duration_days', 'is_active']),
+            'after'     => $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'features', 'duration_days', 'is_active']),
         ]);
 
         return [

@@ -15,6 +15,7 @@ class SubscriptionPlanSeeder extends Seeder
                 'uuid'          => (string) Str::uuid(),
                 'sub_name'      => 'Trial Plan',
                 'price'         => 0.00,
+                'yearly_price'  => 0.00,
                 'max_branches'  => 1,
                 'features'      => json_encode([
                     'staff_management',
@@ -33,6 +34,7 @@ class SubscriptionPlanSeeder extends Seeder
                 'uuid'          => (string) Str::uuid(),
                 'sub_name'      => 'Basic Plan',
                 'price'         => 599.00,
+                'yearly_price'  => 5990.00,
                 'max_branches'  => 1,
                 'features'      => json_encode([
                     'staff_management',
@@ -47,6 +49,7 @@ class SubscriptionPlanSeeder extends Seeder
                 'uuid'          => (string) Str::uuid(),
                 'sub_name'      => 'Premium Plan',
                 'price'         => 999.00,
+                'yearly_price'  => 9990.00,
                 'max_branches'  => 3,
                 'features'      => json_encode([
                     'staff_management',
@@ -63,6 +66,7 @@ class SubscriptionPlanSeeder extends Seeder
                 'uuid'          => (string) Str::uuid(),
                 'sub_name'      => 'Enterprise Plan',
                 'price'         => 1499.00,
+                'yearly_price'  => 14990.00,
                 'max_branches'  => 6,
                 'features'      => json_encode([
                     'staff_management',

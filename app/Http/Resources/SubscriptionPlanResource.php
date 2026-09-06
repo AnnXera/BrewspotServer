@@ -13,6 +13,8 @@ class SubscriptionPlanResource extends JsonResource
             'uuid'          => $this->uuid,
             'sub_name'      => $this->sub_name,
             'price'         => $this->price,
+            'monthly_price' => $this->price,
+            'yearly_price'  => $this->yearly_price ?? 0.00,
             'max_branches'  => $this->max_branches,
             'features'      => $this->features ?? [],
             'description'   => $this->description,

@@ -36,6 +36,7 @@ class SubscriptionPlanRepository
         return SubscriptionPlan::create([
             'sub_name'      => $payload['sub_name'],
             'price'         => $payload['price'],
+            'yearly_price'  => $payload['yearly_price'] ?? 0.00,
             'max_branches'  => $payload['max_branches'],
             'features'      => $payload['features'] ?? [],
             'description'   => $payload['description'] ?? null,
@@ -49,6 +50,7 @@ class SubscriptionPlanRepository
         $plan->update(array_filter([
             'sub_name'      => $payload['sub_name'] ?? null,
             'price'         => $payload['price'] ?? null,
+            'yearly_price'  => array_key_exists('yearly_price', $payload) ? $payload['yearly_price'] : null,
             'max_branches'  => $payload['max_branches'] ?? null,
             'features'      => array_key_exists('features', $payload) ? $payload['features'] : null,
             'description'   => $payload['description'] ?? null,
