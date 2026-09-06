@@ -23,6 +23,7 @@ class SubscriptionPlan extends Model
         'sub_name',
         'price',
         'max_branches',
+        'features',
         'description',
         'duration_days',
         'is_active',
@@ -32,6 +33,7 @@ class SubscriptionPlan extends Model
     protected $casts = [
         'price'     => 'decimal:2',
         'is_active' => 'boolean',
+        'features'  => 'array',
     ];
 
     protected static function booted(): void

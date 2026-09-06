@@ -24,9 +24,11 @@ class UpdateSubscriptionPlanRequest extends FormRequest
             ],
             'price'         => ['sometimes', 'required', 'numeric', 'min:0'],
             'max_branches'  => ['sometimes', 'required', 'integer', 'min:1'],
+            'features'      => ['nullable', 'array'],
+            'features.*'    => ['string'],
             'description'   => ['nullable', 'string'],
             'duration_days' => ['sometimes', 'required', 'integer', 'min:1'],
-            'is_active' => ['sometimes', 'boolean'],
+            'is_active'     => ['sometimes', 'boolean'],
         ];
     }
 

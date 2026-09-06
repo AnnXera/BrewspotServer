@@ -19,9 +19,11 @@ class StoreSubscriptionPlanRequest extends FormRequest
             'sub_name'      => ['required', 'string', 'max:150', 'unique:subscription_plans,sub_name'],
             'price'         => ['required', 'numeric', 'min:0'],
             'max_branches'  => ['required', 'integer', 'min:1'], 
+            'features'      => ['nullable', 'array'],
+            'features.*'    => ['string'],
             'description'   => ['nullable', 'string'],
             'duration_days' => ['required', 'integer', 'min:1'],
-            'is_active' => ['sometimes', 'boolean'],
+            'is_active'     => ['sometimes', 'boolean'],
         ];
     }
 

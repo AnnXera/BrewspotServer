@@ -13,6 +13,7 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
+use App\Http\Controllers\FeatureController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
@@ -52,6 +53,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/owners/{uuid}/application-history', [OwnerManagementController::class, 'applicationHistory']);
         Route::get('/approvals/{uuid}/snapshot', [OwnerManagementController::class, 'approvalSnapshot']);
 
+        Route::get('/features',                        [FeatureController::class, 'index']); // list all system features
+        Route::get('/features/active',                 [FeatureController::class, 'active']); // list only active features
+        Route::post('/features',                       [FeatureController::class, 'store']); // create feature
+        Route::patch('/features/{uuid}',               [FeatureController::class, 'update']); // update feature
+        Route::delete('/features/{uuid}',              [FeatureController::class, 'destroy']); // delete feature
+
         Route::get('/subscription-plans',              [SubscriptionPlanController::class, 'index']); // list all subscription plans
         Route::get('/subscription-plans/{uuid}',       [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid
         Route::post('/subscription-plans/create',      [SubscriptionPlanController::class, 'store']); // create subscription plan
@@ -83,9 +90,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
 
-        Route::get('/staff',           [CafeStaffController::class, 'index']);
-        Route::post('/staff',          [CafeStaffController::class, 'store']);
-        Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']);
+        // Feature-Gated: Staff Management
+        Route::middleware('plan.feature:staff_management')->group(function () {
+            Route::get('/staff',           [CafeStaffController::class, 'index']);
+            Route::post('/staff',          [CafeStaffController::class, 'store']);
+            Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']);
+        });
 
         Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
         Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);

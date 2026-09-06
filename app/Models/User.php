@@ -91,4 +91,41 @@ class User extends Authenticatable
     {
         return $this->hasMany(CafeStaff::class, 'user_id', 'user_id');
     }
+
+    public function canAccessFeature(string $featureKey): bool
+    {
+        // Admin has full access to all features
+        if ($this->role && strtolower($this->role->role_name) === 'admin') {
+            return true;
+        }
+
+        // Check active subscription plan
+        $activeSubscription = $this->subscriptions()
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                      ->orWhere('end_date', '>=', now());
+            })
+            ->with('plan')
+            ->latest('start_date')
+            ->first();
+
+        if (! $activeSubscription || ! $activeSubscription->plan) {
+            return false;
+        }
+
+        $features = $activeSubscription->plan->features;
+
+        if (is_array($features)) {
+            // Check if featureKey is in list or key exists and is truthy
+            if (in_array($featureKey, $features, true)) {
+                return true;
+            }
+            if (isset($features[$featureKey]) && $features[$featureKey]) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
