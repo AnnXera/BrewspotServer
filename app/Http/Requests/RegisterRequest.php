@@ -25,7 +25,13 @@ class RegisterRequest extends FormRequest
             'firstname'             => ['required', 'string', 'max:100'],
             'middlename'            => ['nullable', 'string', 'max:100'],
             'lastname'              => ['required', 'string', 'max:100'],
-            'phone_number'          => ['required', 'string', 'max:20'],
+            'phone_number'          => [
+                'required',
+                'string',
+                'max:20',
+                'regex:/^[0-9+\s\-()]+$/',
+                'different:cafe_phonenumber',
+            ],
             'owner_address'         => ['required', 'string', 'max:500'],
             'username'              => [
                 'required',
@@ -37,6 +43,13 @@ class RegisterRequest extends FormRequest
             // User Document
             'id_type'               => ['required', 'string', 'in:' . implode(',', array_keys(UserDocument::$allowedIds))],
             'file'                  => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'file_back'             => [
+                Rule::requiredIf(fn () => UserDocument::requiresBack($this->input('id_type'))),
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,pdf',
+                'max:5120',
+            ],
 
             // Cafe Details
             'cafe_name'             => ['required', 'string', 'max:150'],
@@ -52,12 +65,45 @@ class RegisterRequest extends FormRequest
                 'max:255',
                 Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at'),
             ],
-            'cafe_phonenumber'      => ['required', 'string', 'max:20'],
+            'cafe_phonenumber'      => [
+                'required',
+                'string',
+                'max:20',
+                'regex:/^[0-9+\s\-()]+$/',
+                'different:phone_number',
+            ],
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'mayors_permit_file'    => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'sanitary_permit_file'  => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            $data = $validator->getData();
+            $phoneRaw = (string) ($data['phone_number'] ?? $this->input('phone_number') ?? '');
+            $cafePhoneRaw = (string) ($data['cafe_phonenumber'] ?? $this->input('cafe_phonenumber') ?? '');
+
+            $phoneDigits = preg_replace('/\D/', '', $phoneRaw);
+            $cafePhoneDigits = preg_replace('/\D/', '', $cafePhoneRaw);
+
+            if (!empty($phoneRaw) && strlen($phoneDigits) < 7) {
+                $validator->errors()->add('phone_number', 'Phone number must contain at least 7 digits.');
+            }
+
+            if (!empty($cafePhoneRaw) && strlen($cafePhoneDigits) < 7) {
+                $validator->errors()->add('cafe_phonenumber', 'Café phone number must contain at least 7 digits.');
+            }
+
+            $normPhone = preg_replace('/^63/', '0', $phoneDigits);
+            $normCafePhone = preg_replace('/^63/', '0', $cafePhoneDigits);
+
+            if ($normPhone !== '' && $normCafePhone !== '' && $normPhone === $normCafePhone) {
+                $validator->errors()->add('cafe_phonenumber', 'The café phone number and personal contact number must be different.');
+            }
+        });
     }
 
     public function messages(): array
@@ -67,6 +113,8 @@ class RegisterRequest extends FormRequest
             'firstname.required'            => 'First name is required.',
             'lastname.required'             => 'Last name is required.',
             'phone_number.required'         => 'Phone number is required.',
+            'phone_number.regex'            => 'Phone number must not contain letters and must be a valid phone number.',
+            'phone_number.different'        => 'Personal phone number and café phone number must be different.',
             'owner_address.required'        => 'Your address is required.',
             'username.required'             => 'Username is required.',
             'username.unique'               => 'This username is already taken.',
@@ -74,9 +122,12 @@ class RegisterRequest extends FormRequest
             // User Document
             'id_type.required'              => 'ID type is required.',
             'id_type.in'                    => 'Invalid ID type selected.',
-            'file.required'                 => 'A valid government ID file is required.',
-            'file.mimes'                    => 'ID file must be jpg, jpeg, png, or pdf.',
-            'file.max'                      => 'ID file must not exceed 5MB.',
+            'file.required'                 => 'A valid government ID (front) file is required.',
+            'file.mimes'                    => 'ID front file must be jpg, jpeg, png, or pdf.',
+            'file.max'                      => 'ID front file must not exceed 5MB.',
+            'file_back.required'            => 'The back of your government ID is required for the selected ID type.',
+            'file_back.mimes'               => 'ID back file must be jpg, jpeg, png, or pdf.',
+            'file_back.max'                 => 'ID back file must not exceed 5MB.',
 
             // Cafe
             'cafe_name.required'            => 'Cafe name is required.',
@@ -93,6 +144,8 @@ class RegisterRequest extends FormRequest
             'cafe_email.required'           => 'Cafe email is required.',
             'cafe_email.unique'             => 'This cafe email is already in use.',
             'cafe_phonenumber.required'     => 'Cafe phone number is required.',
+            'cafe_phonenumber.regex'        => 'Café phone number must not contain letters and must be a valid phone number.',
+            'cafe_phonenumber.different'    => 'Café phone number and personal contact number must be different.',
             'address.required'              => 'Branch address is required.',
             'bir_file.required'             => 'BIR file is required.',
             'bir_file.mimes'                => 'BIR file must be jpg, jpeg, png, or pdf.',

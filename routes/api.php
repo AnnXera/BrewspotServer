@@ -118,7 +118,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin and Cafe Owner shared
     Route::middleware('role:Admin,Cafe Owner')->group(function () {
-        Route::get('/documents/user/{userDocId}',     [DocumentController::class, 'userDocument']);
+        Route::get('/documents/user/{userDocId}/{side?}', [DocumentController::class, 'userDocument']);
         Route::get('/documents/cafe/{cafeDocId}',      [DocumentController::class, 'cafeDocument']);
         Route::get('/documents/branch/{branchDocId}',  [DocumentController::class, 'branchDocument']);
     });

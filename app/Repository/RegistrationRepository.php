@@ -27,12 +27,13 @@ class RegistrationRepository
         return $user->fresh();
     }
 
-    public function createUserDocument(int $userId, string $filePath, string $idType): UserDocument
+    public function createUserDocument(int $userId, string $filePath, string $idType, ?string $fileBackPath = null): UserDocument
     {
         return UserDocument::create([
-            'user_id' => $userId,
-            'file'    => $filePath,
-            'id_type' => $idType,
+            'user_id'   => $userId,
+            'file'      => $filePath,
+            'file_back' => $fileBackPath,
+            'id_type'   => $idType,
         ]);
     }
 

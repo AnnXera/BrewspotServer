@@ -14,15 +14,22 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class DocumentController extends Controller
 {
     /**
-     * GET /api/documents/user/{userDocId}
+     * GET /api/documents/user/{userDocId}/{side?}
      */
-    public function userDocument(Request $request, int $userDocId): StreamedResponse
+    public function userDocument(Request $request, int $userDocId, ?string $side = null): StreamedResponse
     {
         $document = UserDocument::withTrashed()->findOrFail($userDocId);
 
         $this->authorizeAccess($request, $document->user_id);
 
-        return $this->streamFile($document->file);
+        $targetSide = $side ?? $request->query('side', 'front');
+        $filePath = ($targetSide === 'back') ? $document->file_back : $document->file;
+
+        if (! $filePath) {
+            abort(404, 'Document file not found.');
+        }
+
+        return $this->streamFile($filePath);
     }
 
     /**

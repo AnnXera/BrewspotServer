@@ -23,10 +23,23 @@ class UserDocument extends Model
         'voters_id'       => 'Voter\'s ID',
     ];
 
+    public static array $idsWithoutBack = [
+        'passport',
+    ];
+
+    public static function requiresBack(?string $idType): bool
+    {
+        if (empty($idType)) {
+            return true;
+        }
+        return ! in_array($idType, self::$idsWithoutBack, true);
+    }
+
     protected $fillable = [
         'uuid',
         'user_id',
         'file',
+        'file_back',
         'id_type',
     ];
 

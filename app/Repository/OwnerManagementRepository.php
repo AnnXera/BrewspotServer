@@ -194,7 +194,8 @@ class OwnerManagementRepository
             ->latest('created_at');
 
         if ($status) {
-            $query->where('status', $status);
+            $effectiveStatus = ($status === 'pending') ? 'pending_approval' : $status;
+            $query->where('status', $effectiveStatus);
         }
 
         if ($type === 'owner') {

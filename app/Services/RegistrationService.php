@@ -44,15 +44,20 @@ class RegistrationService
                 // 1. Update user profile
                 $user = $this->repo->updateUserProfile($user, $payload);
 
-                // 2. Store user government ID — PRIVATE
+                // 2. Store user government ID (Front & optional Back) — PRIVATE
                 $idFilePath = $this->storeFile(
                     $payload['file'],
                     "{$userFolder}/user_documents"
                 );
+                $idBackFilePath = ! empty($payload['file_back'])
+                    ? $this->storeFile($payload['file_back'], "{$userFolder}/user_documents")
+                    : null;
+
                 $this->repo->createUserDocument(
                     $user->user_id,
                     $idFilePath,
-                    $payload['id_type']
+                    $payload['id_type'],
+                    $idBackFilePath
                 );
 
                 // 3. Create cafe so we have the UUID for the folder path
@@ -205,6 +210,7 @@ class RegistrationService
                     'government_id' => [
                         'type'     => $userDoc?->id_type,
                         'uploaded' => ! empty($userDoc),
+                        'has_back' => ! empty($userDoc?->file_back),
                     ],
                     'cafe_document' => [
                         'type'     => $cafeDoc?->doc_type,

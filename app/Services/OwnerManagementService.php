@@ -81,10 +81,12 @@ class OwnerManagementService
             'owner'   => new UserResource($owner),
 
             'owner_documents' => $owner->documents->map(fn ($doc) => [
-                'user_doc_id'  => $doc->user_doc_id,
-                'id_type'      => $doc->id_type,
-                'download_url' => "/api/documents/user/{$doc->user_doc_id}",
-                'uploaded_at'  => $doc->created_at?->toISOString(),
+                'user_doc_id'       => $doc->user_doc_id,
+                'id_type'           => $doc->id_type,
+                'download_url'      => "/api/documents/user/{$doc->user_doc_id}",
+                'download_back_url' => $doc->file_back ? "/api/documents/user/{$doc->user_doc_id}/back" : null,
+                'has_back'          => ! empty($doc->file_back),
+                'uploaded_at'       => $doc->created_at?->toISOString(),
             ]),
 
             'cafes' => $owner->cafes->map(function ($cafe) {
@@ -130,9 +132,12 @@ class OwnerManagementService
 
             'payment_history' => $owner->subscriptions->map(function ($sub) {
                 $payment = $sub->latestPayment;
+                $rawId = $payment?->uuid ?? $sub->uuid;
+                $cleanId = strtoupper(substr(str_replace('-', '', $rawId), 0, 7));
 
                 return [
-                    'transaction_id' => $payment?->uuid ?? $sub->uuid,
+                    'transaction_id' => "TXN-{$cleanId}",
+                    'raw_id'         => $rawId,
                     'date'           => ($payment?->created_at ?? $sub->created_at)?->toISOString(),
                     'description'    => 'Subscription - ' . ($sub->plan->sub_name ?? 'Plan'),
                     'amount'         => $payment
@@ -344,10 +349,12 @@ class OwnerManagementService
             'owner' => $owner ? new UserResource($owner) : null,
 
             'owner_documents' => $owner?->documents->map(fn ($doc) => [
-                'user_doc_id'  => $doc->user_doc_id,
-                'id_type'      => $doc->id_type,
-                'download_url' => "/api/documents/user/{$doc->user_doc_id}",
-                'uploaded_at'  => $doc->created_at?->toISOString(),
+                'user_doc_id'       => $doc->user_doc_id,
+                'id_type'           => $doc->id_type,
+                'download_url'      => "/api/documents/user/{$doc->user_doc_id}",
+                'download_back_url' => $doc->file_back ? "/api/documents/user/{$doc->user_doc_id}/back" : null,
+                'has_back'          => ! empty($doc->file_back),
+                'uploaded_at'       => $doc->created_at?->toISOString(),
             ])->values() ?? [],
 
             'cafe' => $cafe ? [
