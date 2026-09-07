@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call([
+            FeatureSeeder::class,
             SubscriptionPlanSeeder::class,
         ]);
 

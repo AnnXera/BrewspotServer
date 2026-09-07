@@ -77,14 +77,22 @@ class SubscriptionPlanService
             return ['success' => false, 'message' => 'Subscription plan not found.'];
         }
 
-        $before = $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'features', 'duration_days', 'is_active']);
+        $before = array_merge(
+            $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'duration_days', 'is_active']),
+            ['features' => $plan->features ? $plan->features->pluck('key')->toArray() : []]
+        );
 
         $plan = $this->repo->update($plan, $payload);
+
+        $after = array_merge(
+            $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'duration_days', 'is_active']),
+            ['features' => $plan->features ? $plan->features->pluck('key')->toArray() : []]
+        );
 
         Log::channel('admin')->info('Subscription plan updated.', [
             'plan_uuid' => $plan->uuid,
             'before'    => $before,
-            'after'     => $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'features', 'duration_days', 'is_active']),
+            'after'     => $after,
         ]);
 
         return [

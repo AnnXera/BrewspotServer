@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
@@ -24,7 +25,6 @@ class SubscriptionPlan extends Model
         'price',
         'yearly_price',
         'max_branches',
-        'features',
         'description',
         'duration_days',
         'is_active',
@@ -35,7 +35,6 @@ class SubscriptionPlan extends Model
         'price'        => 'decimal:2',
         'yearly_price' => 'decimal:2',
         'is_active'    => 'boolean',
-        'features'     => 'array',
     ];
 
     protected static function booted(): void
@@ -46,5 +45,16 @@ class SubscriptionPlan extends Model
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class, 'sub_plan_id', 'sub_plan_id');
+    }
+
+    public function features(): BelongsToMany
+    {
+        return $this->belongsToMany(Feature::class, 'plan_features', 'sub_plan_id', 'feature_id')
+            ->withTimestamps();
+    }
+
+    public function hasFeature(string $key): bool
+    {
+        return $this->features->contains('key', $key);
     }
 }

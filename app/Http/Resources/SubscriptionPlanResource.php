@@ -16,7 +16,9 @@ class SubscriptionPlanResource extends JsonResource
             'monthly_price' => $this->price,
             'yearly_price'  => $this->yearly_price ?? 0.00,
             'max_branches'  => $this->max_branches,
-            'features'      => $this->features ?? [],
+            'features'      => $this->features instanceof \Illuminate\Support\Collection
+                ? $this->features->pluck('key')->values()->toArray()
+                : (is_array($this->features) ? $this->features : []),
             'description'   => $this->description,
             'duration_days' => $this->duration_days,
             'is_active'     => $this->is_active,

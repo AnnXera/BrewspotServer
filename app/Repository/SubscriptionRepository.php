@@ -29,7 +29,7 @@ class SubscriptionRepository
     {
         return Subscription::where('user_id', $userId)
             ->where('status', 'active')
-            ->with('plan')
+            ->with('plan.features')
             ->latest('start_date')
             ->first();
     }
@@ -37,7 +37,7 @@ class SubscriptionRepository
     public function findHistoryByUserId(int $userId, int $perPage = 15)
     {
         return Subscription::where('user_id', $userId)
-            ->with('plan')
+            ->with(['plan.features', 'latestPayment'])
             ->latest('start_date')
             ->paginate($perPage);
     }
@@ -49,7 +49,7 @@ class SubscriptionRepository
 
     public function findByUuid(string $uuid): ?Subscription
     {
-        return Subscription::where('uuid', $uuid)->with(['plan', 'user'])->first();
+        return Subscription::where('uuid', $uuid)->with(['plan.features', 'user'])->first();
     }
 
     public function createPending(int $userId, SubscriptionPlan $plan): Subscription
@@ -111,7 +111,7 @@ class SubscriptionRepository
 
     public function listSubscribers(int $perPage = 15)
     {
-        return Subscription::with(['user', 'plan', 'latestPayment'])
+        return Subscription::with(['user', 'plan.features', 'latestPayment'])
             ->latest('created_at')
             ->paginate($perPage);
     }
@@ -119,7 +119,7 @@ class SubscriptionRepository
     public function findHistoryByOwnerUuid(string $ownerUuid, int $perPage = 15)
     {
         return Subscription::whereHas('user', fn ($q) => $q->where('uuid', $ownerUuid))
-            ->with(['plan', 'user'])
+            ->with(['plan.features', 'user'])
             ->latest('created_at')
             ->paginate($perPage);
     }

@@ -106,7 +106,7 @@ class User extends Authenticatable
                 $query->whereNull('end_date')
                       ->orWhere('end_date', '>=', now());
             })
-            ->with('plan')
+            ->with('plan.features')
             ->latest('start_date')
             ->first();
 
@@ -115,6 +115,10 @@ class User extends Authenticatable
         }
 
         $features = $activeSubscription->plan->features;
+
+        if ($features instanceof \Illuminate\Support\Collection) {
+            return $features->contains('key', $featureKey);
+        }
 
         if (is_array($features)) {
             // Check if featureKey is in list or key exists and is truthy

@@ -143,7 +143,10 @@ class OwnerManagementService
                     'amount'         => $payment
                         ? number_format($payment->amount / 100, 2)
                         : number_format($sub->plan->price ?? 0, 2),
-                    'status'         => $payment?->status ?? $sub->status,
+                    'status'          => $payment?->status ?? $sub->status,
+                    'payment_gateway' => $payment?->payment_method_type
+                        ? (str_contains(strtolower($payment->payment_method_type), 'paypal') ? 'PayPal' : ucwords(str_replace('_', ' ', $payment->payment_method_type)))
+                        : 'PayPal',
                 ];
             })->values(),
         ];

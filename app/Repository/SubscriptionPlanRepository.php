@@ -2,47 +2,54 @@
 
 namespace App\Repository;
 
+use App\Models\Feature;
 use App\Models\SubscriptionPlan;
 
 class SubscriptionPlanRepository
 {
     public function list(int $perPage = 15)
     {
-        return SubscriptionPlan::latest()->paginate($perPage);
+        return SubscriptionPlan::with('features')->latest()->paginate($perPage);
     }
 
     public function findByUuid(string $uuid): ?SubscriptionPlan
     {
-        return SubscriptionPlan::where('uuid', $uuid)->first();
+        return SubscriptionPlan::with('features')->where('uuid', $uuid)->first();
     }
 
     public function findTrashedByUuid(string $uuid): ?SubscriptionPlan
     {
-        return SubscriptionPlan::onlyTrashed()->where('uuid', $uuid)->first();
+        return SubscriptionPlan::onlyTrashed()->with('features')->where('uuid', $uuid)->first();
     }
 
     public function listActive(int $perPage = 15)
     {
-        return SubscriptionPlan::where('is_active', true)->latest()->paginate($perPage);
+        return SubscriptionPlan::where('is_active', true)->with('features')->latest()->paginate($perPage);
     }
 
     public function findActiveByUuid(string $uuid): ?SubscriptionPlan
     {
-        return SubscriptionPlan::where('uuid', $uuid)->where('is_active', true)->first();
+        return SubscriptionPlan::where('uuid', $uuid)->where('is_active', true)->with('features')->first();
     }
 
     public function create(array $payload): SubscriptionPlan
     {
-        return SubscriptionPlan::create([
+        $plan = SubscriptionPlan::create([
             'sub_name'      => $payload['sub_name'],
             'price'         => $payload['price'],
             'yearly_price'  => $payload['yearly_price'] ?? 0.00,
             'max_branches'  => $payload['max_branches'],
-            'features'      => $payload['features'] ?? [],
             'description'   => $payload['description'] ?? null,
             'duration_days' => $payload['duration_days'],
             'is_active'     => $payload['is_active'] ?? true,
         ]);
+
+        if (! empty($payload['features']) && is_array($payload['features'])) {
+            $featureIds = Feature::whereIn('key', $payload['features'])->pluck('feature_id');
+            $plan->features()->sync($featureIds);
+        }
+
+        return $plan->fresh(['features']);
     }
 
     public function update(SubscriptionPlan $plan, array $payload): SubscriptionPlan
@@ -52,13 +59,17 @@ class SubscriptionPlanRepository
             'price'         => $payload['price'] ?? null,
             'yearly_price'  => array_key_exists('yearly_price', $payload) ? $payload['yearly_price'] : null,
             'max_branches'  => $payload['max_branches'] ?? null,
-            'features'      => array_key_exists('features', $payload) ? $payload['features'] : null,
             'description'   => $payload['description'] ?? null,
             'duration_days' => $payload['duration_days'] ?? null,
             'is_active'     => $payload['is_active'] ?? null,
         ], fn ($value) => $value !== null));
 
-        return $plan->fresh();
+        if (array_key_exists('features', $payload) && is_array($payload['features'])) {
+            $featureIds = Feature::whereIn('key', $payload['features'])->pluck('feature_id');
+            $plan->features()->sync($featureIds);
+        }
+
+        return $plan->fresh(['features']);
     }
 
     public function delete(SubscriptionPlan $plan): void

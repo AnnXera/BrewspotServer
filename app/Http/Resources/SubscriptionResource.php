@@ -24,8 +24,13 @@ class SubscriptionResource extends JsonResource
                 'yearly_price'  => $this->plan->yearly_price ?? 0.00,
                 'max_branches'  => $this->plan->max_branches,
                 'duration_days' => $this->plan->duration_days,
-                'features'      => $this->plan->features ?? [],
+                'features'      => $this->plan->features instanceof \Illuminate\Support\Collection
+                    ? $this->plan->features->pluck('key')->values()->toArray()
+                    : (is_array($this->plan->features) ? $this->plan->features : []),
             ]),
+            'payment_gateway'       => $this->latestPayment?->payment_method_type
+                ? (str_contains(strtolower($this->latestPayment->payment_method_type), 'paypal') ? 'PayPal' : ucwords(str_replace('_', ' ', $this->latestPayment->payment_method_type)))
+                : 'PayPal',
             'created_at'            => $this->created_at?->toISOString(),
         ];
     }
