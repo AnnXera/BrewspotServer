@@ -58,7 +58,7 @@ class OwnerSeeder extends Seeder
                 'cafe_id'          => $cafe->cafe_id,
                 'branch_name'      => 'Brew Haven — Main Branch',
                 'cafe_picture'     => null,
-                'cafe_phonenumber' => '09171234567',
+                'cafe_phonenumber' => '09181234567',
                 'address'          => '123 Rizal St, Davao City',
                 'branch_type'      => 'main',
                 'status'           => 'active',
