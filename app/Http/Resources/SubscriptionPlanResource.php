@@ -19,6 +19,9 @@ class SubscriptionPlanResource extends JsonResource
             'features'      => $this->features instanceof \Illuminate\Support\Collection
                 ? $this->features->pluck('key')->values()->toArray()
                 : (is_array($this->features) ? $this->features : []),
+            'feature_details' => $this->features instanceof \Illuminate\Support\Collection
+                ? FeatureResource::collection($this->features)
+                : [],
             'description'   => $this->description,
             'duration_days' => $this->duration_days,
             'is_active'     => $this->is_active,

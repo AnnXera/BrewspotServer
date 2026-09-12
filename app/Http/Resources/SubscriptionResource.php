@@ -27,6 +27,9 @@ class SubscriptionResource extends JsonResource
                 'features'      => $this->plan->features instanceof \Illuminate\Support\Collection
                     ? $this->plan->features->pluck('key')->values()->toArray()
                     : (is_array($this->plan->features) ? $this->plan->features : []),
+                'feature_details' => $this->plan->features instanceof \Illuminate\Support\Collection
+                    ? FeatureResource::collection($this->plan->features)
+                    : [],
             ]),
             'payment_gateway'       => $this->latestPayment?->payment_method_type
                 ? (str_contains(strtolower($this->latestPayment->payment_method_type), 'paypal') ? 'PayPal' : ucwords(str_replace('_', ' ', $this->latestPayment->payment_method_type)))
