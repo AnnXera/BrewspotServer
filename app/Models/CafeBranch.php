@@ -50,4 +50,29 @@ class CafeBranch extends Model
     {
         return $this->hasMany(CafeStaff::class, 'branch_id', 'branch_id');
     }
+
+    public function floorPlans(): HasMany
+    {
+        return $this->hasMany(FloorPlan::class, 'branch_id', 'branch_id');
+    }
+
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'branch_id', 'branch_id');
+    }
+
+    public function inventoryServings(): HasMany
+    {
+        return $this->hasMany(InventoryServing::class, 'branch_id', 'branch_id');
+    }
+
+    public function menuBranches(): HasMany
+    {
+        return $this->hasMany(MenuBranch::class, 'branch_id', 'branch_id');
+    }
+
+    public function categoryBranches(): HasMany
+    {
+        return $this->hasMany(CategoryBranch::class, 'branch_id', 'branch_id');
+    }
 }

@@ -92,6 +92,11 @@ class User extends Authenticatable
         return $this->hasMany(CafeStaff::class, 'user_id', 'user_id');
     }
 
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(Reservation::class, 'created_by', 'user_id');
+    }
+
     public function canAccessFeature(string $featureKey): bool
     {
         // Admin has full access to all features
