@@ -120,11 +120,13 @@ class OwnerManagementService
             }),
 
             'subscription' => $currentSubscription ? [
-                'uuid'           => $currentSubscription->uuid,
-                'status'         => $currentSubscription->status,
-                'plan_name'      => $currentSubscription->plan->sub_name ?? null,
-                'price'          => $currentSubscription->plan->price ?? null,
-                'max_branches'   => $currentSubscription->plan->max_branches ?? null,
+                'uuid'              => $currentSubscription->uuid,
+                'status'            => $currentSubscription->status,
+                'plan_name'         => $currentSubscription->plan->sub_name ?? null,
+                'price'             => $currentSubscription->plan->price ?? null,
+                'has_multi_branch'  => $currentSubscription->plan
+                    ? $currentSubscription->plan->hasFeature('multi_branch')
+                    : false,
                 'start_date'     => $currentSubscription->start_date?->toISOString(),
                 'end_date'       => $currentSubscription->end_date?->toISOString(),
                 'payment_method' => $currentSubscription->latestPayment->payment_method_type ?? null,

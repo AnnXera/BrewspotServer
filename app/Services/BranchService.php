@@ -44,20 +44,17 @@ class BranchService
             ];
         }
 
-        $maxBranches     = $subscription->plan->max_branches;
-        $existingBranches = $this->repo->countExistingBranches($cafe->cafe_id);
+        $plan = $subscription->plan;
 
-        if ($existingBranches >= $maxBranches) {
-            Log::channel('owner')->warning('Branch creation blocked — max branches reached.', [
-                'owner_uuid'        => $owner->uuid,
-                'plan'              => $subscription->plan->sub_name,
-                'max_branches'      => $maxBranches,
-                'existing_branches' => $existingBranches,
+        if (! $plan || ! $plan->load('features')->hasFeature('multi_branch')) {
+            Log::channel('owner')->warning('Branch creation blocked — plan does not include multi_branch feature.', [
+                'owner_uuid' => $owner->uuid,
+                'plan'       => $plan?->sub_name,
             ]);
 
             return [
                 'success' => false,
-                'message' => "You've reached the maximum of {$maxBranches} branch(es) allowed under your current plan ({$subscription->plan->sub_name}). Upgrade your plan to add more branches.",
+                'message' => "Your current plan ({$plan?->sub_name}) does not support multiple branches. Upgrade to Premium or higher to add more branches.",
             ];
         }
 

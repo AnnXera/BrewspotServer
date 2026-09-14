@@ -9,8 +9,8 @@ use App\Models\CafeBranch;
 class BranchRepository
 {
     /**
-     * Branches that currently count against the plan's max_branches quota.
-     * Rejected/inactive branches don't count — they freed up the slot.
+     * Count active/pending branches for a given cafe.
+     * Used for informational logging only — branch access is gated by the multi_branch feature flag.
      */
     public function countExistingBranches(int $cafeId): int
     {

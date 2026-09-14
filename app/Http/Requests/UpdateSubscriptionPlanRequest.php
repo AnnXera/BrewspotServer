@@ -24,7 +24,7 @@ class UpdateSubscriptionPlanRequest extends FormRequest
             ],
             'price'         => ['sometimes', 'required', 'numeric', 'min:0'],
             'yearly_price'  => ['sometimes', 'nullable', 'numeric', 'min:0'],
-            'max_branches'  => ['sometimes', 'required', 'integer', 'min:1'],
+            'max_branches'  => ['sometimes', 'nullable', 'integer', 'min:1'],
             'features'      => ['nullable', 'array'],
             'features.*'    => ['string'],
             'description'   => ['nullable', 'string'],

@@ -10,12 +10,14 @@ class SubscriptionPlanResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'uuid'          => $this->uuid,
-            'sub_name'      => $this->sub_name,
-            'price'         => $this->price,
-            'monthly_price' => $this->price,
-            'yearly_price'  => $this->yearly_price ?? 0.00,
-            'max_branches'  => $this->max_branches,
+            'uuid'             => $this->uuid,
+            'sub_name'         => $this->sub_name,
+            'price'            => $this->price,
+            'monthly_price'    => $this->price,
+            'yearly_price'     => $this->yearly_price ?? 0.00,
+            'has_multi_branch' => $this->relationLoaded('features')
+                ? $this->features->contains('key', 'multi_branch')
+                : $this->hasFeature('multi_branch'),
             'features'      => $this->features instanceof \Illuminate\Support\Collection
                 ? $this->features->pluck('key')->values()->toArray()
                 : (is_array($this->features) ? $this->features : []),

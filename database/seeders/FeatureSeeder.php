@@ -56,6 +56,15 @@ class FeatureSeeder extends Seeder
                 'created_at'  => now(),
                 'updated_at'  => now(),
             ],
+            [
+                'uuid'        => (string) Str::uuid(),
+                'key'         => 'multi_branch',
+                'name'        => 'Multi-Branch Management',
+                'description' => 'Create and manage additional branch locations beyond your first branch.',
+                'is_active'   => true,
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
         ];
 
         foreach ($features as $feature) {

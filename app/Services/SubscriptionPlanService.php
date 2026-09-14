@@ -78,14 +78,14 @@ class SubscriptionPlanService
         }
 
         $before = array_merge(
-            $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'duration_days', 'is_active']),
+            $plan->only(['sub_name', 'price', 'yearly_price', 'duration_days', 'is_active']),
             ['features' => $plan->features ? $plan->features->pluck('key')->toArray() : []]
         );
 
         $plan = $this->repo->update($plan, $payload);
 
         $after = array_merge(
-            $plan->only(['sub_name', 'price', 'yearly_price', 'max_branches', 'duration_days', 'is_active']),
+            $plan->only(['sub_name', 'price', 'yearly_price', 'duration_days', 'is_active']),
             ['features' => $plan->features ? $plan->features->pluck('key')->toArray() : []]
         );
 

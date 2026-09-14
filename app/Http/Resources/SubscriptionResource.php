@@ -17,12 +17,14 @@ class SubscriptionResource extends JsonResource
             'end_date'              => $this->end_date?->toISOString(),
             'cancel_at_period_end'  => $this->cancel_at_period_end,
             'plan'                  => $this->whenLoaded('plan', fn () => [
-                'uuid'          => $this->plan->uuid,
-                'sub_name'      => $this->plan->sub_name,
-                'price'         => $this->plan->price,
-                'monthly_price' => $this->plan->price,
-                'yearly_price'  => $this->plan->yearly_price ?? 0.00,
-                'max_branches'  => $this->plan->max_branches,
+                'uuid'             => $this->plan->uuid,
+                'sub_name'         => $this->plan->sub_name,
+                'price'            => $this->plan->price,
+                'monthly_price'    => $this->plan->price,
+                'yearly_price'     => $this->plan->yearly_price ?? 0.00,
+                'has_multi_branch' => $this->plan->relationLoaded('features')
+                    ? $this->plan->features->contains('key', 'multi_branch')
+                    : $this->plan->hasFeature('multi_branch'),
                 'duration_days' => $this->plan->duration_days,
                 'features'      => $this->plan->features instanceof \Illuminate\Support\Collection
                     ? $this->plan->features->pluck('key')->values()->toArray()

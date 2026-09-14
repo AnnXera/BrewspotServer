@@ -38,7 +38,7 @@ class SubscriptionPlanRepository
             'sub_name'      => $payload['sub_name'],
             'price'         => $payload['price'],
             'yearly_price'  => $payload['yearly_price'] ?? 0.00,
-            'max_branches'  => $payload['max_branches'],
+            'max_branches'  => $payload['max_branches'] ?? 1,
             'description'   => $payload['description'] ?? null,
             'duration_days' => $payload['duration_days'],
             'is_active'     => $payload['is_active'] ?? true,
