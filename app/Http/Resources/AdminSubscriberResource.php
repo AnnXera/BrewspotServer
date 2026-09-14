@@ -11,15 +11,20 @@ class AdminSubscriberResource extends JsonResource
     {
         $payment = $this->whenLoaded('latestPayment');
 
+        $rawId = $payment?->uuid ?? $this->uuid;
+        $cleanId = strtoupper(substr(str_replace('-', '', $rawId), 0, 7));
+
         return [
             'subscription_uuid' => $this->uuid,
-            'status'            => $this->status,
+            'transaction_id'    => "TXN-{$cleanId}",
+            'status'            => $payment?->status ?? $this->status,
             'name'              => trim(($this->user->firstname ?? '') . ' ' . ($this->user->lastname ?? '')),
             'email'             => $this->user->email ?? null,
             'phone_number'      => $this->user->phone_number ?? null,
             'plan'              => $this->plan->sub_name ?? null,
-            'mode_of_payment'   => $payment->payment_instrument ?? ($payment->payment_method_type ? 'PayPal' : null),
-            'amount'            => $payment ? number_format($payment->amount / 100, 2) : null,
+            'mode_of_payment'   => $payment?->payment_instrument ?? ($payment?->payment_method_type ? 'PayPal' : 'PayPal'),
+            'amount'            => $payment ? number_format($payment->amount / 100, 2) : number_format($this->plan->price ?? 0, 2),
+            'date'              => ($payment?->created_at ?? $this->created_at)?->toISOString(),
         ];
     }
 }
