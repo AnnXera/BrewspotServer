@@ -33,9 +33,8 @@ class SubscriptionResource extends JsonResource
                     ? FeatureResource::collection($this->plan->features)
                     : [],
             ]),
-            'payment_gateway'       => $this->latestPayment?->payment_method_type
-                ? (str_contains(strtolower($this->latestPayment->payment_method_type), 'paypal') ? 'PayPal' : ucwords(str_replace('_', ' ', $this->latestPayment->payment_method_type)))
-                : 'PayPal',
+            'payment_gateway'       => $this->latestPayment?->payment_instrument
+                ?? ($this->latestPayment?->payment_method_type ? 'PayPal' : null),
             'created_at'            => $this->created_at?->toISOString(),
         ];
     }

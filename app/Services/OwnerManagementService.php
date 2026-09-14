@@ -129,7 +129,8 @@ class OwnerManagementService
                     : false,
                 'start_date'     => $currentSubscription->start_date?->toISOString(),
                 'end_date'       => $currentSubscription->end_date?->toISOString(),
-                'payment_method' => $currentSubscription->latestPayment->payment_method_type ?? null,
+                'payment_method' => $currentSubscription->latestPayment?->payment_instrument
+                    ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayPal' : null),
             ] : null,
 
             'payment_history' => $owner->subscriptions->map(function ($sub) {
@@ -146,9 +147,8 @@ class OwnerManagementService
                         ? number_format($payment->amount / 100, 2)
                         : number_format($sub->plan->price ?? 0, 2),
                     'status'          => $payment?->status ?? $sub->status,
-                    'payment_gateway' => $payment?->payment_method_type
-                        ? (str_contains(strtolower($payment->payment_method_type), 'paypal') ? 'PayPal' : ucwords(str_replace('_', ' ', $payment->payment_method_type)))
-                        : 'PayPal',
+                    'payment_gateway' => $payment?->payment_instrument
+                        ?? ($payment?->payment_method_type ? 'PayPal' : 'PayPal'),
                 ];
             })->values(),
         ];

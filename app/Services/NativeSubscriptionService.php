@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Contracts\PaymentAdapterInterface;
+use App\Models\Subscription;
 use App\Models\User;
+use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionPlanRepository;
 use App\Repository\SubscriptionRepository;
 use Illuminate\Support\Carbon;
@@ -14,7 +16,8 @@ class NativeSubscriptionService
     public function __construct(
         private readonly SubscriptionPlanRepository $planRepo,
         private readonly SubscriptionRepository $subscriptionRepo,
-        private readonly PaymentAdapterInterface $paymentAdapter
+        private readonly PaymentAdapterInterface $paymentAdapter,
+        private readonly PaymentRepository $paymentRepo,
     ) {}
 
     /**
@@ -111,11 +114,11 @@ class NativeSubscriptionService
             'BILLING.SUBSCRIPTION.SUSPENDED',
             'BILLING.SUBSCRIPTION.CANCELLED',
             'BILLING.SUBSCRIPTION.EXPIRED'        => $this->subscriptionRepo->markCancelledByPayPal($subscription),
-            default                                 => Log::channel('admin')->info('PayPal subscription webhook — unhandled event type.', ['event_type' => $eventType]),
+            default                                => Log::channel('admin')->info('PayPal subscription webhook — unhandled event type.', ['event_type' => $eventType]),
         };
     }
 
-    private function handleActivated($subscription, array $resource): void
+    private function handleActivated(Subscription $subscription, array $resource): void
     {
         $nextBilling = isset($resource['billing_info']['next_billing_time'])
             ? Carbon::parse($resource['billing_info']['next_billing_time'])
@@ -123,8 +126,57 @@ class NativeSubscriptionService
 
         $subscription = $this->subscriptionRepo->activateFromPayPal($subscription, $nextBilling);
 
+        // Create a Payment record so payment_method / payment_instrument are queryable
+        // via Subscription::latestPayment() — the same as the one-time checkout flow.
+        $amount     = (int) round(($subscription->plan->price ?? 0) * 100);
+        $instrument = $this->resolvePaymentInstrument($resource);
+
+        $this->paymentRepo->create([
+            'user_id'                => $subscription->user_id,
+            'payable_type'           => Subscription::class,
+            'payable_id'             => $subscription->sub_id,
+            'amount'                 => $amount,
+            'payment_method_type'    => 'paypal_subscription',
+            'payment_instrument'     => $instrument,
+            'gateway_transaction_id' => $resource['id'] ?? null,
+            'status'                 => 'succeeded',
+        ]);
+
         Log::channel('admin')->info('PayPal subscription activated.', [
             'subscription_uuid' => $subscription->uuid,
+            'instrument'        => $instrument,
         ]);
+    }
+
+    /**
+     * Resolve a human-readable payment instrument label from a PayPal
+     * BILLING.SUBSCRIPTION.ACTIVATED webhook resource.
+     *
+     * PayPal includes the funding source under:
+     *   resource.subscriber.funding_source.card.brand  (e.g. "VISA")
+     * when the subscriber chose a card — otherwise the node is absent
+     * and we fall back to "PayPal" (balance / linked bank).
+     */
+    private function resolvePaymentInstrument(array $resource): string
+    {
+        $cardBrand  = $resource['subscriber']['funding_source']['card']['brand']       ?? null;
+        $lastDigits = $resource['subscriber']['funding_source']['card']['last_digits'] ?? null;
+
+        if ($cardBrand) {
+            $label = match (strtoupper($cardBrand)) {
+                'VISA'       => 'Visa',
+                'MASTERCARD' => 'Mastercard',
+                'AMEX'       => 'American Express',
+                'DISCOVER'   => 'Discover',
+                'JCB'        => 'JCB',
+                'DINERS'     => 'Diners Club',
+                'UNIONPAY'   => 'UnionPay',
+                default      => ucwords(strtolower($cardBrand)),
+            };
+
+            return $lastDigits ? "{$label} ****{$lastDigits}" : $label;
+        }
+
+        return 'PayPal';
     }
 }

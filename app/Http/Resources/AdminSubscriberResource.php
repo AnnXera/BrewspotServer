@@ -18,7 +18,7 @@ class AdminSubscriberResource extends JsonResource
             'email'             => $this->user->email ?? null,
             'phone_number'      => $this->user->phone_number ?? null,
             'plan'              => $this->plan->sub_name ?? null,
-            'mode_of_payment'   => $payment->payment_method_type ?? null,
+            'mode_of_payment'   => $payment->payment_instrument ?? ($payment->payment_method_type ? 'PayPal' : null),
             'amount'            => $payment ? number_format($payment->amount / 100, 2) : null,
         ];
     }

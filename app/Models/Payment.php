@@ -25,6 +25,7 @@ class Payment extends Model
         'amount_tendered',
         'amount_change',
         'payment_method_type',
+        'payment_instrument',
         'gateway_transaction_id',
         'status',
     ];

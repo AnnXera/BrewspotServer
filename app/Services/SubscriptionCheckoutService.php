@@ -203,7 +203,7 @@ class SubscriptionCheckoutService
             return;
         }
 
-        $this->paymentRepo->markSucceeded($payment, 'paypal');
+        $this->paymentRepo->markSucceeded($payment, 'paypal', $this->resolvePaymentInstrument($capture));
 
         $subscription = $payment->payable;
 
@@ -239,6 +239,39 @@ class SubscriptionCheckoutService
                 'subscription_uuid' => $subscription->uuid,
             ]);
         }
+    }
+
+    /**
+     * Resolve a human-readable payment instrument label from a PayPal capture response.
+     *
+     * PayPal returns a `payment_source` object whose shape depends on how the buyer paid:
+     *  - card.brand  → buyer funded with a card saved in/linked through PayPal
+     *  - paypal      → buyer paid via PayPal balance, bank, or a card managed by PayPal
+     *
+     * @param  array $capture  The full JSON response from /v2/checkout/orders/{id}/capture
+     */
+    private function resolvePaymentInstrument(array $capture): string
+    {
+        $cardBrand      = $capture['payment_source']['card']['brand']       ?? null;
+        $lastDigits     = $capture['payment_source']['card']['last_digits'] ?? null;
+
+        if ($cardBrand) {
+            $label = match (strtoupper($cardBrand)) {
+                'VISA'       => 'Visa',
+                'MASTERCARD' => 'Mastercard',
+                'AMEX'       => 'American Express',
+                'DISCOVER'   => 'Discover',
+                'JCB'        => 'JCB',
+                'DINERS'     => 'Diners Club',
+                'UNIONPAY'   => 'UnionPay',
+                default      => ucwords(strtolower($cardBrand)),
+            };
+
+            return $lastDigits ? "{$label} ****{$lastDigits}" : $label;
+        }
+
+        // Buyer used PayPal balance, linked bank, or a card managed by PayPal
+        return 'PayPal';
     }
 
     private function handleCaptureDenied(array $resource): void

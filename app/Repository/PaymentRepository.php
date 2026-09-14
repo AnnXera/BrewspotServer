@@ -16,11 +16,12 @@ class PaymentRepository
         return Payment::where('gateway_transaction_id', $gatewayTransactionId)->first();
     }
 
-    public function markSucceeded(Payment $payment, ?string $paymentMethodType = null): Payment
+    public function markSucceeded(Payment $payment, ?string $paymentMethodType = null, ?string $paymentInstrument = null): Payment
     {
         $payment->update(array_filter([
             'status'               => 'succeeded',
             'payment_method_type'  => $paymentMethodType,
+            'payment_instrument'   => $paymentInstrument,
         ], fn ($value) => $value !== null));
 
         return $payment->fresh();
