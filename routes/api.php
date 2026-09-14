@@ -13,6 +13,7 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\NativeSubscriptionController;
+use App\Http\Controllers\SubscriptionCancelController;
 use App\Http\Controllers\FeatureController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
@@ -73,6 +74,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/branches/{uuid}/status', [OwnerManagementController::class, 'updateBranchStatus']); //approve/reject a single branch (owner already active)
     });
 
+    // Public payment webhook and return URL handling
+    Route::get('/payment/paypal/cancel', [SubscriptionCancelController::class, 'handleGetCancel']);
+
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
         Route::get('/profile',         [OwnerProfileController::class, 'profile']);
@@ -88,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
+        Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
 

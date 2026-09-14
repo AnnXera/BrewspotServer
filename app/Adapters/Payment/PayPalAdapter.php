@@ -156,7 +156,7 @@ class PayPalAdapter implements PaymentAdapterInterface
             'plan_id' => $planId,
             'application_context' => [
                 'return_url' => config('services.paypal.success_url'),
-                'cancel_url' => config('services.paypal.cancel_url'),
+                'cancel_url' => url('/api/payment/paypal/cancel'),
             ],
         ]);
 

@@ -92,7 +92,7 @@ class SubscriptionCheckoutService
                 'plan_name'   => $plan->sub_name,
                 'description' => "Subscription - {$plan->sub_name}",
                 'success_url' => config('services.paypal.success_url'),
-                'cancel_url'  => config('services.paypal.cancel_url'),
+                'cancel_url'  => url('/api/payment/paypal/cancel'),
                 'metadata'    => [
                     'subscription_uuid' => $subscription->uuid,
                     'owner_uuid'        => $owner->uuid,
