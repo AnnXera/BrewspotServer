@@ -18,6 +18,7 @@ class AdminSubscriberResource extends JsonResource
             'subscription_uuid' => $this->uuid,
             'transaction_id'    => "TXN-{$cleanId}",
             'status'            => $payment?->status ?? $this->status,
+            'billing_cycle'     => $this->billing_cycle,
             'name'              => trim(($this->user->firstname ?? '') . ' ' . ($this->user->lastname ?? '')),
             'email'             => $this->user->email ?? null,
             'phone_number'      => $this->user->phone_number ?? null,

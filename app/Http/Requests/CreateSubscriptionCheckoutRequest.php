@@ -16,7 +16,8 @@ class CreateSubscriptionCheckoutRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'plan_uuid' => ['required', 'string', 'exists:subscription_plans,uuid'],
+            'plan_uuid'     => ['required', 'string', 'exists:subscription_plans,uuid'],
+            'billing_cycle' => ['required', 'string', 'in:monthly,yearly'],
         ];
     }
 

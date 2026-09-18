@@ -12,7 +12,7 @@ class SubscriptionResource extends JsonResource
         return [
             'uuid'                  => $this->uuid,
             'status'                => $this->status,
-            'billing_cycle'         => $this->billing_cycle ?? 'monthly',
+            'billing_cycle'         => $this->billing_cycle,
             'start_date'            => $this->start_date?->toISOString(),
             'end_date'              => $this->end_date?->toISOString(),
             'cancel_at_period_end'  => $this->cancel_at_period_end,

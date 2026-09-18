@@ -119,13 +119,18 @@ class PayPalAdapter implements PaymentAdapterInterface
             throw new \RuntimeException('PayPal product creation failed: ' . $product->body());
         }
 
+        // Determine billing interval from billing_cycle
+        $billingCycle = $payload['billing_cycle'] ?? 'monthly';
+        $intervalUnit  = $billingCycle === 'yearly' ? 'YEAR' : 'MONTH';
+        $intervalCount = 1;
+
         $plan = $this->client()->post("{$this->baseUrl}/v1/billing/plans", [
             'product_id' => $product->json('id'),
             'name'       => $payload['name'],
             'billing_cycles' => [[
                 'frequency' => [
-                    'interval_unit'  => 'MONTH',
-                    'interval_count' => 1,
+                    'interval_unit'  => $intervalUnit,
+                    'interval_count' => $intervalCount,
                 ],
                 'tenure_type'   => 'REGULAR',
                 'sequence'      => 1,

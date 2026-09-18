@@ -21,6 +21,7 @@ class SubscriptionRepository
             'start_date'           => Carbon::now(),
             'end_date'             => Carbon::now()->addDays($plan->duration_days),
             'status'               => 'active',
+            'billing_cycle'        => 'trial',
             'cancel_at_period_end' => false,
         ]);
     }
@@ -52,7 +53,7 @@ class SubscriptionRepository
         return Subscription::where('uuid', $uuid)->with(['plan.features', 'user'])->first();
     }
 
-    public function createPending(int $userId, SubscriptionPlan $plan): Subscription
+    public function createPending(int $userId, SubscriptionPlan $plan, string $billingCycle = 'monthly'): Subscription
     {
         return Subscription::create([
             'user_id'              => $userId,
@@ -60,6 +61,7 @@ class SubscriptionRepository
             'start_date'           => null,
             'end_date'             => null,
             'status'               => 'pending',
+            'billing_cycle'        => $billingCycle,
             'cancel_at_period_end' => false,
         ]);
     }
@@ -68,9 +70,15 @@ class SubscriptionRepository
     {
         $subscription->loadMissing('plan');
 
+        $endDate = match ($subscription->billing_cycle) {
+            'yearly' => Carbon::now()->addDays(365),
+            'trial'  => Carbon::now()->addDays($subscription->plan->duration_days ?? 15),
+            default  => Carbon::now()->addDays(30), // monthly
+        };
+
         $subscription->update([
             'start_date' => Carbon::now(),
-            'end_date'   => Carbon::now()->addDays($subscription->plan->duration_days),
+            'end_date'   => $endDate,
             'status'     => 'active',
         ]);
 
@@ -148,7 +156,7 @@ class SubscriptionRepository
     /**
      * PayPal-native: create a pending subscription tied to a real PayPal subscription ID.
      */
-    public function createPendingWithPayPal(int $userId, SubscriptionPlan $plan, string $paypalSubscriptionId): Subscription
+    public function createPendingWithPayPal(int $userId, SubscriptionPlan $plan, string $paypalSubscriptionId, string $billingCycle = 'monthly'): Subscription
     {
         return Subscription::create([
             'user_id'                 => $userId,
@@ -156,6 +164,7 @@ class SubscriptionRepository
             'start_date'               => null,
             'end_date'                 => null,
             'status'                   => 'pending',
+            'billing_cycle'            => $billingCycle,
             'cancel_at_period_end'     => false,
             'paypal_subscription_id'   => $paypalSubscriptionId,
         ]);

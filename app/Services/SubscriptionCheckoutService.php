@@ -26,7 +26,7 @@ class SubscriptionCheckoutService
         private readonly MailAdapterInterface $mailer
     ) {}
 
-    public function createCheckout(User $owner, string $planUuid): array
+    public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly'): array
     {
         $plan = $this->planRepo->findByUuid($planUuid);
 
@@ -82,21 +82,27 @@ class SubscriptionCheckoutService
             }
         }
 
-        $subscription = $this->subscriptionRepo->createPending($owner->user_id, $plan);
+        // Pick the correct price based on billing cycle
+        $price = $billingCycle === 'yearly'
+            ? ($plan->yearly_price ?? $plan->price)
+            : $plan->price;
 
-        $amount = (int) round($plan->price * 100); // stored in centavos, same convention as before
+        $subscription = $this->subscriptionRepo->createPending($owner->user_id, $plan, $billingCycle);
+
+        $amount = (int) round($price * 100); // stored in centavos
 
         try {
             $checkout = $this->paymentAdapter->createCheckoutSession([
                 'amount'      => $amount,
                 'plan_name'   => $plan->sub_name,
-                'description' => "Subscription - {$plan->sub_name}",
+                'description' => "Subscription - {$plan->sub_name} ({$billingCycle})",
                 'success_url' => config('services.paypal.success_url'),
                 'cancel_url'  => url('/api/payment/paypal/cancel'),
                 'metadata'    => [
                     'subscription_uuid' => $subscription->uuid,
                     'owner_uuid'        => $owner->uuid,
                     'plan_uuid'         => $plan->uuid,
+                    'billing_cycle'     => $billingCycle,
                 ],
             ]);
         } catch (\Throwable $e) {
@@ -126,6 +132,7 @@ class SubscriptionCheckoutService
             'owner_uuid'        => $owner->uuid,
             'subscription_uuid' => $subscription->uuid,
             'plan_uuid'         => $plan->uuid,
+            'billing_cycle'     => $billingCycle,
             'order_id'          => $checkout['id'],
         ]);
 
@@ -230,7 +237,12 @@ class SubscriptionCheckoutService
                 ownerName: $owner->firstname ?? $owner->username ?? 'there',
                 planName: $subscription->plan->sub_name,
                 status: 'active',
-                amount: number_format($subscription->plan->price, 2),
+                amount: number_format(
+                    $subscription->billing_cycle === 'yearly'
+                        ? ($subscription->plan->yearly_price ?? $subscription->plan->price)
+                        : $subscription->plan->price,
+                    2
+                ),
                 endDate: $subscription->end_date?->format('F j, Y'),
             ));
 

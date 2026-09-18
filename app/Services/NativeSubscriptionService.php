@@ -25,7 +25,7 @@ class NativeSubscriptionService
      * the frontend should redirect the owner to. Activation happens later
      * via the BILLING.SUBSCRIPTION.ACTIVATED webhook.
      */
-    public function createSubscription(User $owner, string $planUuid): array
+    public function createSubscription(User $owner, string $planUuid, string $billingCycle = 'monthly'): array
     {
         $plan = $this->planRepo->findByUuid($planUuid);
 
@@ -33,23 +33,33 @@ class NativeSubscriptionService
             return ['success' => false, 'message' => 'Subscription plan not found.'];
         }
 
+        // Pick the correct price and cached PayPal plan ID based on billing cycle
+        $isYearly       = $billingCycle === 'yearly';
+        $price           = $isYearly ? ($plan->yearly_price ?? $plan->price) : $plan->price;
+        $paypalPlanId    = $isYearly ? $plan->paypal_yearly_plan_id : $plan->paypal_plan_id;
+        $paypalPlanField = $isYearly ? 'paypal_yearly_plan_id' : 'paypal_plan_id';
+
         try {
-            if (! $plan->paypal_plan_id) {
+            if (! $paypalPlanId) {
                 $paypalPlan = $this->paymentAdapter->createPlan([
-                    'name'        => $plan->sub_name,
-                    'description' => $plan->description ?? $plan->sub_name,
-                    'amount'      => (int) round($plan->price * 100),
+                    'name'          => $plan->sub_name,
+                    'description'   => $plan->description ?? $plan->sub_name,
+                    'amount'        => (int) round($price * 100),
+                    'billing_cycle' => $billingCycle,
                 ]);
 
-                $plan = $this->planRepo->syncPayPalPlanId($plan, $paypalPlan['id']);
+                $plan->update([$paypalPlanField => $paypalPlan['id']]);
+                $plan = $plan->fresh();
+                $paypalPlanId = $paypalPlan['id'];
             }
 
-            $paypalSubscription = $this->paymentAdapter->createSubscription($plan->paypal_plan_id);
+            $paypalSubscription = $this->paymentAdapter->createSubscription($paypalPlanId);
 
             $subscription = $this->subscriptionRepo->createPendingWithPayPal(
                 $owner->user_id,
                 $plan,
-                $paypalSubscription['id']
+                $paypalSubscription['id'],
+                $billingCycle
             );
 
             $approveLink = collect($paypalSubscription['links'] ?? [])->firstWhere('rel', 'approve')['href'] ?? null;
@@ -57,6 +67,7 @@ class NativeSubscriptionService
             Log::channel('owner')->info('PayPal native subscription initiated.', [
                 'owner_uuid'             => $owner->uuid,
                 'subscription_uuid'      => $subscription->uuid,
+                'billing_cycle'          => $billingCycle,
                 'paypal_subscription_id' => $paypalSubscription['id'],
             ]);
 
@@ -68,9 +79,10 @@ class NativeSubscriptionService
             ];
         } catch (\Throwable $e) {
             Log::channel('owner')->error('PayPal native subscription creation failed.', [
-                'owner_uuid' => $owner->uuid,
-                'plan_uuid'  => $planUuid,
-                'error'      => $e->getMessage(),
+                'owner_uuid'    => $owner->uuid,
+                'plan_uuid'     => $planUuid,
+                'billing_cycle' => $billingCycle,
+                'error'         => $e->getMessage(),
             ]);
 
             return [
@@ -128,7 +140,10 @@ class NativeSubscriptionService
 
         // Create a Payment record so payment_method / payment_instrument are queryable
         // via Subscription::latestPayment() — the same as the one-time checkout flow.
-        $amount     = (int) round(($subscription->plan->price ?? 0) * 100);
+        $price = $subscription->billing_cycle === 'yearly'
+            ? ($subscription->plan->yearly_price ?? $subscription->plan->price)
+            : ($subscription->plan->price ?? 0);
+        $amount     = (int) round($price * 100);
         $instrument = $this->resolvePaymentInstrument($resource);
 
         $this->paymentRepo->create([

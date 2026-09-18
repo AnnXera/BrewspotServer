@@ -17,7 +17,11 @@ class SubscriptionCheckoutController extends Controller
      */
     public function store(CreateSubscriptionCheckoutRequest $request): JsonResponse
     {
-        $result = $this->service->createCheckout($request->user(), $request->validated('plan_uuid'));
+        $result = $this->service->createCheckout(
+            $request->user(),
+            $request->validated('plan_uuid'),
+            $request->validated('billing_cycle')
+        );
 
         return response()->json($result, $result['success'] ? 201 : 422);
     }

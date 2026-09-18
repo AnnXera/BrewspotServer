@@ -85,6 +85,7 @@ class OwnerSeeder extends Seeder
                 'start_date'            => Carbon::now(),
                 'end_date'              => Carbon::now()->addDays($plan->duration_days),
                 'status'                => 'active',
+                'billing_cycle'         => 'trial',
                 'cancel_at_period_end'  => false,
             ]
         );

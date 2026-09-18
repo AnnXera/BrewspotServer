@@ -39,7 +39,7 @@ class SubscriptionPlanSeeder extends Seeder
                     'staff_management',
                 ],
                 'description'   => 'For single-branch cafes needing staff accounts.',
-                'duration_days' => 30,
+                'duration_days' => null,
                 'is_active'     => true,
             ],
             [
@@ -55,7 +55,7 @@ class SubscriptionPlanSeeder extends Seeder
                     'multi_branch',
                 ],
                 'description'   => 'For growing cafes looking to expand and optimize sales.',
-                'duration_days' => 30,
+                'duration_days' => null,
                 'is_active'     => true,
             ],
             [
@@ -73,7 +73,7 @@ class SubscriptionPlanSeeder extends Seeder
                     'multi_branch',
                 ],
                 'description'   => 'Complete powerhouse solution with multi-branch management & full features.',
-                'duration_days' => 30,
+                'duration_days' => null,
                 'is_active'     => true,
             ],
         ];

@@ -23,7 +23,7 @@ class StoreSubscriptionPlanRequest extends FormRequest
             'features'      => ['nullable', 'array'],
             'features.*'    => ['string'],
             'description'   => ['nullable', 'string'],
-            'duration_days' => ['required', 'integer', 'min:1'],
+            'duration_days' => ['nullable', 'integer', 'min:1'],
             'is_active'     => ['sometimes', 'boolean'],
         ];
     }

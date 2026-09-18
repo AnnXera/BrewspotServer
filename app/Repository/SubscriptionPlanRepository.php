@@ -40,7 +40,7 @@ class SubscriptionPlanRepository
             'yearly_price'  => $payload['yearly_price'] ?? 0.00,
             'max_branches'  => $payload['max_branches'] ?? 1,
             'description'   => $payload['description'] ?? null,
-            'duration_days' => $payload['duration_days'],
+            'duration_days' => $payload['duration_days'] ?? null,
             'is_active'     => $payload['is_active'] ?? true,
         ]);
 

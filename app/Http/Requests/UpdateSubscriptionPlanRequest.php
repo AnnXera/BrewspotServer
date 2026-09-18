@@ -28,7 +28,7 @@ class UpdateSubscriptionPlanRequest extends FormRequest
             'features'      => ['nullable', 'array'],
             'features.*'    => ['string'],
             'description'   => ['nullable', 'string'],
-            'duration_days' => ['sometimes', 'required', 'integer', 'min:1'],
+            'duration_days' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'is_active'     => ['sometimes', 'boolean'],
         ];
     }

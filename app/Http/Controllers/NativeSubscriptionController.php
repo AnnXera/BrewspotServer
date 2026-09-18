@@ -19,7 +19,8 @@ class NativeSubscriptionController extends Controller
     {
         $result = $this->service->createSubscription(
             $request->user(),
-            $request->validated('plan_uuid')
+            $request->validated('plan_uuid'),
+            $request->validated('billing_cycle')
         );
 
         return response()->json($result, $result['success'] ? 201 : 422);
