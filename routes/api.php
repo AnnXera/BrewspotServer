@@ -95,6 +95,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
+        Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
+        Route::delete('/branches/{uuid}', [BranchController::class, 'destroy']); // soft-delete branch
 
         // Feature-Gated: Staff Management
         Route::middleware('plan.feature:staff_management')->group(function () {

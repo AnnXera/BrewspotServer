@@ -50,4 +50,38 @@ class BranchRepository
             'status'    => 'pending_approval',
         ]);
     }
+
+    /**
+     * Find a branch by UUID scoped to the owner's cafes.
+     * Returns null when the branch doesn't exist or doesn't belong to this owner.
+     */
+    public function findByUuidForOwner(int $userId, string $branchUuid): ?CafeBranch
+    {
+        return CafeBranch::where('uuid', $branchUuid)
+            ->whereHas('cafe', fn ($q) => $q->where('user_id', $userId))
+            ->with(['cafe', 'documents'])
+            ->first();
+    }
+
+    /**
+     * Update branch fields. Only non-null values in $data are applied.
+     */
+    public function update(CafeBranch $branch, array $data): CafeBranch
+    {
+        $branch->update($data);
+
+        return $branch->fresh(['documents']);
+    }
+
+    /**
+     * Replace the file path on an existing document row for a given type.
+     * If no document of that type exists yet, create one.
+     */
+    public function updateDocument(int $branchId, string $docType, string $newPath): BranchDocument
+    {
+        return BranchDocument::updateOrCreate(
+            ['branch_id' => $branchId, 'doc_type' => $docType],
+            ['file' => $newPath]
+        );
+    }
 }
