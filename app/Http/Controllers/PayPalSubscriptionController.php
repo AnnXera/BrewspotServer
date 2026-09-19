@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -31,33 +30,19 @@ class PayPalSubscriptionController extends Controller
         // since PayPal keeps the same subscription ID across a revision.
         $existingSub = Subscription::where('paypal_subscription_id', $request->paypal_subscription_id)->first();
         if ($existingSub) {
-            DB::transaction(function () use ($existingSub, $plan, $user) {
-                $existingSub->update([
-                    'sub_plan_id' => $plan->sub_plan_id,
-                ]);
-
-                // Record a payment reflecting the revised price immediately on upgrade/downgrade,
-                // mirroring the record NativeSubscriptionService creates on first activation.
-                $billingCycle = $existingSub->billing_cycle ?? 'monthly';
-                $price = $billingCycle === 'yearly'
-                    ? ($plan->yearly_price ?? $plan->price)
-                    : $plan->price;
-
-                Payment::create([
-                    'user_id' => $user->user_id,
-                    'payable_type' => Subscription::class,
-                    'payable_id' => $existingSub->sub_id,
-                    'amount' => (int) round($price * 100),
-                    'payment_method_type' => 'paypal_subscription',
-                    'payment_instrument' => 'paypal_subscription_revision',
-                    'gateway_transaction_id' => $existingSub->paypal_subscription_id . '-revise-' . now()->timestamp,
-                    'status' => 'succeeded',
-                ]);
-            });
+            // PayPal does not prorate: revise() only changes what PayPal will bill on the NEXT
+            // cycle, it doesn't charge anything now. So don't switch sub_plan_id yet either —
+            // that would unlock the new plan's features for the rest of the current cycle for
+            // free. Stash the change as "pending" and only apply it once the next
+            // PAYMENT.SALE.COMPLETED webhook confirms the new plan was actually paid for.
+            $existingSub->update([
+                'pending_sub_plan_id' => $plan->sub_plan_id,
+                'pending_billing_cycle' => $request->input('billing_cycle', $existingSub->billing_cycle),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Subscription plan updated successfully.',
+                'message' => 'Plan change scheduled. It will take effect on your next billing date.',
                 'subscription' => $existingSub
             ]);
         }
@@ -109,6 +94,17 @@ class PayPalSubscriptionController extends Controller
                 $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
 
                 if ($subscription && !Payment::where('gateway_transaction_id', $saleId)->exists()) {
+                    // A real charge landed — apply any plan change that was waiting on it.
+                    if ($subscription->pending_sub_plan_id) {
+                        $subscription->update([
+                            'sub_plan_id' => $subscription->pending_sub_plan_id,
+                            'billing_cycle' => $subscription->pending_billing_cycle ?? $subscription->billing_cycle,
+                            'pending_sub_plan_id' => null,
+                            'pending_billing_cycle' => null,
+                        ]);
+                        $subscription->refresh();
+                    }
+
                     // Record the payment
                     Payment::create([
                         'user_id' => $subscription->user_id,
@@ -146,7 +142,9 @@ class PayPalSubscriptionController extends Controller
             }
         }
 
-        // 2.5 Handle Subscription Upgrades (Revise)
+        // 2.5 Handle Subscription Upgrades (Revise) — PayPal confirms the plan definition
+        // changed, but it hasn't charged for it yet, so this only records the change as
+        // pending. It's applied to sub_plan_id once PAYMENT.SALE.COMPLETED actually pays for it.
         if ($eventType === 'BILLING.SUBSCRIPTION.UPDATED') {
             $subscriptionId = $payload['resource']['id'] ?? null;
             $planId = $payload['resource']['plan_id'] ?? null;
@@ -157,11 +155,11 @@ class PayPalSubscriptionController extends Controller
                     $newPlan = SubscriptionPlan::where('paypal_plan_id', $planId)
                                                ->orWhere('paypal_yearly_plan_id', $planId)
                                                ->first();
-                    if ($newPlan) {
+                    if ($newPlan && $newPlan->sub_plan_id !== $subscription->sub_plan_id) {
                         $subscription->update([
-                            'sub_plan_id' => $newPlan->sub_plan_id
+                            'pending_sub_plan_id' => $newPlan->sub_plan_id
                         ]);
-                        Log::info("Subscription $subscriptionId plan upgraded to {$newPlan->sub_name} ($planId)");
+                        Log::info("Subscription $subscriptionId plan change to {$newPlan->sub_name} ($planId) scheduled for next billing date.");
                     }
                 }
             }

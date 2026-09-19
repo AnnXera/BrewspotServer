@@ -21,6 +21,8 @@ class Subscription extends Model
         'uuid',
         'user_id',
         'sub_plan_id',
+        'pending_sub_plan_id',
+        'pending_billing_cycle',
         'start_date',
         'end_date',
         'status',
@@ -50,6 +52,11 @@ class Subscription extends Model
     public function plan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'sub_plan_id', 'sub_plan_id');
+    }
+
+    public function pendingPlan(): BelongsTo
+    {
+        return $this->belongsTo(SubscriptionPlan::class, 'pending_sub_plan_id', 'sub_plan_id');
     }
 
     public function payments(): MorphMany

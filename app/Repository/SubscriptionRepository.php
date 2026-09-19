@@ -30,7 +30,7 @@ class SubscriptionRepository
     {
         return Subscription::where('user_id', $userId)
             ->where('status', 'active')
-            ->with('plan.features')
+            ->with(['plan.features', 'pendingPlan'])
             ->latest('start_date')
             ->first();
     }
