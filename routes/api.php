@@ -92,6 +92,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'store']);
+        Route::post('/subscriptions/paypal/upgrade/preview', [\App\Http\Controllers\PayPalSubscriptionController::class, 'previewUpgrade']);
+        Route::post('/subscriptions/paypal/upgrade/order', [\App\Http\Controllers\PayPalSubscriptionController::class, 'createUpgradeOrder']);
+        Route::post('/subscriptions/paypal/upgrade/capture', [\App\Http\Controllers\PayPalSubscriptionController::class, 'captureUpgradeOrder']);
         Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
