@@ -13,6 +13,24 @@ class FeatureSeeder extends Seeder
         $features = [
             [
                 'uuid'        => (string) Str::uuid(),
+                'key'         => 'menu_management',
+                'name'        => 'Menu Management',
+                'description' => 'Create and manage your cafe menu categories and items.',
+                'is_active'   => true,
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'uuid'        => (string) Str::uuid(),
+                'key'         => 'pos_system',
+                'name'        => 'Point of Sale (POS) System',
+                'description' => 'Process orders and transactions using the built-in POS.',
+                'is_active'   => true,
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ],
+            [
+                'uuid'        => (string) Str::uuid(),
                 'key'         => 'staff_management',
                 'name'        => 'Staff Management',
                 'description' => 'Invite, manage, and assign roles to cashiers and managers for your branches.',

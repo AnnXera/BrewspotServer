@@ -19,6 +19,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'yearly_price'  => 0.00,
                 'max_branches'  => 1,
                 'features'      => [
+                    'menu_management',
+                    'pos_system',
                     'staff_management',
                     'advanced_analytics',
                     'promotions_discounts',
@@ -36,6 +38,9 @@ class SubscriptionPlanSeeder extends Seeder
                 'yearly_price'  => 5990.00,
                 'max_branches'  => 1,
                 'features'      => [
+                    'menu_management',
+                    'pos_system',
+                    'advanced_analytics',
                     'staff_management',
                 ],
                 'description'   => 'For single-branch cafes needing staff accounts.',
