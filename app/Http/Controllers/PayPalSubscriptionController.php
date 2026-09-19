@@ -30,7 +30,7 @@ class PayPalSubscriptionController extends Controller
         $existingSub = Subscription::where('paypal_subscription_id', $request->paypal_subscription_id)->first();
         if ($existingSub) {
             return response()->json([
-                'message' => 'Subscription already exists.',
+                'message' => 'Subscription exists. If this is an upgrade, it will be processed shortly.',
                 'subscription' => $existingSub
             ]);
         }
@@ -99,6 +99,12 @@ class PayPalSubscriptionController extends Controller
                         $newEndDate = now()->addYear();
                     }
 
+                    // Cancel any other active subscriptions for this user (e.g., Trials)
+                    Subscription::where('user_id', $subscription->user_id)
+                        ->where('sub_id', '!=', $subscription->sub_id)
+                        ->where('status', 'active')
+                        ->update(['status' => 'cancelled']);
+
                     // Activate and extend subscription
                     $subscription->update([
                         'status' => 'active',
@@ -106,6 +112,27 @@ class PayPalSubscriptionController extends Controller
                     ]);
 
                     Log::info("Subscription $subscriptionId activated/extended to $newEndDate");
+                }
+            }
+        }
+
+        // 2.5 Handle Subscription Upgrades (Revise)
+        if ($eventType === 'BILLING.SUBSCRIPTION.UPDATED') {
+            $subscriptionId = $payload['resource']['id'] ?? null;
+            $planId = $payload['resource']['plan_id'] ?? null;
+
+            if ($subscriptionId && $planId) {
+                $subscription = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+                if ($subscription) {
+                    $newPlan = SubscriptionPlan::where('paypal_plan_id', $planId)
+                                               ->orWhere('paypal_yearly_plan_id', $planId)
+                                               ->first();
+                    if ($newPlan) {
+                        $subscription->update([
+                            'sub_plan_id' => $newPlan->sub_plan_id
+                        ]);
+                        Log::info("Subscription $subscriptionId plan upgraded to {$newPlan->sub_name} ($planId)");
+                    }
                 }
             }
         }
@@ -161,7 +188,7 @@ class PayPalSubscriptionController extends Controller
                 'transmission_sig' => $request->header('PAYPAL-TRANSMISSION-SIG'),
                 'transmission_time' => $request->header('PAYPAL-TRANSMISSION-TIME'),
                 'webhook_id' => $webhookId,
-                'webhook_event' => $request->all()
+                'webhook_event' => json_decode($request->getContent(), true)
             ]);
 
         if ($verifyResponse->successful() && $verifyResponse->json('verification_status') === 'SUCCESS') {

@@ -133,10 +133,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/documents/branch/{branchDocId}',  [DocumentController::class, 'branchDocument']);
     });
 
-    // Public Webhooks
-    Route::post('/webhooks/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'webhook']);
+    // Public Webhooks (Moved outside auth middleware)
 });
 
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
 
-Route::post('/webhooks/paypal', [PaymentWebhookController::class, 'handle']);
+Route::post('/webhooks/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'webhook']);
+// Route::post('/webhooks/paypal', [PaymentWebhookController::class, 'handle']);

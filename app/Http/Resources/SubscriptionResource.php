@@ -35,6 +35,7 @@ class SubscriptionResource extends JsonResource
             ]),
             'payment_gateway'       => $this->latestPayment?->payment_instrument
                 ?? ($this->latestPayment?->payment_method_type ? 'PayPal' : null),
+            'paypal_subscription_id'=> $this->paypal_subscription_id,
             'created_at'            => $this->created_at?->toISOString(),
         ];
     }
