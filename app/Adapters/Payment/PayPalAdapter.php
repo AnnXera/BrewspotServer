@@ -172,20 +172,6 @@ class PayPalAdapter implements PaymentAdapterInterface
         return $response->json();
     }
 
-    public function reviseSubscription(string $subscriptionId, string $planId): array
-    {
-        $response = $this->client()->post("{$this->baseUrl}/v1/billing/subscriptions/{$subscriptionId}/revise", [
-            'plan_id' => $planId,
-        ]);
-
-        if ($response->failed()) {
-            throw new \RuntimeException('PayPal subscription revise failed: ' . $response->body());
-        }
-
-        // PayPal returns 204 No Content on a straightforward revise.
-        return $response->json() ?? [];
-    }
-
     public function verifyWebhookSignature(string $rawPayload, string $signatureHeader, string $webhookId): bool
     {
         // $signatureHeader is a JSON-encoded bundle of the paypal-* headers
