@@ -9,7 +9,7 @@ class SubscriptionPlanRepository
 {
     public function list(int $perPage = 15)
     {
-        return SubscriptionPlan::with('features')->latest()->paginate($perPage);
+        return SubscriptionPlan::with('features')->orderBy('price', 'asc')->paginate($perPage);
     }
 
     public function findByUuid(string $uuid): ?SubscriptionPlan
@@ -24,7 +24,7 @@ class SubscriptionPlanRepository
 
     public function listActive(int $perPage = 15)
     {
-        return SubscriptionPlan::where('is_active', true)->with('features')->latest()->paginate($perPage);
+        return SubscriptionPlan::where('is_active', true)->with('features')->orderBy('price', 'asc')->paginate($perPage);
     }
 
     public function findActiveByUuid(string $uuid): ?SubscriptionPlan

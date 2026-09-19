@@ -15,6 +15,8 @@ class SubscriptionPlanResource extends JsonResource
             'price'            => $this->price,
             'monthly_price'    => $this->price,
             'yearly_price'     => $this->yearly_price ?? 0.00,
+            'paypal_plan_id'   => $this->paypal_plan_id,
+            'paypal_yearly_plan_id' => $this->paypal_yearly_plan_id,
             'has_multi_branch' => $this->relationLoaded('features')
                 ? $this->features->contains('key', 'multi_branch')
                 : $this->hasFeature('multi_branch'),
