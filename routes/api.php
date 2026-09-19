@@ -91,7 +91,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
-        Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']); // not working
+        Route::post('/subscriptions/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'store']);
+        Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
@@ -131,6 +132,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/documents/cafe/{cafeDocId}',      [DocumentController::class, 'cafeDocument']);
         Route::get('/documents/branch/{branchDocId}',  [DocumentController::class, 'branchDocument']);
     });
+
+    // Public Webhooks
+    Route::post('/webhooks/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'webhook']);
 });
 
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
