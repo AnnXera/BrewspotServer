@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\SubscriptionPlan;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,34 +14,39 @@ class SubscriptionResource extends JsonResource
             'uuid'                  => $this->uuid,
             'status'                => $this->status,
             'billing_cycle'         => $this->billing_cycle,
+            'pending_billing_cycle' => $this->pending_billing_cycle,
             'start_date'            => $this->start_date?->toISOString(),
             'end_date'              => $this->end_date?->toISOString(),
             'cancel_at_period_end'  => $this->cancel_at_period_end,
-            'plan'                  => $this->whenLoaded('plan', fn () => [
-                'uuid'             => $this->plan->uuid,
-                'sub_name'         => $this->plan->sub_name,
-                'price'            => $this->plan->price,
-                'monthly_price'    => $this->plan->price,
-                'yearly_price'     => $this->plan->yearly_price ?? 0.00,
-                'has_multi_branch' => $this->plan->relationLoaded('features')
-                    ? $this->plan->features->contains('key', 'multi_branch')
-                    : $this->plan->hasFeature('multi_branch'),
-                'duration_days' => $this->plan->duration_days,
-                'features'      => $this->plan->features instanceof \Illuminate\Support\Collection
-                    ? $this->plan->features->pluck('key')->values()->toArray()
-                    : (is_array($this->plan->features) ? $this->plan->features : []),
-                'feature_details' => $this->plan->features instanceof \Illuminate\Support\Collection
-                    ? FeatureResource::collection($this->plan->features)
-                    : [],
-            ]),
+            'plan'                  => $this->whenLoaded('plan', fn () => $this->planToArray($this->plan)),
             'payment_gateway'       => $this->latestPayment?->payment_instrument
                 ?? ($this->latestPayment?->payment_method_type ? 'PayPal' : null),
-            'pending_plan'          => $this->whenLoaded('pendingPlan', fn () => $this->pendingPlan ? [
-                'uuid'     => $this->pendingPlan->uuid,
-                'sub_name' => $this->pendingPlan->sub_name,
-            ] : null),
+            'pending_plan'          => $this->whenLoaded('pendingPlan', fn () => $this->pendingPlan
+                ? $this->planToArray($this->pendingPlan)
+                : null),
             'paypal_subscription_id'=> $this->paypal_subscription_id,
             'created_at'            => $this->created_at?->toISOString(),
+        ];
+    }
+
+    private function planToArray(SubscriptionPlan $plan): array
+    {
+        return [
+            'uuid'             => $plan->uuid,
+            'sub_name'         => $plan->sub_name,
+            'price'            => $plan->price,
+            'monthly_price'    => $plan->price,
+            'yearly_price'     => $plan->yearly_price ?? 0.00,
+            'has_multi_branch' => $plan->relationLoaded('features')
+                ? $plan->features->contains('key', 'multi_branch')
+                : $plan->hasFeature('multi_branch'),
+            'duration_days'    => $plan->duration_days,
+            'features'         => $plan->features instanceof \Illuminate\Support\Collection
+                ? $plan->features->pluck('key')->values()->toArray()
+                : (is_array($plan->features) ? $plan->features : []),
+            'feature_details'  => $plan->features instanceof \Illuminate\Support\Collection
+                ? FeatureResource::collection($plan->features)
+                : [],
         ];
     }
 }
