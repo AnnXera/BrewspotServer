@@ -106,8 +106,10 @@ class RegisterRequest extends FormRequest
             ],
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'mayors_permit_file'    => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'sanitary_permit_file'  => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'bir_registered_at'     => ['required', 'date'],
+            'bir_expired_at'        => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
+            'tin_number'            => ['required', 'string', 'max:50'],
+            'vat'                   => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
     }
 
@@ -184,12 +186,10 @@ class RegisterRequest extends FormRequest
             'bir_file.required'             => 'BIR file is required.',
             'bir_file.mimes'                => 'BIR file must be jpg, jpeg, png, or pdf.',
             'bir_file.max'                  => 'BIR file must not exceed 5MB.',
-            'mayors_permit_file.required'   => 'Mayor\'s permit file is required.',
-            'mayors_permit_file.mimes'      => 'Mayor\'s permit must be jpg, jpeg, png, or pdf.',
-            'mayors_permit_file.max'        => 'Mayor\'s permit must not exceed 5MB.',
-            'sanitary_permit_file.required' => 'Sanitary permit file is required.',
-            'sanitary_permit_file.mimes'    => 'Sanitary permit must be jpg, jpeg, png, or pdf.',
-            'sanitary_permit_file.max'      => 'Sanitary permit must not exceed 5MB.',
+            'bir_registered_at.required'    => 'BIR registered date is required.',
+            'tin_number.required'           => 'TIN number is required.',
+            'vat.required'                  => 'VAT type is required.',
+            'vat.in'                        => 'VAT type must be either vat-registered or non-vat.',
         ];
     }
 

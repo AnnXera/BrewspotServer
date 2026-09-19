@@ -92,13 +92,14 @@ class RegistrationService
                 }
 
                 // 7. Store branch documents — PRIVATE
-                $birFilePath      = $this->storeFile($payload['bir_file'],             "{$branchFolder}/branch_documents");
-                $mayorsFilePath   = $this->storeFile($payload['mayors_permit_file'],   "{$branchFolder}/branch_documents");
-                $sanitaryFilePath = $this->storeFile($payload['sanitary_permit_file'], "{$branchFolder}/branch_documents");
+                $birFilePath = $this->storeFile($payload['bir_file'], "{$branchFolder}/branch_documents");
 
-                $this->repo->createBranchDocument($branch->branch_id, 'BIR',             $birFilePath);
-                $this->repo->createBranchDocument($branch->branch_id, 'mayors_permit',   $mayorsFilePath);
-                $this->repo->createBranchDocument($branch->branch_id, 'sanitary_permit', $sanitaryFilePath);
+                $this->repo->createBranchDocument($branch->branch_id, 'BIR', $birFilePath, [
+                    'registered_at' => $payload['bir_registered_at'],
+                    'expired_at'    => $payload['bir_expired_at'],
+                    'tin_number'    => $payload['tin_number'],
+                    'vat'           => $payload['vat'],
+                ]);
 
                 // 8. Create approval entry for admin review
                 $this->repo->createApprovalEntry(
@@ -217,16 +218,12 @@ class RegistrationService
                         'uploaded' => ! empty($cafeDoc),
                     ],
                     'bir' => [
-                        'type'     => 'BIR',
-                        'uploaded' => $branchDocs->contains('doc_type', 'BIR'),
-                    ],
-                    'mayors_permit' => [
-                        'type'     => 'mayors_permit',
-                        'uploaded' => $branchDocs->contains('doc_type', 'mayors_permit'),
-                    ],
-                    'sanitary_permit' => [
-                        'type'     => 'sanitary_permit',
-                        'uploaded' => $branchDocs->contains('doc_type', 'sanitary_permit'),
+                        'type'          => 'BIR',
+                        'uploaded'      => $branchDocs->contains('doc_type', 'BIR'),
+                        'registered_at' => $branchDocs->firstWhere('doc_type', 'BIR')?->registered_at,
+                        'expired_at'    => $branchDocs->firstWhere('doc_type', 'BIR')?->expired_at,
+                        'tin_number'    => $branchDocs->firstWhere('doc_type', 'BIR')?->tin_number,
+                        'vat'           => $branchDocs->firstWhere('doc_type', 'BIR')?->vat,
                     ],
                 ],
                 'approval' => [

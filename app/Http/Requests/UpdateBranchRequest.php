@@ -57,8 +57,10 @@ class UpdateBranchRequest extends FormRequest
             'address'              => ['nullable', 'string'],
             'status'               => ['nullable', 'string', 'in:active,inactive'],
             'bir_file'             => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'mayors_permit_file'   => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'sanitary_permit_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'bir_registered_at'    => ['nullable', 'date'],
+            'bir_expired_at'       => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
+            'tin_number'           => ['nullable', 'string', 'max:50'],
+            'vat'                  => ['nullable', 'string', 'in:vat-registered,non-vat'],
         ];
     }
 
@@ -75,10 +77,7 @@ class UpdateBranchRequest extends FormRequest
             'status.in'                     => 'Status must be either active or inactive.',
             'bir_file.mimes'                => 'BIR file must be jpg, jpeg, png, or pdf.',
             'bir_file.max'                  => 'BIR file must not exceed 5MB.',
-            'mayors_permit_file.mimes'      => "Mayor's permit must be jpg, jpeg, png, or pdf.",
-            'mayors_permit_file.max'        => "Mayor's permit must not exceed 5MB.",
-            'sanitary_permit_file.mimes'    => 'Sanitary permit must be jpg, jpeg, png, or pdf.',
-            'sanitary_permit_file.max'      => 'Sanitary permit must not exceed 5MB.',
+            'vat.in'                        => 'VAT type must be either vat-registered or non-vat.',
         ];
     }
 

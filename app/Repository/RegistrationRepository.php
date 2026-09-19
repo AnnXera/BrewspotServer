@@ -67,13 +67,13 @@ class RegistrationRepository
         ]);
     }
 
-    public function createBranchDocument(int $branchId, string $docType, string $filePath): BranchDocument
+    public function createBranchDocument(int $branchId, string $docType, string $filePath, array $extraData = []): BranchDocument
     {
-        return BranchDocument::create([
+        return BranchDocument::create(array_merge([
             'branch_id' => $branchId,
             'doc_type'  => $docType,
             'file'      => $filePath,
-        ]);
+        ], $extraData));
     }
 
     public function createApprovalEntry(int $userId, int $cafeId, int $branchId): ApprovalList

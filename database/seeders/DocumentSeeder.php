@@ -68,23 +68,28 @@ class DocumentSeeder extends Seeder
             ]
         );
 
-        // 3. Branch documents — blank PDFs (BIR, Mayor's Permit, Sanitary Permit)
+        // 3. Branch documents — blank PDFs (BIR)
         $branchDocs = [
-            'BIR'             => 'bir_certificate.pdf',
-            'mayors_permit'   => 'mayors_permit.pdf',
-            'sanitary_permit' => 'sanitary_permit.pdf',
+            'BIR' => 'bir_certificate.pdf',
         ];
 
         foreach ($branchDocs as $docType => $filename) {
             $path = $this->putBlankPdf("{$branchFolder}/branch_documents", $filename);
 
+            $extra = [
+                'file'          => $path,
+                'registered_at' => now()->subMonths(3),
+                'expired_at'    => now()->addYears(1),
+            ];
+
+            if ($docType === 'BIR') {
+                $extra['tin_number'] = '123-456-789-000';
+                $extra['vat'] = 'vat-registered';
+            }
+
             BranchDocument::firstOrCreate(
                 ['branch_id' => $branch->branch_id, 'doc_type' => $docType],
-                [
-                    'file'          => $path,
-                    'registered_at' => now()->subMonths(3),
-                    'expired_at'    => now()->addYears(1),
-                ]
+                $extra
             );
         }
 

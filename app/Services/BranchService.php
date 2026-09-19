@@ -92,13 +92,14 @@ class BranchService
                 }
 
                 // Permits — PRIVATE
-                $birPath      = $this->storeFile($payload['bir_file'],             "{$branchFolder}/branch_documents");
-                $mayorsPath   = $this->storeFile($payload['mayors_permit_file'],   "{$branchFolder}/branch_documents");
-                $sanitaryPath = $this->storeFile($payload['sanitary_permit_file'], "{$branchFolder}/branch_documents");
+                $birPath = $this->storeFile($payload['bir_file'], "{$branchFolder}/branch_documents");
 
-                $this->repo->createDocument($branch->branch_id, 'BIR',             $birPath);
-                $this->repo->createDocument($branch->branch_id, 'mayors_permit',   $mayorsPath);
-                $this->repo->createDocument($branch->branch_id, 'sanitary_permit', $sanitaryPath);
+                $this->repo->createDocument($branch->branch_id, 'BIR', $birPath, [
+                    'registered_at' => $payload['bir_registered_at'],
+                    'expired_at'    => $payload['bir_expired_at'],
+                    'tin_number'    => $payload['tin_number'],
+                    'vat'           => $payload['vat'],
+                ]);
 
                 $this->repo->createApprovalEntry($owner->user_id, $cafe->cafe_id, $branch->branch_id);
 
@@ -204,9 +205,7 @@ class BranchService
 
                 // Permit documents — replace on local (private) disk
                 $documentMap = [
-                    'bir_file'             => 'BIR',
-                    'mayors_permit_file'   => 'mayors_permit',
-                    'sanitary_permit_file' => 'sanitary_permit',
+                    'bir_file' => 'BIR',
                 ];
 
                 foreach ($documentMap as $fieldName => $docType) {
@@ -222,7 +221,17 @@ class BranchService
                             "{$branchFolder}/branch_documents"
                         );
 
-                        $this->repo->updateDocument($branch->branch_id, $docType, $newPath);
+                        if ($docType === 'BIR') {
+                            $extraData = [];
+                            if (isset($payload['bir_registered_at'])) $extraData['registered_at'] = $payload['bir_registered_at'];
+                            if (isset($payload['bir_expired_at'])) $extraData['expired_at'] = $payload['bir_expired_at'];
+                            if (isset($payload['tin_number'])) $extraData['tin_number'] = $payload['tin_number'];
+                            if (isset($payload['vat'])) $extraData['vat'] = $payload['vat'];
+
+                            $this->repo->updateDocument($branch->branch_id, $docType, $newPath, $extraData);
+                        } else {
+                            $this->repo->updateDocument($branch->branch_id, $docType, $newPath);
+                        }
                     }
                 }
 

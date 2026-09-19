@@ -32,13 +32,13 @@ class BranchRepository
         ]);
     }
 
-    public function createDocument(int $branchId, string $docType, string $filePath): BranchDocument
+    public function createDocument(int $branchId, string $docType, string $filePath, array $extraData = []): BranchDocument
     {
-        return BranchDocument::create([
+        return BranchDocument::create(array_merge([
             'branch_id' => $branchId,
             'doc_type'  => $docType,
             'file'      => $filePath,
-        ]);
+        ], $extraData));
     }
 
     public function createApprovalEntry(int $userId, int $cafeId, int $branchId): ApprovalList
@@ -77,11 +77,11 @@ class BranchRepository
      * Replace the file path on an existing document row for a given type.
      * If no document of that type exists yet, create one.
      */
-    public function updateDocument(int $branchId, string $docType, string $newPath): BranchDocument
+    public function updateDocument(int $branchId, string $docType, string $newPath, array $extraData = []): BranchDocument
     {
         return BranchDocument::updateOrCreate(
             ['branch_id' => $branchId, 'doc_type' => $docType],
-            ['file' => $newPath]
+            array_merge(['file' => $newPath], $extraData)
         );
     }
 }
