@@ -44,4 +44,9 @@ class MenuCategoryRepository
             ->orderBy('name')
             ->get();
     }
+
+    public function delete(MenuCategory $category): void
+    {
+        $category->delete();
+    }
 }

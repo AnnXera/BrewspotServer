@@ -114,4 +114,36 @@ class MenuCategoryService
             'categories' => MenuCategoryResource::collection($categories),
         ];
     }
+
+    public function deleteCategory(User $owner, string $uuid): array
+    {
+        $cafe = $this->repo->findCafeByOwner($owner->user_id);
+
+        if (! $cafe) {
+            return ['success' => false, 'message' => 'No cafe found for this account.'];
+        }
+
+        $category = $this->repo->findByUuidForCafe($uuid, $cafe->cafe_id);
+
+        if (! $category) {
+            Log::channel('owner')->warning('Menu category deletion blocked — not found or not owned.', [
+                'owner_uuid'    => $owner->uuid,
+                'category_uuid' => $uuid,
+            ]);
+
+            return ['success' => false, 'message' => 'Category not found.'];
+        }
+
+        $this->repo->delete($category);
+
+        Log::channel('owner')->info('Menu category deleted.', [
+            'owner_uuid'    => $owner->uuid,
+            'category_uuid' => $uuid,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'Menu category deleted successfully.',
+        ];
+    }
 }

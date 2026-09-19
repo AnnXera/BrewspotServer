@@ -42,4 +42,14 @@ class MenuCategoryController extends Controller
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
+
+    /**
+     * DELETE /api/owner/menu-categories/{uuid}
+     */
+    public function destroy(Request $request, string $uuid): JsonResponse
+    {
+        $result = $this->service->deleteCategory($request->user(), $uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
 }

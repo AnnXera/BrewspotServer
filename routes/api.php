@@ -108,6 +108,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
         Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
         Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
+        Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
 
         Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
         Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
