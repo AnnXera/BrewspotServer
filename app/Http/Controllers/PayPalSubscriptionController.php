@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -30,9 +31,29 @@ class PayPalSubscriptionController extends Controller
         // since PayPal keeps the same subscription ID across a revision.
         $existingSub = Subscription::where('paypal_subscription_id', $request->paypal_subscription_id)->first();
         if ($existingSub) {
-            $existingSub->update([
-                'sub_plan_id' => $plan->sub_plan_id,
-            ]);
+            DB::transaction(function () use ($existingSub, $plan, $user) {
+                $existingSub->update([
+                    'sub_plan_id' => $plan->sub_plan_id,
+                ]);
+
+                // Record a payment reflecting the revised price immediately on upgrade/downgrade,
+                // mirroring the record NativeSubscriptionService creates on first activation.
+                $billingCycle = $existingSub->billing_cycle ?? 'monthly';
+                $price = $billingCycle === 'yearly'
+                    ? ($plan->yearly_price ?? $plan->price)
+                    : $plan->price;
+
+                Payment::create([
+                    'user_id' => $user->user_id,
+                    'payable_type' => Subscription::class,
+                    'payable_id' => $existingSub->sub_id,
+                    'amount' => (int) round($price * 100),
+                    'payment_method_type' => 'paypal_subscription',
+                    'payment_instrument' => 'paypal_subscription_revision',
+                    'gateway_transaction_id' => $existingSub->paypal_subscription_id . '-revise-' . now()->timestamp,
+                    'status' => 'succeeded',
+                ]);
+            });
 
             return response()->json([
                 'success' => true,
