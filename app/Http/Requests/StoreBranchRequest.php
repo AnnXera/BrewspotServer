@@ -21,10 +21,12 @@ class StoreBranchRequest extends FormRequest
             $raw = trim($this->input('cafe_phonenumber'));
             if (!preg_match('/[a-zA-Z]/', $raw)) {
                 $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '63')) {
-                    $digits = '0' . substr($digits, 2);
+                if (str_starts_with($digits, '09')) {
+                    $digits = substr($digits, 1);
+                } elseif (str_starts_with($digits, '639')) {
+                    $digits = substr($digits, 2);
                 }
-                $this->merge(['cafe_phonenumber' => $digits]);
+                $this->merge(['cafe_phonenumber' => '+63' . $digits]);
             }
         }
     }
@@ -39,7 +41,7 @@ class StoreBranchRequest extends FormRequest
                 'required',
                 'string',
                 'max:20',
-                'regex:/^09\d{9}$/',
+                'regex:/^\+639\d{9}$/',
                 Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
                 Rule::unique('users', 'phone_number'),
             ],
@@ -61,7 +63,7 @@ class StoreBranchRequest extends FormRequest
             'cafe_email.required'           => 'Branch email is required.',
             'cafe_email.unique'             => 'This branch email is already in use.',
             'cafe_phonenumber.required'     => 'Branch phone number is required.',
-            'cafe_phonenumber.regex'        => 'Branch phone number must start with 09 and be 11 digits long (e.g., 09123456789).',
+            'cafe_phonenumber.regex'        => 'Branch phone number must be 10 digits (e.g., 9123456789).',
             'cafe_phonenumber.unique'       => 'This branch phone number is already in use.',
             'address.required'              => 'Branch address is required.',
             'bir_file.required'             => 'BIR file is required.',

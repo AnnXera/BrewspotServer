@@ -13,6 +13,22 @@ class CreateStaffRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('phone_number') && is_string($this->input('phone_number'))) {
+            $raw = trim($this->input('phone_number'));
+            if (!empty($raw) && !preg_match('/[a-zA-Z]/', $raw)) {
+                $digits = preg_replace('/\D/', '', $raw);
+                if (str_starts_with($digits, '09')) {
+                    $digits = substr($digits, 1);
+                } elseif (str_starts_with($digits, '639')) {
+                    $digits = substr($digits, 2);
+                }
+                $this->merge(['phone_number' => '+63' . $digits]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
