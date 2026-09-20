@@ -13,6 +13,8 @@ class BranchSummaryResource extends JsonResource
         return [
             'uuid'         => $this->uuid,
             'branch_name'  => $this->branch_name,
+            'branch_type'  => $this->branch_type,
+            'address'      => $this->address,
             'cafe_picture' => $this->cafe_picture
                 ? Storage::disk('public')->url($this->cafe_picture)
                 : null,

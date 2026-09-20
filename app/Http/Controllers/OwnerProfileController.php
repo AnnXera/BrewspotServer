@@ -28,7 +28,12 @@ class OwnerProfileController extends Controller
 
     public function branches(Request $request): JsonResponse
     {
-        $result = $this->service->getBranches($request->user(), $request->input('per_page', 6));
+        $result = $this->service->getBranches(
+            $request->user(),
+            $request->input('per_page', 6),
+            $request->input('search'),
+            $request->input('status')
+        );
 
         return response()->json($result);
     }

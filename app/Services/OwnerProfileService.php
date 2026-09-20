@@ -44,9 +44,9 @@ class OwnerProfileService
      * List view — name and picture only, for the branch card grid.
      * Paginated, 6 per page by default.
      */
-    public function getBranches(User $owner, int $perPage = 6): array
+    public function getBranches(User $owner, int $perPage = 6, ?string $search = null, ?string $status = null): array
     {
-        $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage);
+        $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage, $search, $status);
 
         return [
             'success'  => true,
