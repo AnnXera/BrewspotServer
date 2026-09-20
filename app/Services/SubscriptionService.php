@@ -10,7 +10,8 @@ use Illuminate\Support\Facades\Log;
 class SubscriptionService
 {
     public function __construct(
-        private readonly SubscriptionRepository $subscriptionRepository
+        private readonly SubscriptionRepository $subscriptionRepository,
+        private readonly \App\Repository\PaymentRepository $paymentRepository
     ) {}
 
     /**
@@ -30,13 +31,14 @@ class SubscriptionService
      */
     public function getOwnerSubscriptionHistory(string $ownerUuid, int $perPage = 15)
     {
-        Log::channel('admin')->info('Admin viewed owner subscription history.', [
+        Log::channel('admin')->info('Admin viewed owner payment history.', [
             'owner_uuid' => $ownerUuid,
             'per_page'   => $perPage,
         ]);
 
-        $history = $this->subscriptionRepository->findHistoryByOwnerUuid($ownerUuid, $perPage);
+        $owner = \App\Models\User::where('uuid', $ownerUuid)->firstOrFail();
+        $history = $this->paymentRepository->findHistoryByUserId($owner->user_id, $perPage);
 
-        return $history->through(fn ($subscription) => new SubscriptionResource($subscription));
+        return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }
 }

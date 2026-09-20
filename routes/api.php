@@ -12,6 +12,7 @@ use App\Http\Controllers\SubscriptionPlanController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\NativeSubscriptionController;
 use App\Http\Controllers\SubscriptionCancelController;
 use App\Http\Controllers\FeatureController;
@@ -70,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/subscribers', [SubscriptionController::class, 'subscribers']); // admin - get all subscribers
         Route::get('/owners/{uuid}/subscription-history', [SubscriptionController::class, 'ownerHistory']); // admin - get owner's subscription history
+        Route::get('/payments', [PaymentController::class, 'index']); // admin - global payment history
 
         Route::patch('/branches/{uuid}/status', [OwnerManagementController::class, 'updateBranchStatus']); //approve/reject a single branch (owner already active)
     });

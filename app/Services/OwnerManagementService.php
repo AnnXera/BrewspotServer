@@ -76,6 +76,8 @@ class OwnerManagementService
         $currentSubscription = $owner->subscriptions->firstWhere('status', 'active')
             ?? $owner->subscriptions->first();
 
+        $owner->load('payments.payable.plan');
+
         return [
             'success' => true,
             'owner'   => new UserResource($owner),
@@ -133,22 +135,23 @@ class OwnerManagementService
                     ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayPal' : null),
             ] : null,
 
-            'payment_history' => $owner->subscriptions->map(function ($sub) {
-                $payment = $sub->latestPayment;
-                $rawId = $payment?->uuid ?? $sub->uuid;
+            'payment_history' => $owner->payments->sortByDesc('created_at')->map(function ($payment) {
+                $rawId = $payment->uuid;
                 $cleanId = strtoupper(substr(str_replace('-', '', $rawId), 0, 7));
 
+                $subName = 'Subscription Plan';
+                if ($payment->payable && $payment->payable->plan) {
+                    $subName = $payment->payable->plan->sub_name;
+                }
+
                 return [
-                    'transaction_id' => "TXN-{$cleanId}",
+                    'transaction_id' => $payment->gateway_transaction_id ?: "TXN-{$cleanId}",
                     'raw_id'         => $rawId,
-                    'date'           => ($payment?->created_at ?? $sub->created_at)?->toISOString(),
-                    'description'    => 'Subscription - ' . ($sub->plan->sub_name ?? 'Plan'),
-                    'amount'         => $payment
-                        ? number_format($payment->amount / 100, 2)
-                        : number_format($sub->plan->price ?? 0, 2),
-                    'status'          => $payment?->status ?? $sub->status,
-                    'payment_gateway' => $payment?->payment_instrument
-                        ?? ($payment?->payment_method_type ? 'PayPal' : 'PayPal'),
+                    'date'           => $payment->created_at?->toISOString(),
+                    'description'    => 'Subscription - ' . $subName,
+                    'amount'         => number_format($payment->amount, 2),
+                    'status'         => $payment->status,
+                    'payment_gateway' => $payment->payment_method_type ?? 'PayPal',
                 ];
             })->values(),
         ];

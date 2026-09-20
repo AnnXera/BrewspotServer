@@ -44,4 +44,11 @@ class PaymentRepository
             ->latest('created_at')
             ->paginate($perPage);
     }
+
+    public function getAllPayments(int $perPage = 50)
+    {
+        return Payment::with(['user', 'payable.plan'])
+            ->latest('created_at')
+            ->paginate($perPage);
+    }
 }

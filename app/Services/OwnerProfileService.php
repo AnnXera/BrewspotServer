@@ -16,7 +16,8 @@ class OwnerProfileService
 {
     public function __construct(
         private readonly OwnerProfileRepository $repo,
-        private readonly SubscriptionRepository $subscriptionRepo
+        private readonly SubscriptionRepository $subscriptionRepo,
+        private readonly \App\Repository\PaymentRepository $paymentRepo
     ) {}
 
     public function getProfile(User $owner): array
@@ -107,13 +108,13 @@ class OwnerProfileService
 
     public function getPlanHistory(User $owner, int $perPage = 15)
     {
-        Log::channel('owner')->info('Owner viewed subscription history.', [
+        Log::channel('owner')->info('Owner viewed payment history.', [
             'owner_uuid' => $owner->uuid,
             'per_page'   => $perPage,
         ]);
 
-        $history = $this->subscriptionRepo->findHistoryByUserId($owner->user_id, $perPage);
+        $history = $this->paymentRepo->findHistoryByUserId($owner->user_id, $perPage);
 
-        return $history->through(fn ($subscription) => new SubscriptionResource($subscription));
+        return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }
 }
