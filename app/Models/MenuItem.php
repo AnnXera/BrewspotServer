@@ -26,6 +26,7 @@ class MenuItem extends Model
         'description',
         'base_price',
         'is_available',
+        'picture',
     ];
 
     protected $casts = [

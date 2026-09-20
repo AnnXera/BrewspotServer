@@ -19,6 +19,7 @@ use App\Http\Controllers\FeatureController;
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
+use App\Http\Controllers\MenuItemController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
 
@@ -112,6 +113,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
         Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
         Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
+
+        Route::get('/menu-items',                             [MenuItemController::class, 'index']);
+        Route::post('/menu-items',                            [MenuItemController::class, 'store']);
+        Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
+        Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
 
         Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
         Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);

@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Repository\MenuCategoryRepository;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 
 class MenuCategoryService
 {
@@ -27,6 +29,11 @@ class MenuCategoryService
         }
 
         try {
+            if (isset($payload['picture']) && $payload['picture'] instanceof UploadedFile) {
+                $path = 'users/' . $owner->uuid . '/cafes/menu-category';
+                $payload['picture'] = $payload['picture']->store($path, 'public');
+            }
+
             $category = $this->repo->create($cafe->cafe_id, $payload);
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
@@ -77,6 +84,14 @@ class MenuCategoryService
         }
 
         try {
+            if (isset($payload['picture']) && $payload['picture'] instanceof UploadedFile) {
+                if ($category->picture) {
+                    Storage::disk('public')->delete($category->picture);
+                }
+                $path = 'users/' . $owner->uuid . '/cafe/menu-category';
+                $payload['picture'] = $payload['picture']->store($path, 'public');
+            }
+
             $category = $this->repo->update($category, $payload);
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
@@ -132,6 +147,10 @@ class MenuCategoryService
             ]);
 
             return ['success' => false, 'message' => 'Category not found.'];
+        }
+
+        if ($category->picture) {
+            Storage::disk('public')->delete($category->picture);
         }
 
         $this->repo->delete($category);

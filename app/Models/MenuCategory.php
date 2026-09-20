@@ -21,6 +21,7 @@ class MenuCategory extends Model
         'cafe_id',
         'name',
         'is_available',
+        'picture',
     ];
 
     protected $casts = [

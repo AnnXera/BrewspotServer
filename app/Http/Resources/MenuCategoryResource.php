@@ -13,6 +13,7 @@ class MenuCategoryResource extends JsonResource
             'uuid'         => $this->uuid,
             'name'         => $this->name,
             'is_available' => $this->is_available,
+            'picture'      => $this->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->picture) : null,
             'cafe_uuid'    => $this->cafe->uuid ?? null,
             'created_at'   => $this->created_at?->toISOString(),
             'updated_at'   => $this->updated_at?->toISOString(),

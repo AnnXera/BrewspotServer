@@ -30,6 +30,7 @@ class MenuCategoryRequest extends FormRequest
                     ->ignore($this->route('uuid'), 'uuid'),
             ],
             'is_available' => ['sometimes', 'boolean'],
+            'picture' => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
         ];
     }
 

@@ -17,7 +17,8 @@ class MenuCategoryRepository
         return MenuCategory::create([
             'cafe_id'      => $cafeId,
             'name'         => $payload['name'],
-            'is_available' => $payload['is_available'] ?? true,
+            'is_available' => true, // Always default to true on creation
+            'picture'      => $payload['picture'] ?? null,
         ]);
     }
 
@@ -33,6 +34,7 @@ class MenuCategoryRepository
         $category->update(array_filter([
             'name'         => $payload['name'] ?? null,
             'is_available' => array_key_exists('is_available', $payload) ? $payload['is_available'] : null,
+            'picture'      => array_key_exists('picture', $payload) ? $payload['picture'] : null,
         ], fn ($value) => $value !== null));
 
         return $category->fresh();
