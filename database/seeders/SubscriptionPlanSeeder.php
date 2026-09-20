@@ -37,6 +37,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'price'         => 599.00,
                 'yearly_price'  => 5990.00,
                 'max_branches'  => 1,
+                'paypal_plan_id'        => 'P-7VA03541JG019960ANKXFADI', 
+                'paypal_yearly_plan_id' => 'P-7M88997484814054BNKXFADQ', 
                 'features'      => [
                     'menu_management',
                     'pos_system',
@@ -53,6 +55,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'price'         => 999.00,
                 'yearly_price'  => 9990.00,
                 'max_branches'  => 1,
+                'paypal_plan_id'        => 'P-00263482DL842702XNKXFADY', 
+                'paypal_yearly_plan_id' => 'P-5BH12763P6071835BNKXFAEA', 
                 'features'      => [
                     'staff_management',
                     'advanced_analytics',
@@ -69,6 +73,8 @@ class SubscriptionPlanSeeder extends Seeder
                 'price'         => 1499.00,
                 'yearly_price'  => 14990.00,
                 'max_branches'  => 1,
+                'paypal_plan_id'        => 'P-6HL576380D819424GNKXFAEI', 
+                'paypal_yearly_plan_id' => 'P-2JU728374D610094ANKXFAEQ', 
                 'features'      => [
                     'staff_management',
                     'advanced_analytics',
@@ -78,6 +84,21 @@ class SubscriptionPlanSeeder extends Seeder
                     'multi_branch',
                 ],
                 'description'   => 'Complete powerhouse solution with multi-branch management & full features.',
+                'duration_days' => null,
+                'is_active'     => true,
+            ],
+            [
+                'uuid'          => (string) Str::uuid(),
+                'sub_name'      => 'Daily Test Plan',
+                'price'         => 10.00,
+                'yearly_price'  => 0, // No yearly for the test plan
+                'max_branches'  => 1,
+                'paypal_plan_id'        => 'P-4FC70833YM0407406NKXVLKA', // Leave empty so sync-plans generates it
+                'paypal_yearly_plan_id' => '',
+                'features'      => [
+                    'menu_management',
+                ],
+                'description'   => 'Temporary plan for testing daily billing cycles.',
                 'duration_days' => null,
                 'is_active'     => true,
             ],

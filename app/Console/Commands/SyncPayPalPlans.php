@@ -75,7 +75,11 @@ class SyncPayPalPlans extends Command
             ]);
 
         // 201 means created, 400 with 'RESOURCE_ALREADY_EXISTS' means it's already there (which is fine)
-        if (!$productResponse->successful() && $productResponse->json('name') !== 'RESOURCE_ALREADY_EXISTS') {
+        // Some PayPal APIs return 422 UNPROCESSABLE_ENTITY with DUPLICATE_RESOURCE_IDENTIFIER
+        $isDuplicate = $productResponse->json('name') === 'RESOURCE_ALREADY_EXISTS' 
+            || ($productResponse->json('name') === 'UNPROCESSABLE_ENTITY' && str_contains($productResponse->body(), 'DUPLICATE_RESOURCE_IDENTIFIER'));
+
+        if (!$productResponse->successful() && !$isDuplicate) {
             $this->error('Failed to create product in PayPal.');
             $this->error($productResponse->body());
             return Command::FAILURE;
@@ -92,14 +96,16 @@ class SyncPayPalPlans extends Command
         foreach ($plans as $plan) {
             $this->info("Processing {$plan->sub_name}...");
 
-            // Create Monthly Plan in PayPal
+            $interval = str_contains($plan->sub_name, 'Daily') ? 'DAY' : 'MONTH';
+
+            // Create Monthly/Daily Plan in PayPal
             if (!$plan->paypal_plan_id) {
                 $monthlyPlanId = $this->createBillingPlan(
                     $baseUrl, 
                     $accessToken, 
                     $productId, 
-                    "{$plan->sub_name} - Monthly", 
-                    'MONTH', 
+                    "{$plan->sub_name} - {$interval}", 
+                    $interval, 
                     $plan->price
                 );
 

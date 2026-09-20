@@ -36,4 +36,12 @@ class PaymentRepository
 
         return $payment->fresh();
     }
+
+    public function findHistoryByUserId(int $userId, int $perPage = 15)
+    {
+        return Payment::where('user_id', $userId)
+            ->with(['payable.plan'])
+            ->latest('created_at')
+            ->paginate($perPage);
+    }
 }
