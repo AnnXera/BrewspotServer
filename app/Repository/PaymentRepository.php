@@ -37,17 +37,19 @@ class PaymentRepository
         return $payment->fresh();
     }
 
-    public function findHistoryByUserId(int $userId, int $perPage = 15)
+    public function getSubscriptionPaymentsByUserId(int $userId, int $perPage = 15)
     {
         return Payment::where('user_id', $userId)
+            ->where('payable_type', \App\Models\Subscription::class)
             ->with(['payable.plan'])
             ->latest('created_at')
             ->paginate($perPage);
     }
 
-    public function getAllPayments(int $perPage = 50)
+    public function getAllSubscriptionPayments(int $perPage = 50)
     {
         return Payment::with(['user', 'payable.plan'])
+            ->where('payable_type', \App\Models\Subscription::class)
             ->latest('created_at')
             ->paginate($perPage);
     }

@@ -37,7 +37,7 @@ class SubscriptionService
         ]);
 
         $owner = \App\Models\User::where('uuid', $ownerUuid)->firstOrFail();
-        $history = $this->paymentRepository->findHistoryByUserId($owner->user_id, $perPage);
+        $history = $this->paymentRepository->getSubscriptionPaymentsByUserId($owner->user_id, $perPage);
 
         return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }

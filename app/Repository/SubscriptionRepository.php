@@ -15,7 +15,7 @@ class SubscriptionRepository
 
     public function createTrialSubscription(int $userId, SubscriptionPlan $plan): Subscription
     {
-        return Subscription::create([
+        $subscription = Subscription::create([
             'user_id'              => $userId,
             'sub_plan_id'          => $plan->sub_plan_id,
             'start_date'           => Carbon::now(),
@@ -24,6 +24,17 @@ class SubscriptionRepository
             'billing_cycle'        => 'trial',
             'cancel_at_period_end' => false,
         ]);
+
+        $subscription->payments()->create([
+            'uuid'                => (string) \Illuminate\Support\Str::uuid(),
+            'user_id'             => $userId,
+            'amount'              => 0,
+            'status'              => 'succeeded',
+            'payment_method_type' => 'Free Trial',
+            'gateway_transaction_id' => 'TRIAL-' . strtoupper(\Illuminate\Support\Str::random(7)),
+        ]);
+
+        return $subscription;
     }
 
     public function findCurrentByUserId(int $userId): ?Subscription

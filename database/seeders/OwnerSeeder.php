@@ -78,7 +78,7 @@ class OwnerSeeder extends Seeder
             ]
         );
 
-        Subscription::firstOrCreate(
+        $subscription = Subscription::firstOrCreate(
             ['user_id' => $owner->user_id, 'sub_plan_id' => $plan->sub_plan_id],
             [
                 'uuid'                  => (string) Str::uuid(),
@@ -87,6 +87,16 @@ class OwnerSeeder extends Seeder
                 'status'                => 'active',
                 'billing_cycle'         => 'trial',
                 'cancel_at_period_end'  => false,
+            ]
+        );
+
+        $subscription->payments()->firstOrCreate(
+            ['user_id' => $owner->user_id, 'payment_method_type' => 'Free Trial'],
+            [
+                'uuid'                => (string) Str::uuid(),
+                'amount'              => 0,
+                'status'              => 'succeeded',
+                'gateway_transaction_id' => 'TRIAL-' . strtoupper(Str::random(7)),
             ]
         );
 

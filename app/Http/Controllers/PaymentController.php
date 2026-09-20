@@ -19,7 +19,7 @@ class PaymentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $payments = $this->paymentRepository->getAllPayments($request->input('per_page', 50));
+        $payments = $this->paymentRepository->getAllSubscriptionPayments($request->input('per_page', 50));
 
         return response()->json([
             'success' => true,

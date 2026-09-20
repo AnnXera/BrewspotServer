@@ -113,7 +113,7 @@ class OwnerProfileService
             'per_page'   => $perPage,
         ]);
 
-        $history = $this->paymentRepo->findHistoryByUserId($owner->user_id, $perPage);
+        $history = $this->paymentRepo->getSubscriptionPaymentsByUserId($owner->user_id, $perPage);
 
         return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }
