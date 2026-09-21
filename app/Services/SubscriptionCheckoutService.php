@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Contracts\MailAdapterInterface;
-use App\Contracts\PaymentAdapterInterface;
+use App\Services\PaymentGatewayManager;
 use App\Mail\SubscriptionPaymentMail;
 use App\Models\Subscription;
 use App\Models\User;
@@ -22,11 +22,11 @@ class SubscriptionCheckoutService
         private readonly SubscriptionPlanRepository $planRepo,
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly PaymentRepository $paymentRepo,
-        private readonly PaymentAdapterInterface $paymentAdapter,
+        private readonly PaymentGatewayManager $paymentManager,
         private readonly MailAdapterInterface $mailer
     ) {}
 
-    public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly'): array
+    public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly', string $gateway = 'paypal'): array
     {
         $plan = $this->planRepo->findByUuid($planUuid);
 
@@ -92,7 +92,7 @@ class SubscriptionCheckoutService
         $amount = (int) round($price * 100); // stored in centavos
 
         try {
-            $checkout = $this->paymentAdapter->createCheckoutSession([
+            $checkout = $this->paymentManager->gateway($gateway)->createCheckoutSession([
                 'amount'      => $amount,
                 'plan_name'   => $plan->sub_name,
                 'description' => "Subscription - {$plan->sub_name} ({$billingCycle})",

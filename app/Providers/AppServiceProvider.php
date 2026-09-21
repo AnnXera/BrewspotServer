@@ -14,13 +14,13 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(MailAdapterInterface::class, LaravelMailAdapter::class);
 
+        $this->app->singleton(\App\Services\PaymentGatewayManager::class, function ($app) {
+            return new \App\Services\PaymentGatewayManager();
+        });
+
+        // Default binding for legacy dependency injections
         $this->app->bind(PaymentAdapterInterface::class, function ($app) {
-            return new PayPalAdapter(
-                config('services.paypal.client_id'),
-                config('services.paypal.client_secret'),
-                config('services.paypal.mode'),
-                config('services.paypal.webhook_id'),
-            );
+            return $app->make(\App\Services\PaymentGatewayManager::class)->gateway('paypal');
         });
     }
 

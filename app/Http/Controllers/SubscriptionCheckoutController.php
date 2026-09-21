@@ -20,7 +20,8 @@ class SubscriptionCheckoutController extends Controller
         $result = $this->service->createCheckout(
             $request->user(),
             $request->validated('plan_uuid'),
-            $request->validated('billing_cycle')
+            $request->validated('billing_cycle'),
+            $request->validated('gateway')
         );
 
         return response()->json($result, $result['success'] ? 201 : 422);

@@ -32,4 +32,10 @@ return [
         'cancel_url'    => env('PAYPAL_CANCEL_URL', 'https://example.com/subscription/cancel'),
     ],
 
+    'paymongo' => [
+        'public_key'     => env('PAYMONGO_PUBLIC_KEY'),
+        'secret_key'     => env('PAYMONGO_SECRET_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET_KEY'),
+    ],
+
 ];

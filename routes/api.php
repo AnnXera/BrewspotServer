@@ -9,11 +9,9 @@ use App\Http\Controllers\PasswordSetupController;
 use App\Http\Controllers\OwnerManagementController;
 use App\Http\Controllers\OwnerProfileController;
 use App\Http\Controllers\SubscriptionPlanController;
-use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\SubscriptionCheckoutController;
 use App\Http\Controllers\SubscriptionController;
 use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\NativeSubscriptionController;
 use App\Http\Controllers\SubscriptionCancelController;
 use App\Http\Controllers\FeatureController;
 use App\Http\Controllers\BranchController;
@@ -95,7 +93,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'store']);
-        Route::post('/subscriptions/native', [NativeSubscriptionController::class, 'store']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
@@ -147,4 +144,4 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
 
 Route::post('/webhooks/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'webhook']);
-// Route::post('/webhooks/paypal', [PaymentWebhookController::class, 'handle']);
+Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);
