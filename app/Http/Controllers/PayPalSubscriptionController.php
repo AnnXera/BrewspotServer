@@ -9,6 +9,10 @@ use Illuminate\Support\Str;
 use App\Models\SubscriptionPlan;
 use App\Models\Subscription;
 use App\Models\Payment;
+use App\Mail\SubscriptionPaymentMail;
+use App\Mail\SubscriptionPlanChangedMail;
+use App\Mail\SubscriptionCancelledMail;
+use Illuminate\Support\Facades\Mail;
 
 class PayPalSubscriptionController extends Controller
 {
@@ -39,6 +43,14 @@ class PayPalSubscriptionController extends Controller
                 'pending_sub_plan_id' => $plan->sub_plan_id,
                 'pending_billing_cycle' => $request->input('billing_cycle', $existingSub->billing_cycle),
             ]);
+
+            if ($user) {
+                Mail::to($user->email)->send(new SubscriptionPlanChangedMail(
+                    ownerName: $user->firstname ?? $user->username ?? 'there',
+                    newPlanName: $plan->sub_name,
+                    effectiveDate: $existingSub->end_date ? $existingSub->end_date->format('F j, Y') : 'your next billing cycle'
+                ));
+            }
 
             return response()->json([
                 'success' => true,
@@ -117,13 +129,13 @@ class PayPalSubscriptionController extends Controller
                         'status' => 'completed',
                     ]);
 
-                    // Extend end date by 1 month or 1 year
+                    // Extend end date based on billing cycle + 24 hours grace period for PayPal batching
                     $plan = SubscriptionPlan::find($subscription->sub_plan_id);
-                    $newEndDate = now()->addMonth();
-
-                    if ($plan && $amount >= $plan->yearly_price && $plan->yearly_price > 0) {
-                        $newEndDate = now()->addYear();
-                    }
+                    $newEndDate = match ($subscription->billing_cycle) {
+                        'yearly' => now()->addYear()->addDay(),
+                        'daily'  => now()->addDay()->addDay(),
+                        default  => now()->addMonth()->addDay(),
+                    };
 
                     // Cancel any other active subscriptions for this user (e.g., Trials)
                     Subscription::where('user_id', $subscription->user_id)
@@ -138,6 +150,18 @@ class PayPalSubscriptionController extends Controller
                     ]);
 
                     Log::info("Subscription $subscriptionId activated/extended to $newEndDate");
+
+                    // Send receipt
+                    $owner = $subscription->user;
+                    if ($owner) {
+                        Mail::to($owner->email)->send(new SubscriptionPaymentMail(
+                            ownerName: $owner->firstname ?? $owner->username ?? 'there',
+                            planName: $plan->sub_name ?? 'Unknown Plan',
+                            status: 'active',
+                            amount: number_format($amount, 2),
+                            endDate: $newEndDate->format('F j, Y'),
+                        ));
+                    }
                 }
             }
         }
@@ -160,6 +184,15 @@ class PayPalSubscriptionController extends Controller
                             'pending_sub_plan_id' => $newPlan->sub_plan_id
                         ]);
                         Log::info("Subscription $subscriptionId plan change to {$newPlan->sub_name} ($planId) scheduled for next billing date.");
+
+                        $owner = $subscription->user;
+                        if ($owner) {
+                            Mail::to($owner->email)->send(new SubscriptionPlanChangedMail(
+                                ownerName: $owner->firstname ?? $owner->username ?? 'there',
+                                newPlanName: $newPlan->sub_name,
+                                effectiveDate: $subscription->end_date ? $subscription->end_date->format('F j, Y') : 'your next billing cycle'
+                            ));
+                        }
                     }
                 }
             }
@@ -170,11 +203,31 @@ class PayPalSubscriptionController extends Controller
             $subscriptionId = $payload['resource']['id'] ?? null;
 
             if ($subscriptionId) {
-                Subscription::where('paypal_subscription_id', $subscriptionId)->update([
-                    'status' => 'cancelled',
-                    'cancel_at_period_end' => true
-                ]);
-                Log::info("Subscription $subscriptionId cancelled via Webhook.");
+                $sub = Subscription::where('paypal_subscription_id', $subscriptionId)->first();
+                if ($sub) {
+                    // If suspended (e.g. payment failed), immediately suspend. If just cancelled, leave current status intact.
+                    $newStatus = $eventType === 'BILLING.SUBSCRIPTION.SUSPENDED' ? 'suspended' : $sub->status;
+                    
+                    $sub->update([
+                        'status' => $newStatus,
+                        'cancel_at_period_end' => true,
+                        'pending_sub_plan_id' => null,
+                        'pending_billing_cycle' => null
+                    ]);
+                    Log::info("Subscription $subscriptionId cancelled/suspended via Webhook.");
+
+                    if ($eventType === 'BILLING.SUBSCRIPTION.CANCELLED') {
+                        $owner = $sub->user;
+                        $plan = SubscriptionPlan::find($sub->sub_plan_id);
+                        if ($owner && $plan) {
+                            Mail::to($owner->email)->send(new SubscriptionCancelledMail(
+                                ownerName: $owner->firstname ?? $owner->username ?? 'there',
+                                planName: $plan->sub_name,
+                                endDate: $sub->end_date ? $sub->end_date->format('F j, Y') : 'the end of your billing cycle'
+                            ));
+                        }
+                    }
+                }
             }
         }
 

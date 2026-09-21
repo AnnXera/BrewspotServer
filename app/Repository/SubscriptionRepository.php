@@ -82,9 +82,10 @@ class SubscriptionRepository
         $subscription->loadMissing('plan');
 
         $endDate = match ($subscription->billing_cycle) {
-            'yearly' => Carbon::now()->addDays(365),
+            'yearly' => Carbon::now()->addDays(366), // 365 + 1 day grace period
+            'daily'  => Carbon::now()->addDays(2),   // 1 + 1 day grace period
             'trial'  => Carbon::now()->addDays($subscription->plan->duration_days ?? 15),
-            default  => Carbon::now()->addDays(30), // monthly
+            default  => Carbon::now()->addDays(31), // 30 + 1 day grace period for monthly
         };
 
         $subscription->update([
