@@ -74,6 +74,22 @@
                                 </tr>
                             </table>
 
+                            @if ($renewUrl)
+                                <!-- Renewal Call To Action -->
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px;">
+                                    <tr>
+                                        <td align="center">
+                                            <a href="{{ $renewUrl }}" style="display: inline-block; background-color: #2b1810; color: #f5ede4; font-size: 14px; font-weight: 600; letter-spacing: 0.3px; text-decoration: none; padding: 13px 34px; border-radius: 5px;">
+                                                Renew {{ $planName }}
+                                            </a>
+                                            <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
+                                                Any days remaining on your current term are carried over to the renewed period.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
+                            @endif
+
                             <p style="font-size: 13px; line-height: 1.6; color: #8c7668; margin-top: 20px; margin-bottom: 0;">
                                 For renewal instructions or invoicing assistance, please sign in to your merchant dashboard or reach out to our billing support department.
                             </p>

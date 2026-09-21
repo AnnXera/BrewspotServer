@@ -76,7 +76,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Public payment webhook and return URL handling
-    Route::get('/payment/paypal/cancel', [SubscriptionCancelController::class, 'handleGetCancel']);
+    Route::get('/payment/cancel', [SubscriptionCancelController::class, 'handleGetCancel']);
 
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
@@ -92,7 +92,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
-        Route::post('/subscriptions/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'store']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
@@ -143,5 +142,4 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
 
-Route::post('/webhooks/paypal', [\App\Http\Controllers\PayPalSubscriptionController::class, 'webhook']);
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);

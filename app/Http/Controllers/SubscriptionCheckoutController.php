@@ -21,7 +21,7 @@ class SubscriptionCheckoutController extends Controller
             $request->user(),
             $request->validated('plan_uuid'),
             $request->validated('billing_cycle'),
-            $request->validated('gateway')
+            $request->validated('gateway') ?? 'paymongo'
         );
 
         return response()->json($result, $result['success'] ? 201 : 422);

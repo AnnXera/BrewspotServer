@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Contracts\MailAdapterInterface;
 use App\Mail\SubscriptionExpiringMail;
+use App\Models\Subscription;
 use App\Repository\SubscriptionRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -34,6 +35,7 @@ class SubscriptionReminderService
                 planName: $subscription->plan->sub_name,
                 endDate: $subscription->end_date->format('F j, Y'),
                 daysRemaining: $daysRemaining,
+                renewUrl: $this->buildRenewUrl($subscription),
             ));
 
             $this->subscriptionRepo->markReminderSent($subscription);
@@ -48,5 +50,20 @@ class SubscriptionReminderService
         }
 
         return $count;
+    }
+
+    /**
+     * Deep link to the owner's subscription page with the current plan preselected.
+     *
+     * The owner signs in there and pays through the existing checkout modal, so renewal
+     * reuses the same gateway path as a first-time purchase — no payment link is embedded
+     * in the email itself, and nothing is chargeable without an authenticated session.
+     */
+    private function buildRenewUrl(Subscription $subscription): string
+    {
+        return rtrim(config('app.frontend_url'), '/') . '/owner/subscription?' . http_build_query([
+            'renew' => $subscription->plan->uuid,
+            'cycle' => $subscription->billing_cycle ?? 'monthly',
+        ]);
     }
 }

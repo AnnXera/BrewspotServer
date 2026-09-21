@@ -144,7 +144,7 @@ class PayMongoAdapter implements PaymentAdapterInterface
         ]);
     }
 
-    public function verifyWebhookSignature(string $rawPayload, string $signatureHeader, string $webhookId = null): bool
+    public function verifyWebhookSignature(string $rawPayload, string $signatureHeader, ?string $webhookId = null): bool
     {
         // signatureHeader for PayMongo comes in the format: t=1600000000,te=test_sig,li=live_sig
         $parts = explode(',', $signatureHeader);

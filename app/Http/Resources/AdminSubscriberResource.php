@@ -23,7 +23,7 @@ class AdminSubscriberResource extends JsonResource
             'email'             => $this->user->email ?? null,
             'phone_number'      => $this->user->phone_number ?? null,
             'plan'              => $this->plan->sub_name ?? null,
-            'mode_of_payment'   => $payment?->payment_instrument ?? ($payment?->payment_method_type ? 'PayPal' : 'PayPal'),
+            'mode_of_payment'   => $payment?->payment_instrument ?? 'PayMongo',
             'amount'            => $payment ? number_format($payment->amount / 100, 2) : number_format($this->plan->price ?? 0, 2),
             'date'              => ($payment?->created_at ?? $this->created_at)?->toISOString(),
         ];

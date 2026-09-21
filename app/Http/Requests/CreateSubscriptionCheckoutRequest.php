@@ -18,7 +18,7 @@ class CreateSubscriptionCheckoutRequest extends FormRequest
         return [
             'plan_uuid'     => ['required', 'string', 'exists:subscription_plans,uuid'],
             'billing_cycle' => ['required', 'string', 'in:monthly,yearly,daily'],
-            'gateway'       => ['required', 'string', 'in:paypal,paymongo'],
+            'gateway'       => ['sometimes', 'string', 'in:paymongo'],
         ];
     }
 

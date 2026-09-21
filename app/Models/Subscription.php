@@ -29,7 +29,7 @@ class Subscription extends Model
         'billing_cycle',
         'cancel_at_period_end',
         'expiration_reminder_sent_at',
-        'paypal_subscription_id',
+        'gateway_subscription_id',
     ];
 
     protected $casts = [

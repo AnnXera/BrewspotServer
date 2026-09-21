@@ -84,9 +84,9 @@ class SubscriptionPlanRepository
         return $plan->fresh();
     }
 
-    public function syncPayPalPlanId(SubscriptionPlan $plan, string $paypalPlanId): SubscriptionPlan
+    public function syncGatewayPlanId(SubscriptionPlan $plan, string $gatewayPlanId): SubscriptionPlan
     {
-        $plan->update(['paypal_plan_id' => $paypalPlanId]);
+        $plan->update(['gateway_plan_id' => $gatewayPlanId]);
 
         return $plan->fresh();
     }

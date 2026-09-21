@@ -81,12 +81,22 @@ class SubscriptionRepository
     {
         $subscription->loadMissing('plan');
 
-        $endDate = match ($subscription->billing_cycle) {
-            'yearly' => Carbon::now()->addDays(366), // 365 + 1 day grace period
-            'daily'  => Carbon::now()->addDays(2),   // 1 + 1 day grace period
-            'trial'  => Carbon::now()->addDays($subscription->plan->duration_days ?? 15),
-            default  => Carbon::now()->addDays(31), // 30 + 1 day grace period for monthly
+        $termDays = match ($subscription->billing_cycle) {
+            'yearly' => 366, // 365 + 1 day grace period
+            'daily'  => 2,   // 1 + 1 day grace period
+            'trial'  => $subscription->plan->duration_days ?? 15,
+            default  => 31,  // 30 + 1 day grace period for monthly
         };
+
+        // Renewing early shouldn't cost the owner the days they already paid for, so the
+        // new term starts when the outgoing one would have ended rather than today. The
+        // outgoing subscription is still active here — it gets cancelled straight after.
+        // Anchoring to its end date carries the remainder over exactly, with no day-rounding.
+        $outgoingEnd = $subscription->billing_cycle === 'trial'
+            ? null
+            : $this->currentTermEnd($subscription);
+
+        $endDate = ($outgoingEnd ?? Carbon::now())->copy()->addDays($termDays);
 
         $subscription->update([
             'start_date' => Carbon::now(),
@@ -95,6 +105,21 @@ class SubscriptionRepository
         ]);
 
         return $subscription->fresh(['plan', 'user']);
+    }
+
+    /**
+     * End date of the owner's outgoing active subscription, if one is still running.
+     */
+    private function currentTermEnd(Subscription $incoming): ?Carbon
+    {
+        return Subscription::where('user_id', $incoming->user_id)
+            ->where('sub_id', '!=', $incoming->sub_id)
+            ->where('status', 'active')
+            ->whereNotNull('end_date')
+            ->where('end_date', '>', Carbon::now())
+            ->orderByDesc('end_date')
+            ->first()
+            ?->end_date;
     }
 
     public function markFailed(Subscription $subscription): Subscription
@@ -166,9 +191,9 @@ class SubscriptionRepository
     }
 
     /**
-     * PayPal-native: create a pending subscription tied to a real PayPal subscription ID.
+     * Create a pending subscription tied to a subscription the gateway itself manages.
      */
-    public function createPendingWithPayPal(int $userId, SubscriptionPlan $plan, string $paypalSubscriptionId, string $billingCycle = 'monthly'): Subscription
+    public function createPendingWithGatewaySubscription(int $userId, SubscriptionPlan $plan, string $gatewaySubscriptionId, string $billingCycle = 'monthly'): Subscription
     {
         return Subscription::create([
             'user_id'                 => $userId,
@@ -178,21 +203,22 @@ class SubscriptionRepository
             'status'                   => 'pending',
             'billing_cycle'            => $billingCycle,
             'cancel_at_period_end'     => false,
-            'paypal_subscription_id'   => $paypalSubscriptionId,
+            'gateway_subscription_id'  => $gatewaySubscriptionId,
         ]);
     }
 
-    public function findByPayPalSubscriptionId(string $paypalSubscriptionId): ?Subscription
+    public function findByGatewaySubscriptionId(string $gatewaySubscriptionId): ?Subscription
     {
-        return Subscription::where('paypal_subscription_id', $paypalSubscriptionId)
+        return Subscription::where('gateway_subscription_id', $gatewaySubscriptionId)
             ->with(['plan', 'user'])
             ->first();
     }
 
     /**
-     * First billing cycle activated — subscription is now genuinely active.
+     * First billing cycle confirmed by the gateway — subscription is now genuinely active.
+     * The gateway dictates the period end here, unlike activate() which derives it locally.
      */
-    public function activateFromPayPal(Subscription $subscription, ?Carbon $nextBillingTime): Subscription
+    public function activateFromGateway(Subscription $subscription, ?Carbon $nextBillingTime): Subscription
     {
         $subscription->update([
             'start_date' => $subscription->start_date ?? Carbon::now(),
@@ -210,7 +236,7 @@ class SubscriptionRepository
         return $subscription->fresh(['plan', 'user']);
     }
 
-    public function markCancelledByPayPal(Subscription $subscription): Subscription
+    public function markCancelledByGateway(Subscription $subscription): Subscription
     {
         $subscription->update(['status' => 'cancelled']);
 

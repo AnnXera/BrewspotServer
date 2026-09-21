@@ -23,19 +23,15 @@ return [
         ],
     ],
 
-    'paypal' => [
-        'client_id'     => env('PAYPAL_CLIENT_ID'),
-        'client_secret' => env('PAYPAL_CLIENT_SECRET'),
-        'mode'          => env('PAYPAL_MODE', 'sandbox'), // 'sandbox' or 'live'
-        'webhook_id'    => env('PAYPAL_WEBHOOK_ID'),
-        'success_url'   => env('PAYPAL_SUCCESS_URL', 'https://example.com/subscription/success'),
-        'cancel_url'    => env('PAYPAL_CANCEL_URL', 'https://example.com/subscription/cancel'),
-    ],
-
     'paymongo' => [
         'public_key'     => env('PAYMONGO_PUBLIC_KEY'),
         'secret_key'     => env('PAYMONGO_SECRET_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET_KEY'),
+
+        // Where PayMongo returns the owner after checkout. Both point at the frontend,
+        // not the API, since the owner lands on them in a browser.
+        'success_url'    => env('PAYMONGO_SUCCESS_URL', rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/') . '/owner/subscription?checkout=success'),
+        'cancel_url'     => env('PAYMONGO_CANCEL_URL', rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/') . '/owner/subscription?checkout=cancelled'),
     ],
 
 ];

@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Adapters\Payment\PayPalAdapter;
 use App\Adapters\Mail\LaravelMailAdapter;
 use App\Contracts\PaymentAdapterInterface;
 use App\Contracts\MailAdapterInterface;
@@ -18,9 +17,9 @@ class AppServiceProvider extends ServiceProvider
             return new \App\Services\PaymentGatewayManager();
         });
 
-        // Default binding for legacy dependency injections
+        // Default binding for callers that type-hint the interface directly
         $this->app->bind(PaymentAdapterInterface::class, function ($app) {
-            return $app->make(\App\Services\PaymentGatewayManager::class)->gateway('paypal');
+            return $app->make(\App\Services\PaymentGatewayManager::class)->gateway('paymongo');
         });
     }
 

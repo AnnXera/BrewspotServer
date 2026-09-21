@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Models\Payment;
+use App\Models\Subscription;
 
 class PaymentRepository
 {
@@ -14,6 +15,22 @@ class PaymentRepository
     public function findByGatewayTransactionId(string $gatewayTransactionId): ?Payment
     {
         return Payment::where('gateway_transaction_id', $gatewayTransactionId)->first();
+    }
+
+    /**
+     * The payment still awaiting a result for a given subscription.
+     *
+     * Gateway events that carry a payment id rather than the checkout session id cannot be
+     * matched on gateway_transaction_id, so they resolve the subscription from the event
+     * metadata and come here for its open payment row.
+     */
+    public function findPendingForSubscription(Subscription $subscription): ?Payment
+    {
+        return Payment::where('payable_type', Subscription::class)
+            ->where('payable_id', $subscription->sub_id)
+            ->where('status', 'pending')
+            ->latest('payments_id')
+            ->first();
     }
 
     public function markSucceeded(Payment $payment, ?string $paymentMethodType = null, ?string $paymentInstrument = null): Payment

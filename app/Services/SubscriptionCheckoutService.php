@@ -2,9 +2,7 @@
 
 namespace App\Services;
 
-use App\Contracts\MailAdapterInterface;
 use App\Services\PaymentGatewayManager;
-use App\Mail\SubscriptionPaymentMail;
 use App\Models\Subscription;
 use App\Models\User;
 use App\Repository\PaymentRepository;
@@ -14,6 +12,13 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * Starts a PayMongo checkout for a subscription.
+ *
+ * This service only opens the checkout session and records a pending payment. Confirming
+ * the payment and activating the subscription happens in PayMongoWebhookController, since
+ * the gateway is the only trustworthy source for whether money actually moved.
+ */
 class SubscriptionCheckoutService
 {
     private const RENEWAL_WINDOW_DAYS = 3;
@@ -22,11 +27,10 @@ class SubscriptionCheckoutService
         private readonly SubscriptionPlanRepository $planRepo,
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly PaymentRepository $paymentRepo,
-        private readonly PaymentGatewayManager $paymentManager,
-        private readonly MailAdapterInterface $mailer
+        private readonly PaymentGatewayManager $paymentManager
     ) {}
 
-    public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly', string $gateway = 'paypal'): array
+    public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly', string $gateway = 'paymongo'): array
     {
         $plan = $this->planRepo->findByUuid($planUuid);
 
@@ -96,242 +100,57 @@ class SubscriptionCheckoutService
                 'amount'      => $amount,
                 'plan_name'   => $plan->sub_name,
                 'description' => "Subscription - {$plan->sub_name} ({$billingCycle})",
-                'success_url' => config('services.paypal.success_url'),
-                'cancel_url'  => url('/api/payment/paypal/cancel'),
+                'success_url' => config('services.paymongo.success_url'),
+                // Routed through the API so an abandoned checkout is marked cancelled
+                // before the owner is redirected on to the frontend.
+                'cancel_url'  => url('/api/payment/cancel'),
                 'metadata'    => [
                     'subscription_uuid' => $subscription->uuid,
                     'owner_uuid'        => $owner->uuid,
                     'plan_uuid'         => $plan->uuid,
                     'billing_cycle'     => $billingCycle,
+                    'owner_name'        => trim(($owner->firstname ?? '') . ' ' . ($owner->lastname ?? '')) ?: ($owner->username ?? 'Cafe Owner'),
+                    'owner_email'       => $owner->email,
                 ],
             ]);
         } catch (\Throwable $e) {
             $this->subscriptionRepo->markFailed($subscription);
 
-            Log::channel('owner')->error('Checkout order creation failed.', [
+            Log::channel('owner')->error('Checkout session creation failed.', [
                 'owner_uuid'        => $owner->uuid,
                 'subscription_uuid' => $subscription->uuid,
+                'gateway'           => $gateway,
                 'error'             => $e->getMessage(),
             ]);
 
             return ['success' => false, 'message' => 'Unable to start checkout. Please try again.'];
         }
 
-        // PayPal Order id is our tracking id — matched against in the webhook.
+        // The checkout session id is our tracking id — matched against in the webhook.
         $this->paymentRepo->create([
             'user_id'                => $owner->user_id,
             'payable_type'           => Subscription::class,
             'payable_id'             => $subscription->sub_id,
             'amount'                 => $amount,
-            'payment_method_type'    => 'paypal_order',
+            'payment_method_type'    => 'paymongo_checkout',
             'gateway_transaction_id' => $checkout['id'],
             'status'                 => 'pending',
         ]);
 
-        Log::channel('owner')->info('PayPal checkout order created.', [
-            'owner_uuid'        => $owner->uuid,
-            'subscription_uuid' => $subscription->uuid,
-            'plan_uuid'         => $plan->uuid,
-            'billing_cycle'     => $billingCycle,
-            'order_id'          => $checkout['id'],
+        Log::channel('owner')->info('Checkout session created.', [
+            'owner_uuid'         => $owner->uuid,
+            'subscription_uuid'  => $subscription->uuid,
+            'plan_uuid'          => $plan->uuid,
+            'billing_cycle'      => $billingCycle,
+            'gateway'            => $gateway,
+            'checkout_session_id' => $checkout['id'],
         ]);
 
         return [
             'success'           => true,
-            'message'           => 'Checkout order created. Open the link below to approve payment.',
+            'message'           => 'Checkout session created. Open the link below to complete payment.',
             'checkout_url'      => $checkout['checkout_url'],
             'subscription_uuid' => $subscription->uuid,
         ];
-    }
-
-    /**
-     * Called by PaymentWebhookController after signature verification.
-     * $resource is the PayPal webhook 'resource' object.
-     */
-    public function handleWebhook(string $eventType, array $resource): void
-    {
-        match ($eventType) {
-            // Order approved by the buyer — capture the funds now.
-            'CHECKOUT.ORDER.APPROVED' => $this->handleOrderApproved($resource),
-            'PAYMENT.CAPTURE.DENIED'  => $this->handleCaptureDenied($resource),
-            default                    => null,
-        };
-    }
-
-    private function handleOrderApproved(array $resource): void
-    {
-        $orderId = $resource['id'] ?? null;
-
-        if (! $orderId) {
-            Log::channel('admin')->warning('PayPal order.approved — no order id present in resource.');
-
-            return;
-        }
-
-        $payment = $this->paymentRepo->findByGatewayTransactionId($orderId);
-
-        if (! $payment) {
-            Log::channel('admin')->warning('PayPal order.approved — no matching payment record found.', [
-                'order_id' => $orderId,
-            ]);
-
-            return;
-        }
-
-        if ($payment->status === 'succeeded') {
-            Log::channel('admin')->info('PayPal order.approved — already processed, ignoring duplicate.', [
-                'order_id' => $orderId,
-            ]);
-
-            return;
-        }
-
-        try {
-            $capture = app(\App\Contracts\PaymentAdapterInterface::class)->captureOrder($orderId);
-        } catch (\Throwable $e) {
-            Log::channel('admin')->error('PayPal order capture failed.', [
-                'order_id' => $orderId,
-                'error'    => $e->getMessage(),
-            ]);
-
-            return;
-        }
-
-        $captureStatus = $capture['purchase_units'][0]['payments']['captures'][0]['status'] ?? null;
-
-        if ($captureStatus !== 'COMPLETED') {
-            Log::channel('admin')->warning('PayPal capture did not complete.', [
-                'order_id' => $orderId,
-                'status'   => $captureStatus,
-            ]);
-
-            $this->paymentRepo->markFailed($payment, 'paypal');
-
-            return;
-        }
-
-        $this->paymentRepo->markSucceeded($payment, 'paypal', $this->resolvePaymentInstrument($capture));
-
-        $subscription = $payment->payable;
-
-        if (! $subscription instanceof Subscription) {
-            Log::channel('admin')->warning('PayPal order.approved — payable is not a Subscription.', [
-                'order_id' => $orderId,
-            ]);
-
-            return;
-        }
-
-        $subscription = $this->subscriptionRepo->activate($subscription);
-        $this->subscriptionRepo->cancelOtherActiveSubscriptions($subscription->user_id, $subscription->sub_id);
-
-        $owner = $subscription->user;
-
-        Log::channel('admin')->info('Subscription activated via PayPal order capture.', [
-            'subscription_uuid' => $subscription->uuid,
-            'order_id'          => $orderId,
-        ]);
-
-        if ($owner) {
-            $this->mailer->sendMailable($owner->email, new SubscriptionPaymentMail(
-                ownerName: $owner->firstname ?? $owner->username ?? 'there',
-                planName: $subscription->plan->sub_name,
-                status: 'active',
-                amount: number_format(
-                    $subscription->billing_cycle === 'yearly'
-                        ? ($subscription->plan->yearly_price ?? $subscription->plan->price)
-                        : $subscription->plan->price,
-                    2
-                ),
-                endDate: $subscription->end_date?->format('F j, Y'),
-            ));
-
-            Log::channel('owner')->info('Subscription payment success email sent.', [
-                'owner_uuid'        => $owner->uuid,
-                'subscription_uuid' => $subscription->uuid,
-            ]);
-        }
-    }
-
-    /**
-     * Resolve a human-readable payment instrument label from a PayPal capture response.
-     *
-     * PayPal returns a `payment_source` object whose shape depends on how the buyer paid:
-     *  - card.brand  → buyer funded with a card saved in/linked through PayPal
-     *  - paypal      → buyer paid via PayPal balance, bank, or a card managed by PayPal
-     *
-     * @param  array $capture  The full JSON response from /v2/checkout/orders/{id}/capture
-     */
-    private function resolvePaymentInstrument(array $capture): string
-    {
-        $cardBrand      = $capture['payment_source']['card']['brand']       ?? null;
-        $lastDigits     = $capture['payment_source']['card']['last_digits'] ?? null;
-
-        if ($cardBrand) {
-            $label = match (strtoupper($cardBrand)) {
-                'VISA'       => 'Visa',
-                'MASTERCARD' => 'Mastercard',
-                'AMEX'       => 'American Express',
-                'DISCOVER'   => 'Discover',
-                'JCB'        => 'JCB',
-                'DINERS'     => 'Diners Club',
-                'UNIONPAY'   => 'UnionPay',
-                default      => ucwords(strtolower($cardBrand)),
-            };
-
-            return $lastDigits ? "{$label} ****{$lastDigits}" : $label;
-        }
-
-        // Buyer used PayPal balance, linked bank, or a card managed by PayPal
-        return 'PayPal';
-    }
-
-    private function handleCaptureDenied(array $resource): void
-    {
-        $orderId = $resource['supplementary_data']['related_ids']['order_id'] ?? null;
-
-        if (! $orderId) {
-            Log::channel('admin')->warning('PayPal capture.denied — no order_id present.');
-
-            return;
-        }
-
-        $payment = $this->paymentRepo->findByGatewayTransactionId($orderId);
-
-        if (! $payment) {
-            Log::channel('admin')->warning('PayPal capture.denied — no matching payment record found.', [
-                'order_id' => $orderId,
-            ]);
-
-            return;
-        }
-
-        if ($payment->status === 'failed') {
-            return;
-        }
-
-        $this->paymentRepo->markFailed($payment, 'paypal');
-
-        $subscription = $payment->payable;
-
-        if (! $subscription instanceof Subscription) {
-            return;
-        }
-
-        $subscription = $this->subscriptionRepo->markFailed($subscription);
-        $owner        = $subscription->user;
-
-        Log::channel('admin')->info('Subscription payment denied via PayPal webhook.', [
-            'subscription_uuid' => $subscription->uuid,
-            'order_id'          => $orderId,
-        ]);
-
-        if ($owner) {
-            $this->mailer->sendMailable($owner->email, new SubscriptionPaymentMail(
-                ownerName: $owner->firstname ?? $owner->username ?? 'there',
-                planName: $subscription->plan->sub_name,
-                status: 'failed',
-            ));
-        }
     }
 }

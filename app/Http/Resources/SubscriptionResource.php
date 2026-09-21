@@ -20,11 +20,11 @@ class SubscriptionResource extends JsonResource
             'cancel_at_period_end'  => $this->cancel_at_period_end,
             'plan'                  => $this->whenLoaded('plan', fn () => $this->planToArray($this->plan)),
             'payment_gateway'       => $this->latestPayment?->payment_instrument
-                ?? ($this->latestPayment?->payment_method_type ? 'PayPal' : null),
+                ?? ($this->latestPayment?->payment_method_type ? 'PayMongo' : null),
             'pending_plan'          => $this->whenLoaded('pendingPlan', fn () => $this->pendingPlan
                 ? $this->planToArray($this->pendingPlan)
                 : null),
-            'paypal_subscription_id'=> $this->paypal_subscription_id,
+            'gateway_subscription_id' => $this->gateway_subscription_id,
             'created_at'            => $this->created_at?->toISOString(),
         ];
     }

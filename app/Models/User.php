@@ -33,7 +33,7 @@ class User extends Authenticatable
         'email_verified_at',
         'role_id',
         'status',
-        'paypal_payer_id',
+        'gateway_customer_id',
     ];
 
     protected $hidden = [

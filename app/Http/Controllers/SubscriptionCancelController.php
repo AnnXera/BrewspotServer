@@ -30,53 +30,47 @@ class SubscriptionCancelController extends Controller
     }
 
     /**
-     * GET /api/payment/paypal/cancel
-     * Called directly by PayPal when the user clicks "Cancel and return to Merchant"
+     * GET /api/payment/cancel
+     * PayMongo's cancel_url — hit when the owner backs out of the hosted checkout page.
+     * The pending records are closed off here before handing the browser to the frontend.
      */
     public function handleGetCancel(Request $request)
     {
         $this->processCancellation($request);
 
-        // Redirect the user to the frontend cancel page
-        $frontendCancelUrl = config('services.paypal.cancel_url');
-        return redirect($frontendCancelUrl);
+        return redirect(config('services.paymongo.cancel_url'));
     }
 
     private function processCancellation(Request $request): void
     {
         Log::channel('owner')->info('Cancel API hit', $request->all());
-        $token = $request->input('token'); // Used for one-time checkout
-        $baToken = $request->input('ba_token'); // Setup token for native sub
-        $subscriptionId = $request->input('subscription_id'); // Subscription ID for native sub
 
-        // Handle one-time checkout cancellation
-        if ($token) {
-            $payment = $this->paymentRepo->findByGatewayTransactionId($token);
-            if ($payment && $payment->status === 'pending') {
-                $this->paymentRepo->markFailed($payment, 'paypal');
+        // PayMongo echoes the checkout session id back; older callers may still send
+        // `token`, and the frontend cancel button posts the id explicitly.
+        $sessionId = $request->input('checkout_session_id')
+            ?? $request->input('id')
+            ?? $request->input('token');
 
-                $subscription = $payment->payable;
-                if ($subscription instanceof Subscription && $subscription->status === 'pending') {
-                    $this->subscriptionRepo->markFailed($subscription);
-                }
-                
-                Log::channel('owner')->info('Cancelled pending checkout.', [
-                    'order_id' => $token
-                ]);
-            }
+        if (! $sessionId) {
+            return;
         }
 
-        // Handle native subscription cancellation
-        $nativeToken = $subscriptionId ?? $baToken;
-        if ($nativeToken) {
-            $subscription = $this->subscriptionRepo->findByPayPalSubscriptionId($nativeToken);
-            if ($subscription && $subscription->status === 'pending') {
-                $this->subscriptionRepo->markFailed($subscription);
-                
-                Log::channel('owner')->info('Cancelled pending native subscription.', [
-                    'paypal_subscription_id' => $nativeToken
-                ]);
-            }
+        $payment = $this->paymentRepo->findByGatewayTransactionId($sessionId);
+
+        if (! $payment || $payment->status !== 'pending') {
+            return;
         }
+
+        $this->paymentRepo->markFailed($payment, 'paymongo');
+
+        $subscription = $payment->payable;
+
+        if ($subscription instanceof Subscription && $subscription->status === 'pending') {
+            $this->subscriptionRepo->markFailed($subscription);
+        }
+
+        Log::channel('owner')->info('Cancelled pending checkout.', [
+            'checkout_session_id' => $sessionId,
+        ]);
     }
 }

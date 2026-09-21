@@ -3,21 +3,19 @@
 namespace App\Services;
 
 use App\Contracts\PaymentAdapterInterface;
-use App\Adapters\Payment\PayPalAdapter;
 use App\Adapters\Payment\PayMongoAdapter;
 use InvalidArgumentException;
 
 class PaymentGatewayManager
 {
-    public function gateway(?string $name = 'paypal'): PaymentAdapterInterface
+    /**
+     * BrewSpot bills through PayMongo only. The manager is kept rather than inlining the
+     * adapter so a second gateway stays a one-line addition, and so callers keep resolving
+     * their adapter through a single place.
+     */
+    public function gateway(?string $name = 'paymongo'): PaymentAdapterInterface
     {
-        return match (strtolower($name ?? 'paypal')) {
-            'paypal' => new PayPalAdapter(
-                config('services.paypal.client_id'),
-                config('services.paypal.client_secret'),
-                config('services.paypal.mode'),
-                config('services.paypal.webhook_id')
-            ),
+        return match (strtolower($name ?? 'paymongo')) {
             'paymongo' => new PayMongoAdapter(
                 config('services.paymongo.public_key'),
                 config('services.paymongo.secret_key'),

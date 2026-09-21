@@ -28,8 +28,8 @@ class SubscriptionPlan extends Model
         'description',
         'duration_days',
         'is_active',
-        'paypal_plan_id',
-        'paypal_yearly_plan_id',
+        'gateway_plan_id',
+        'gateway_yearly_plan_id',
     ];
 
     protected $casts = [

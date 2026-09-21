@@ -132,7 +132,7 @@ class OwnerManagementService
                 'start_date'     => $currentSubscription->start_date?->toISOString(),
                 'end_date'       => $currentSubscription->end_date?->toISOString(),
                 'payment_method' => $currentSubscription->latestPayment?->payment_instrument
-                    ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayPal' : null),
+                    ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayMongo' : null),
             ] : null,
 
             'payment_history' => $owner->payments->sortByDesc('created_at')->map(function ($payment) {
@@ -151,7 +151,7 @@ class OwnerManagementService
                     'description'    => 'Subscription - ' . $subName,
                     'amount'         => number_format($payment->amount, 2),
                     'status'         => $payment->status,
-                    'payment_gateway' => $payment->payment_method_type ?? 'PayPal',
+                    'payment_gateway' => $payment->payment_method_type ?? 'PayMongo',
                 ];
             })->values(),
         ];
