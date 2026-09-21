@@ -43,6 +43,7 @@ class MenuCategoryRepository
     public function listByCafe(int $cafeId)
     {
         return MenuCategory::where('cafe_id', $cafeId)
+            ->with('items')
             ->orderBy('name')
             ->get();
     }
