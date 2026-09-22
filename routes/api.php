@@ -106,19 +106,22 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']);
         });
 
-        Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
-        Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
-        Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
-        Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
+        // Feature-Gated: Menu Management
+        Route::middleware('plan.feature:menu_management')->group(function () {
+            Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
+            Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
+            Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
+            Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
 
-        Route::get('/menu-items',                             [MenuItemController::class, 'index']);
-        Route::post('/menu-items',                            [MenuItemController::class, 'store']);
-        Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
-        Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
+            Route::get('/menu-items',                             [MenuItemController::class, 'index']);
+            Route::post('/menu-items',                            [MenuItemController::class, 'store']);
+            Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
+            Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
 
-        Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
-        Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
-        Route::patch('/menu-categories/{categoryUuid}/branches/{branchUuid}', [CategoryBranchController::class, 'update']);
+            Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
+            Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
+            Route::patch('/menu-categories/{categoryUuid}/branches/{branchUuid}', [CategoryBranchController::class, 'update']);
+        });
     });
 
     // Manager only
