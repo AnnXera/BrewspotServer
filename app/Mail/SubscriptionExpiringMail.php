@@ -18,6 +18,8 @@ class SubscriptionExpiringMail extends Mailable
         public readonly string $endDate,
         public readonly int $daysRemaining,
         public readonly ?string $renewUrl = null,
+        /** The plan the owner will renew into — differs from $planName when a change is booked. */
+        public readonly ?string $renewPlanName = null,
     ) {}
 
     public function envelope(): Envelope
@@ -37,6 +39,7 @@ class SubscriptionExpiringMail extends Mailable
                 'endDate'       => $this->endDate,
                 'daysRemaining' => $this->daysRemaining,
                 'renewUrl'      => $this->renewUrl,
+                'renewPlanName' => $this->renewPlanName ?? $this->planName,
             ],
         );
     }

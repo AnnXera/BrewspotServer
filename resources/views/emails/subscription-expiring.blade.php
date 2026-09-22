@@ -80,11 +80,21 @@
                                     <tr>
                                         <td align="center">
                                             <a href="{{ $renewUrl }}" style="display: inline-block; background-color: #2b1810; color: #f5ede4; font-size: 14px; font-weight: 600; letter-spacing: 0.3px; text-decoration: none; padding: 13px 34px; border-radius: 5px;">
-                                                Renew {{ $planName }}
+                                                @if ($renewPlanName !== $planName)
+                                                    Switch to {{ $renewPlanName }}
+                                                @else
+                                                    Renew {{ $planName }}
+                                                @endif
                                             </a>
-                                            <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
-                                                Any days remaining on your current term are carried over to the renewed period.
-                                            </p>
+                                            @if ($renewPlanName !== $planName)
+                                                <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
+                                                    You scheduled a change to the {{ $renewPlanName }}. Completing this payment moves you onto it.
+                                                </p>
+                                            @else
+                                                <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
+                                                    Any days remaining on your current term are carried over to the renewed period.
+                                                </p>
+                                            @endif
                                         </td>
                                     </tr>
                                 </table>

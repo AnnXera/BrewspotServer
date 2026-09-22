@@ -153,4 +153,111 @@ class SubscriptionCheckoutService
             'subscription_uuid' => $subscription->uuid,
         ];
     }
+
+    /**
+     * Book a plan change for the end of the owner's current term.
+     *
+     * Plan changes are never charged mid-term: the owner keeps the days they already paid
+     * for, and the booked plan is what their renewal reminder offers them. Two cases fall
+     * out of that rather than being special-cased away:
+     *
+     *  - Choosing the plan they are already on means "cancel my change", so the booking is
+     *    dropped instead of a pointless change being recorded.
+     *  - An owner on a free trial has no paid days to protect, so there is nothing to wait
+     *    for — they are sent straight to checkout via `requires_checkout`.
+     */
+    public function schedulePlanChange(User $owner, string $planUuid, string $billingCycle = 'monthly'): array
+    {
+        $plan = $this->planRepo->findByUuid($planUuid);
+
+        if (! $plan) {
+            return ['success' => false, 'message' => 'Subscription plan not found.'];
+        }
+
+        $current = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
+
+        // No running subscription — there is no term to wait for, so this is a first purchase.
+        if (! $current) {
+            return [
+                'success'           => false,
+                'requires_checkout' => true,
+                'message'           => 'You do not have an active subscription. Please complete checkout instead.',
+            ];
+        }
+
+        if ($this->isUnpaidTerm($current)) {
+            return [
+                'success'           => true,
+                'requires_checkout' => true,
+                'message'           => 'Your current plan is a free trial, so you can switch straight away.',
+            ];
+        }
+
+        // Picking the plan and cycle they already hold means "cancel my scheduled change".
+        if ($current->sub_plan_id === $plan->sub_plan_id && $current->billing_cycle === $billingCycle) {
+            if (! $current->pending_sub_plan_id) {
+                return [
+                    'success' => true,
+                    'message' => "You are already on the {$plan->sub_name}. Nothing has changed.",
+                ];
+            }
+
+            $this->subscriptionRepo->clearPendingChange($current);
+
+            Log::channel('owner')->info('Scheduled plan change cancelled.', [
+                'owner_uuid'        => $owner->uuid,
+                'subscription_uuid' => $current->uuid,
+            ]);
+
+            return [
+                'success' => true,
+                'message' => "Your scheduled plan change has been cancelled. You will stay on the {$plan->sub_name}.",
+            ];
+        }
+
+        if (! $plan->is_active) {
+            return ['success' => false, 'message' => 'This subscription plan is no longer available.'];
+        }
+
+        if (Str::contains(strtolower($plan->sub_name), 'trial')) {
+            return ['success' => false, 'message' => 'The trial plan cannot be scheduled as a plan change.'];
+        }
+
+        $this->subscriptionRepo->schedulePlanChange($current, $plan, $billingCycle);
+
+        Log::channel('owner')->info('Plan change scheduled for end of term.', [
+            'owner_uuid'        => $owner->uuid,
+            'subscription_uuid' => $current->uuid,
+            'pending_plan_uuid' => $plan->uuid,
+            'pending_cycle'     => $billingCycle,
+            'takes_effect_on'   => $current->end_date?->toDateString(),
+        ]);
+
+        $effective = $current->end_date
+            ? $current->end_date->format('F j, Y')
+            : 'the end of your current term';
+
+        return [
+            'success' => true,
+            'message' => "Your switch to the {$plan->sub_name} is scheduled for {$effective}. You keep your current plan until then, and nothing has been charged.",
+        ];
+    }
+
+    /**
+     * Whether the owner's current term was given rather than bought.
+     *
+     * Deferring a plan change exists to protect days the owner has already paid for. A
+     * trial has none, so there is nothing to defer.
+     */
+    private function isUnpaidTerm(Subscription $subscription): bool
+    {
+        if ($subscription->billing_cycle === 'trial') {
+            return true;
+        }
+
+        $plan = $subscription->plan;
+
+        return $plan
+            && (Str::contains(strtolower($plan->sub_name), 'trial') || (float) $plan->price <= 0);
+    }
 }

@@ -139,13 +139,44 @@ class SubscriptionRepository
             ->first();
     }
 
+    /**
+     * Book a plan change to take effect once the current term ends.
+     *
+     * Nothing is charged here. The choice is parked on the subscription the owner is
+     * already running, and only becomes real when they pay for the next term — at which
+     * point checkout creates a fresh subscription on the booked plan and this row is
+     * cancelled, taking the booking with it.
+     */
+    public function schedulePlanChange(Subscription $subscription, SubscriptionPlan $plan, string $billingCycle): Subscription
+    {
+        $subscription->update([
+            'pending_sub_plan_id'   => $plan->sub_plan_id,
+            'pending_billing_cycle' => $billingCycle,
+        ]);
+
+        return $subscription->fresh(['plan.features', 'pendingPlan.features', 'user']);
+    }
+
+    /**
+     * Drop a booked plan change, leaving the owner on their current plan.
+     */
+    public function clearPendingChange(Subscription $subscription): Subscription
+    {
+        $subscription->update([
+            'pending_sub_plan_id'   => null,
+            'pending_billing_cycle' => null,
+        ]);
+
+        return $subscription->fresh(['plan.features', 'user']);
+    }
+
     public function findExpiringWithinDays(int $days)
     {
         return Subscription::where('status', 'active')
             ->whereNotNull('end_date')
             ->whereNull('expiration_reminder_sent_at')
             ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays($days)])
-            ->with(['plan', 'user'])
+            ->with(['plan', 'pendingPlan', 'user'])
             ->get();
     }
 

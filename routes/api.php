@@ -92,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscription/history', [OwnerProfileController::class, 'planHistory']);
 
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
+        Route::post('/subscriptions/schedule-change', [SubscriptionCheckoutController::class, 'schedule']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch

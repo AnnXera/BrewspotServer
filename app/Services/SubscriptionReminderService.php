@@ -36,6 +36,7 @@ class SubscriptionReminderService
                 endDate: $subscription->end_date->format('F j, Y'),
                 daysRemaining: $daysRemaining,
                 renewUrl: $this->buildRenewUrl($subscription),
+                renewPlanName: ($subscription->pendingPlan ?? $subscription->plan)->sub_name,
             ));
 
             $this->subscriptionRepo->markReminderSent($subscription);
@@ -61,9 +62,14 @@ class SubscriptionReminderService
      */
     private function buildRenewUrl(Subscription $subscription): string
     {
+        // A booked plan change takes effect by being what the owner renews into, so the
+        // link offers the pending plan when one is set rather than the expiring one.
+        $plan  = $subscription->pendingPlan ?? $subscription->plan;
+        $cycle = $subscription->pending_billing_cycle ?? $subscription->billing_cycle ?? 'monthly';
+
         return rtrim(config('app.frontend_url'), '/') . '/owner/subscription?' . http_build_query([
-            'renew' => $subscription->plan->uuid,
-            'cycle' => $subscription->billing_cycle ?? 'monthly',
+            'renew' => $plan->uuid,
+            'cycle' => $cycle,
         ]);
     }
 }
