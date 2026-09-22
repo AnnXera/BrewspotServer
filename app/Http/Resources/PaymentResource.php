@@ -20,7 +20,7 @@ class PaymentResource extends JsonResource
 
         $description = $planName;
         if ($billingCycle) {
-            $cycleText = $billingCycle === 'yearly' ? 'Yearly' : 'Monthly';
+            $cycleText = ucfirst($billingCycle);
             $description = "$cycleText Subscription - $planName";
         }
 
@@ -29,7 +29,7 @@ class PaymentResource extends JsonResource
             'transaction_id' => $this->gateway_transaction_id,
             'date' => $this->created_at->toISOString(),
             'description' => $description ?? 'Subscription Payment',
-            'amount' => $this->amount,
+            'amount' => $this->amount / 100,
             'status' => $this->status,
             'payment_gateway' => $this->payment_method_type ?? 'Unknown',
             'owner_name' => $this->user ? trim("{$this->user->firstname} {$this->user->lastname}") : null,

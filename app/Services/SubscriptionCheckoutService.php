@@ -43,6 +43,10 @@ class SubscriptionCheckoutService
             return ['success' => false, 'message' => 'Subscription plan not found.'];
         }
 
+        if (stripos($plan->sub_name, 'daily') !== false) {
+            $billingCycle = 'daily';
+        }
+
         $activeSamePlan = $this->subscriptionRepo->findActiveByUserAndPlan($owner->user_id, $plan->sub_plan_id);
 
         if (! $plan->is_active && ! $activeSamePlan) {
@@ -172,6 +176,10 @@ class SubscriptionCheckoutService
 
         if (! $plan) {
             return ['success' => false, 'message' => 'Subscription plan not found.'];
+        }
+
+        if (stripos($plan->sub_name, 'daily') !== false) {
+            $billingCycle = 'daily';
         }
 
         $current = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
