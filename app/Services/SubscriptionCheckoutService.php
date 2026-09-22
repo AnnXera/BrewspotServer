@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionPlanRepository;
 use App\Repository\SubscriptionRepository;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -21,8 +20,6 @@ use Illuminate\Support\Str;
  */
 class SubscriptionCheckoutService
 {
-    private const RENEWAL_WINDOW_DAYS = 3;
-
     public function __construct(
         private readonly SubscriptionPlanRepository $planRepo,
         private readonly SubscriptionRepository $subscriptionRepo,
@@ -73,21 +70,32 @@ class SubscriptionCheckoutService
             ];
         }
 
-        if ($activeSamePlan && $activeSamePlan->end_date) {
-            $renewalWindowStart = $activeSamePlan->end_date->copy()->subDays(self::RENEWAL_WINDOW_DAYS);
+        // Nothing is chargeable while the owner still has paid days left — not a renewal of
+        // the plan they hold, and not an upgrade or downgrade either. A plan change is booked
+        // through schedulePlanChange() and paid for when the term runs out, so an owner is
+        // never asked for money twice over the same stretch of time.
+        $current = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
 
-            if (Carbon::now()->lt($renewalWindowStart)) {
-                Log::channel('owner')->warning('Checkout blocked — plan already active and not yet within renewal window.', [
-                    'owner_uuid'       => $owner->uuid,
-                    'plan_uuid'        => $plan->uuid,
-                    'current_end_date' => $activeSamePlan->end_date->toDateString(),
-                ]);
+        if ($current && ! $this->isUnpaidTerm($current) && ! $current->isRenewalOpen()) {
+            $runsUntil   = $current->end_date->format('F j, Y');
+            $renewalOpens = $current->renewalOpensAt()->format('F j, Y');
+            $isSamePlan  = $current->sub_plan_id === $plan->sub_plan_id;
 
-                return [
-                    'success' => false,
-                    'message' => "You already have an active {$plan->sub_name} subscription that runs until {$activeSamePlan->end_date->format('F j, Y')}. You can renew starting " . self::RENEWAL_WINDOW_DAYS . ' days before it expires.',
-                ];
-            }
+            Log::channel('owner')->warning('Checkout blocked — paid term still running.', [
+                'owner_uuid'       => $owner->uuid,
+                'plan_uuid'        => $plan->uuid,
+                'current_plan'     => $current->plan?->sub_name,
+                'current_end_date' => $current->end_date->toDateString(),
+                'renewal_opens'    => $renewalOpens,
+                'same_plan'        => $isSamePlan,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => $isSamePlan
+                    ? "You already have an active {$plan->sub_name} subscription that runs until {$runsUntil}. You can renew it on {$renewalOpens}."
+                    : "Your {$current->plan?->sub_name} runs until {$runsUntil}. Schedule the {$plan->sub_name} instead — you will pay for it on {$renewalOpens}, when your current plan runs out.",
+            ];
         }
 
         // Pick the correct price based on billing cycle
@@ -169,6 +177,8 @@ class SubscriptionCheckoutService
      *    dropped instead of a pointless change being recorded.
      *  - An owner on a free trial has no paid days to protect, so there is nothing to wait
      *    for — they are sent straight to checkout via `requires_checkout`.
+     *  - An owner whose term has reached its grace day has no paid days left either, so
+     *    their choice is paid for now rather than booked — also `requires_checkout`.
      */
     public function schedulePlanChange(User $owner, string $planUuid, string $billingCycle = 'monthly'): array
     {
@@ -198,6 +208,16 @@ class SubscriptionCheckoutService
                 'success'           => true,
                 'requires_checkout' => true,
                 'message'           => 'Your current plan is a free trial, so you can switch straight away.',
+            ];
+        }
+
+        // The term is on its grace day: there are no paid days left to protect, so the owner
+        // pays for the plan they picked now instead of parking it for later.
+        if ($current->isRenewalOpen()) {
+            return [
+                'success'           => true,
+                'requires_checkout' => true,
+                'message'           => 'Your current term ends today, so you can pay for your new plan now.',
             ];
         }
 
@@ -245,9 +265,17 @@ class SubscriptionCheckoutService
             ? $current->end_date->format('F j, Y')
             : 'the end of your current term';
 
+        $payableFrom = $current->renewalOpensAt()?->format('F j, Y');
+
+        $message = "Your switch to the {$plan->sub_name} is scheduled for {$effective}. You keep your current plan until then, and nothing has been charged.";
+
+        if ($payableFrom) {
+            $message .= " You can pay for it from {$payableFrom}.";
+        }
+
         return [
             'success' => true,
-            'message' => "Your switch to the {$plan->sub_name} is scheduled for {$effective}. You keep your current plan until then, and nothing has been charged.",
+            'message' => $message,
         ];
     }
 

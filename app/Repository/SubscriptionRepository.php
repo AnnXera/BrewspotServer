@@ -46,6 +46,25 @@ class SubscriptionRepository
             ->first();
     }
 
+    /**
+     * The owner's most recently finished term, whatever became of it.
+     *
+     * Once a term lapses the owner has no active row, but what they were on — and any plan
+     * change they booked before it ran out — is still what they should be offered on their
+     * way back in, so the subscription page can pick up where they left off.
+     */
+    public function findLatestEndedByUserId(int $userId): ?Subscription
+    {
+        return Subscription::where('user_id', $userId)
+            ->whereIn('status', ['expired', 'cancelled'])
+            ->whereNotNull('end_date')
+            ->with(['plan.features', 'pendingPlan.features'])
+            // Terms are sequential, so the newest row is the latest term. Ordering by end_date
+            // would instead favour a row cancelled early while its end date was still ahead.
+            ->orderByDesc('sub_id')
+            ->first();
+    }
+
     public function findHistoryByUserId(int $userId, int $perPage = 15)
     {
         return Subscription::where('user_id', $userId)
@@ -108,13 +127,19 @@ class SubscriptionRepository
     }
 
     /**
-     * End date of the owner's outgoing active subscription, if one is still running.
+     * End date of the owner's outgoing *paid* subscription, if one is still running.
+     *
+     * Only days the owner actually paid for are worth carrying over. A free trial that is
+     * still running is skipped, so leaving a trial starts the paid term from today instead
+     * of handing the owner the trial's unused days on top of what they just bought.
      */
     private function currentTermEnd(Subscription $incoming): ?Carbon
     {
         return Subscription::where('user_id', $incoming->user_id)
             ->where('sub_id', '!=', $incoming->sub_id)
             ->where('status', 'active')
+            ->where('billing_cycle', '!=', 'trial')
+            ->whereHas('plan', fn ($q) => $q->where('price', '>', 0))
             ->whereNotNull('end_date')
             ->where('end_date', '>', Carbon::now())
             ->orderByDesc('end_date')

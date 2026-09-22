@@ -6,6 +6,7 @@ use App\Http\Resources\UserResource;
 use App\Http\Resources\CafeResource;
 use App\Http\Resources\CafeBranchResource;
 use App\Http\Resources\BranchSummaryResource;
+use App\Http\Resources\SubscriptionPlanResource;
 use App\Http\Resources\SubscriptionResource;
 use App\Models\User;
 use App\Repository\OwnerProfileRepository;
@@ -89,8 +90,9 @@ class OwnerProfileService
             ]);
 
             return [
-                'success' => false,
-                'message' => 'You have no active subscription.',
+                'success'        => false,
+                'message'        => 'You have no active subscription.',
+                'renewal_offer'  => $this->buildRenewalOffer($owner),
             ];
         }
 
@@ -103,6 +105,39 @@ class OwnerProfileService
         return [
             'success'      => true,
             'subscription' => new SubscriptionResource($subscription),
+        ];
+    }
+
+    /**
+     * What an owner with no running term should be offered when they come back.
+     *
+     * Payment only happens once a term runs out, so the plan the owner settled on before
+     * that point has to survive the lapse — otherwise a booked upgrade quietly disappears
+     * and they are dropped back onto a bare plan list with nothing to pay for.
+     *
+     * A booked plan change wins over the plan that just ended, since that is the plan the
+     * owner chose to move to.
+     */
+    private function buildRenewalOffer(User $owner): ?array
+    {
+        $ended = $this->subscriptionRepo->findLatestEndedByUserId($owner->user_id);
+
+        if (! $ended) {
+            return null;
+        }
+
+        $plan = $ended->pendingPlan ?? $ended->plan;
+
+        if (! $plan) {
+            return null;
+        }
+
+        return [
+            'plan'           => new SubscriptionPlanResource($plan),
+            'billing_cycle'  => $ended->pending_billing_cycle ?? $ended->billing_cycle ?? 'monthly',
+            'was_scheduled'  => $ended->pendingPlan !== null,
+            'previous_plan'  => $ended->plan?->sub_name,
+            'ended_on'       => $ended->end_date?->toISOString(),
         ];
     }
 

@@ -33,7 +33,7 @@
                                 Dear {{ $ownerName }},
                             </p>
                             <p style="font-size: 15px; line-height: 1.6; margin-bottom: 24px; color: #4a382d;">
-                                This notice is to inform you that your active BrewSpot subscription plan is scheduled to expire in <strong>{{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }}</strong>. To ensure uninterrupted access to your business operations and management tools, please renew your subscription prior to the scheduled expiration date.
+                                This notice is to inform you that your active BrewSpot subscription plan is scheduled to expire in <strong>{{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }}</strong>.@if ($renewalOpensOn) Renewal opens on <strong>{{ $renewalOpensOn }}</strong>, the day your paid period runs out — paying then keeps your access unbroken, and your final day carries over to the new term.@else To ensure uninterrupted access to your business operations and management tools, please renew your subscription prior to the scheduled expiration date.@endif
                             </p>
 
                             <!-- Subscription Details Card -->
@@ -52,6 +52,12 @@
                                                 <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Expiration Date:</td>
                                                 <td style="color: #26160e; font-weight: 600;">{{ $endDate }}</td>
                                             </tr>
+                                            @if ($renewalOpensOn)
+                                            <tr>
+                                                <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Renewal Opens:</td>
+                                                <td style="color: #26160e; font-weight: 600;">{{ $renewalOpensOn }}</td>
+                                            </tr>
+                                            @endif
                                             <tr>
                                                 <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Time Remaining:</td>
                                                 <td>
@@ -92,7 +98,11 @@
                                                 </p>
                                             @else
                                                 <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
-                                                    Any days remaining on your current term are carried over to the renewed period.
+                                                    @if ($renewalOpensOn)
+                                                        Payment opens on {{ $renewalOpensOn }}. Any days remaining on your current term are carried over to the renewed period, so nothing is lost by waiting until then.
+                                                    @else
+                                                        Any days remaining on your current term are carried over to the renewed period.
+                                                    @endif
                                                 </p>
                                             @endif
                                         </td>

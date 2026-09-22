@@ -37,6 +37,7 @@ class SubscriptionReminderService
                 daysRemaining: $daysRemaining,
                 renewUrl: $this->buildRenewUrl($subscription),
                 renewPlanName: ($subscription->pendingPlan ?? $subscription->plan)->sub_name,
+                renewalOpensOn: $subscription->renewalOpensAt()?->format('F j, Y'),
             ));
 
             $this->subscriptionRepo->markReminderSent($subscription);
