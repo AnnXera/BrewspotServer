@@ -12,9 +12,9 @@ class MenuItemController extends Controller
         private readonly MenuItemService $service
     ) {}
 
-    public function index(): JsonResponse
+    public function index(\Illuminate\Http\Request $request): JsonResponse
     {
-        $result = $this->service->listItems(auth()->user());
+        $result = $this->service->listItems(auth()->user(), $request->query('category_uuid'));
 
         if (! $result['success']) {
             return response()->json($result, 400);

@@ -21,6 +21,7 @@ class MenuItem extends Model
 
     protected $fillable = [
         'uuid',
+        'cafe_id',
         'men_category_id',
         'menu_name',
         'description',
@@ -42,6 +43,11 @@ class MenuItem extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(MenuCategory::class, 'men_category_id', 'men_category_id');
+    }
+
+    public function cafe(): BelongsTo
+    {
+        return $this->belongsTo(Cafe::class, 'cafe_id', 'cafe_id');
     }
 
     public function branchOverrides(): HasMany

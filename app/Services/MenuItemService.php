@@ -28,10 +28,13 @@ class MenuItemService
             return ['success' => false, 'message' => 'No cafe found for this account.'];
         }
 
-        $category = $this->repo->findCategoryByUuidForCafe($payload['category_uuid'], $cafe->cafe_id);
+        $category = null;
+        if (!empty($payload['category_uuid'])) {
+            $category = $this->repo->findCategoryByUuidForCafe($payload['category_uuid'], $cafe->cafe_id);
 
-        if (! $category) {
-            return ['success' => false, 'message' => 'Invalid category or category does not belong to your cafe.'];
+            if (! $category) {
+                return ['success' => false, 'message' => 'Invalid category or category does not belong to your cafe.'];
+            }
         }
 
         try {
@@ -41,7 +44,7 @@ class MenuItemService
             }
 
             $recipes = $payload['recipes'];
-            $item = $this->repo->create($category->men_category_id, $payload, $recipes);
+            $item = $this->repo->create($cafe->cafe_id, $category?->men_category_id, $payload, $recipes);
         } catch (\Exception $e) {
             Log::channel('owner')->error('Failed to create menu item.', [
                 'owner_uuid' => $owner->uuid,
@@ -83,12 +86,16 @@ class MenuItemService
             return ['success' => false, 'message' => 'Item not found.'];
         }
 
-        if (isset($payload['category_uuid'])) {
-            $category = $this->repo->findCategoryByUuidForCafe($payload['category_uuid'], $cafe->cafe_id);
-            if (! $category) {
-                return ['success' => false, 'message' => 'Invalid category or category does not belong to your cafe.'];
+        if (array_key_exists('category_uuid', $payload)) {
+            if ($payload['category_uuid'] === null) {
+                $payload['men_category_id'] = null;
+            } else {
+                $category = $this->repo->findCategoryByUuidForCafe($payload['category_uuid'], $cafe->cafe_id);
+                if (! $category) {
+                    return ['success' => false, 'message' => 'Invalid category or category does not belong to your cafe.'];
+                }
+                $payload['men_category_id'] = $category->men_category_id;
             }
-            $payload['men_category_id'] = $category->men_category_id;
         }
 
         try {
@@ -123,7 +130,7 @@ class MenuItemService
         ];
     }
 
-    public function listItems(User $owner): array
+    public function listItems(User $owner, ?string $categoryUuid = null): array
     {
         $cafe = $this->repo->findCafeByOwner($owner->user_id);
 
@@ -131,7 +138,7 @@ class MenuItemService
             return ['success' => false, 'message' => 'No cafe found for this account.'];
         }
 
-        $items = $this->repo->listByCafe($cafe->cafe_id);
+        $items = $this->repo->listByCafe($cafe->cafe_id, $categoryUuid);
 
         return [
             'success' => true,

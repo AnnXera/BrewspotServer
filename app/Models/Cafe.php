@@ -45,4 +45,9 @@ class Cafe extends Model
     {
         return $this->hasMany(CafeBranch::class, 'cafe_id', 'cafe_id');
     }
+
+    public function menuItems(): HasMany
+    {
+        return $this->hasMany(MenuItem::class, 'cafe_id', 'cafe_id');
+    }
 }

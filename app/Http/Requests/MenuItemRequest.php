@@ -27,7 +27,7 @@ class MenuItemRequest extends FormRequest
         $isUpdate = $this->isMethod('patch') || $this->isMethod('put');
 
         return [
-            'category_uuid' => [$isUpdate ? 'sometimes' : 'required', 'string'],
+            'category_uuid' => ['nullable', 'string'],
             'menu_name'     => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150'],
             'description'   => ['nullable', 'string'],
             'base_price'    => [$isUpdate ? 'sometimes' : 'required', 'numeric', 'min:0'],

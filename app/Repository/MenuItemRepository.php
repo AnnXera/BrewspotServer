@@ -21,10 +21,11 @@ class MenuItemRepository
             ->first();
     }
 
-    public function create(int $categoryId, array $payload, array $recipes): MenuItem
+    public function create(int $cafeId, ?int $categoryId, array $payload, array $recipes): MenuItem
     {
-        return DB::transaction(function () use ($categoryId, $payload, $recipes) {
+        return DB::transaction(function () use ($cafeId, $categoryId, $payload, $recipes) {
             $item = MenuItem::create([
+                'cafe_id'         => $cafeId,
                 'men_category_id' => $categoryId,
                 'menu_name'       => $payload['menu_name'],
                 'description'     => $payload['description'] ?? null,
@@ -48,9 +49,7 @@ class MenuItemRepository
     public function findByUuidForCafe(string $uuid, int $cafeId): ?MenuItem
     {
         return MenuItem::where('uuid', $uuid)
-            ->whereHas('category', function ($query) use ($cafeId) {
-                $query->where('cafe_id', $cafeId);
-            })
+            ->where('cafe_id', $cafeId)
             ->with('recipes')
             ->first();
     }
@@ -87,12 +86,19 @@ class MenuItemRepository
         });
     }
 
-    public function listByCafe(int $cafeId)
+    public function listByCafe(int $cafeId, ?string $categoryUuid = null)
     {
-        return MenuItem::whereHas('category', function ($query) use ($cafeId) {
-                $query->where('cafe_id', $cafeId);
-            })
-            ->with(['category', 'recipes'])
+        $query = MenuItem::where('cafe_id', $cafeId);
+
+        if ($categoryUuid === 'uncategorized') {
+            $query->whereNull('men_category_id');
+        } elseif ($categoryUuid) {
+            $query->whereHas('category', function ($q) use ($categoryUuid) {
+                $q->where('uuid', $categoryUuid);
+            });
+        }
+
+        return $query->with(['category', 'recipes'])
             ->orderBy('menu_name')
             ->get();
     }
