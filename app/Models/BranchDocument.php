@@ -18,6 +18,8 @@ class BranchDocument extends Model
         'file',
         'registered_at',
         'expired_at',
+        'tin_number',
+        'vat',
     ];
 
     protected $casts = [

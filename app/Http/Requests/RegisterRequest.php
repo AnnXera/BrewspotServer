@@ -23,24 +23,32 @@ class RegisterRequest extends FormRequest
             $raw = trim($this->input('phone_number'));
             if (!preg_match('/[a-zA-Z]/', $raw)) {
                 $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '09')) {
-                    $digits = substr($digits, 1);
-                } elseif (str_starts_with($digits, '639')) {
-                    $digits = substr($digits, 2);
+                if (str_starts_with($digits, '082') && strlen($digits) === 10) {
+                    $merge['phone_number'] = $digits;
+                } else {
+                    if (str_starts_with($digits, '09')) {
+                        $digits = substr($digits, 1);
+                    } elseif (str_starts_with($digits, '639')) {
+                        $digits = substr($digits, 2);
+                    }
+                    $merge['phone_number'] = '+63' . $digits;
                 }
-                $merge['phone_number'] = '+63' . $digits;
             }
         }
         if ($this->has('cafe_phonenumber') && is_string($this->input('cafe_phonenumber'))) {
             $raw = trim($this->input('cafe_phonenumber'));
             if (!preg_match('/[a-zA-Z]/', $raw)) {
                 $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '09')) {
-                    $digits = substr($digits, 1);
-                } elseif (str_starts_with($digits, '639')) {
-                    $digits = substr($digits, 2);
+                if (str_starts_with($digits, '082') && strlen($digits) === 10) {
+                    $merge['cafe_phonenumber'] = $digits;
+                } else {
+                    if (str_starts_with($digits, '09')) {
+                        $digits = substr($digits, 1);
+                    } elseif (str_starts_with($digits, '639')) {
+                        $digits = substr($digits, 2);
+                    }
+                    $merge['cafe_phonenumber'] = '+63' . $digits;
                 }
-                $merge['cafe_phonenumber'] = '+63' . $digits;
             }
         }
         if (!empty($merge)) {
@@ -50,7 +58,9 @@ class RegisterRequest extends FormRequest
 
     public function rules(): array
     {
-        $userId = User::where('uuid', $this->route('uuid'))->value('user_id');
+        $user = User::where('uuid', $this->route('uuid'))->first();
+        $userId = $user ? $user->user_id : null;
+        $userEmail = $user ? $user->email : null;
 
         return [
             // User Details
@@ -61,7 +71,7 @@ class RegisterRequest extends FormRequest
                 'required',
                 'string',
                 'max:20',
-                'regex:/^\+639\d{9}$/',
+                'regex:/^(\+639\d{9}|082\d{7})$/',
                 'different:cafe_phonenumber',
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
                 Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
@@ -76,40 +86,39 @@ class RegisterRequest extends FormRequest
 
             // User Document
             'id_type'               => ['required', 'string', 'in:' . implode(',', array_keys(UserDocument::$allowedIds))],
-            'file'                  => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'file'                  => ['required', 'string'],
             'file_back'             => [
                 Rule::requiredIf(fn () => UserDocument::requiresBack($this->input('id_type'))),
                 'nullable',
-                'file',
-                'mimes:jpg,jpeg,png,pdf',
-                'max:5120',
+                'string',
             ],
 
             // Cafe Details
             'cafe_name'             => ['required', 'string', 'max:150'],
             'cafe_doc_type'         => ['required', 'string', 'in:DTI,SEC'],
-            'dti_sec_file'          => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'dti_sec_file'          => ['required', 'string'],
 
             // Main Branch Details
-            'cafe_picture'          => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'cafe_picture'          => ['nullable', 'string'],
             'branch_name'           => ['required', 'string', 'max:150'],
             'cafe_email'            => [
                 'required',
                 'email',
                 'max:255',
                 Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at'),
+                $userEmail ? Rule::notIn([$userEmail]) : '',
             ],
             'cafe_phonenumber'      => [
                 'required',
                 'string',
                 'max:20',
-                'regex:/^\+639\d{9}$/',
+                'regex:/^(\+639\d{9}|082\d{7})$/',
                 'different:phone_number',
                 Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
             ],
             'address'               => ['required', 'string'],
-            'bir_file'              => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
+            'bir_file'              => ['required', 'string'],
             'bir_registered_at'     => ['required', 'date'],
             'bir_expired_at'        => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
             'tin_number'            => ['required', 'string', 'max:50'],
@@ -127,12 +136,12 @@ class RegisterRequest extends FormRequest
             $phoneDigits = preg_replace('/\D/', '', $phoneRaw);
             $cafePhoneDigits = preg_replace('/\D/', '', $cafePhoneRaw);
 
-            if (!empty($phoneRaw) && (!str_starts_with($phoneDigits, '639') || strlen($phoneDigits) !== 12)) {
-                $validator->errors()->add('phone_number', 'Personal phone number must be 10 digits (e.g., 9123456789).');
+            if (!empty($phoneRaw) && (!str_starts_with($phoneDigits, '639') || strlen($phoneDigits) !== 12) && (!str_starts_with($phoneDigits, '082') || strlen($phoneDigits) !== 10)) {
+                $validator->errors()->add('phone_number', 'Personal phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).');
             }
 
-            if (!empty($cafePhoneRaw) && (!str_starts_with($cafePhoneDigits, '639') || strlen($cafePhoneDigits) !== 12)) {
-                $validator->errors()->add('cafe_phonenumber', 'Café phone number must be 10 digits (e.g., 9123456789).');
+            if (!empty($cafePhoneRaw) && (!str_starts_with($cafePhoneDigits, '639') || strlen($cafePhoneDigits) !== 12) && (!str_starts_with($cafePhoneDigits, '082') || strlen($cafePhoneDigits) !== 10)) {
+                $validator->errors()->add('cafe_phonenumber', 'Café phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).');
             }
 
             if ($phoneRaw !== '' && $cafePhoneRaw !== '' && $phoneRaw === $cafePhoneRaw) {
@@ -148,7 +157,7 @@ class RegisterRequest extends FormRequest
             'firstname.required'            => 'First name is required.',
             'lastname.required'             => 'Last name is required.',
             'phone_number.required'         => 'Phone number is required.',
-            'phone_number.regex'            => 'Personal phone number must be 10 digits (e.g., 9123456789).',
+            'phone_number.regex'            => 'Personal phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).',
             'phone_number.different'        => 'Personal phone number and café phone number must be different.',
             'phone_number.unique'           => 'This personal phone number is already registered or in use by a café.',
             'owner_address.required'        => 'Your address is required.',
@@ -179,8 +188,9 @@ class RegisterRequest extends FormRequest
             'branch_name.required'          => 'Branch name is required.',
             'cafe_email.required'           => 'Cafe email is required.',
             'cafe_email.unique'             => 'This cafe email is already in use.',
+            'cafe_email.not_in'             => 'The café email must be different from your personal email.',
             'cafe_phonenumber.required'     => 'Cafe phone number is required.',
-            'cafe_phonenumber.regex'        => 'Café phone number must be 10 digits (e.g., 9123456789).',
+            'cafe_phonenumber.regex'        => 'Café phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).',
             'cafe_phonenumber.different'    => 'Café phone number and personal contact number must be different.',
             'cafe_phonenumber.unique'       => 'This café phone number is already registered or in use by another branch.',
             'address.required'              => 'Branch address is required.',

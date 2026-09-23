@@ -239,8 +239,21 @@ class RegistrationService
     /**
      * @param string $disk 'local' (private, default) or 'public'
      */
-    private function storeFile(UploadedFile $file, string $path, string $disk = 'local'): string
+    private function storeFile(string $tempPath, string $path, string $disk = 'local'): string
     {
-        return $file->store($path, $disk);
+        $filename = basename($tempPath);
+        $finalPath = rtrim($path, '/') . '/' . $filename;
+
+        if (\Illuminate\Support\Facades\Storage::disk('local')->exists($tempPath)) {
+            if ($disk === 'local') {
+                \Illuminate\Support\Facades\Storage::disk('local')->move($tempPath, $finalPath);
+            } else {
+                $content = \Illuminate\Support\Facades\Storage::disk('local')->get($tempPath);
+                \Illuminate\Support\Facades\Storage::disk($disk)->put($finalPath, $content);
+                \Illuminate\Support\Facades\Storage::disk('local')->delete($tempPath);
+            }
+        }
+
+        return $finalPath;
     }
 }

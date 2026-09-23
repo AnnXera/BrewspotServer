@@ -21,6 +21,8 @@ use App\Http\Controllers\MenuItemController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
 
+use App\Http\Controllers\TempUploadController;
+
 // Public routes
 Route::prefix('auth')->group(function () {
     Route::post('/send-code',         [VerificationCodeController::class, 'sendCode']); // registration email verification code
@@ -37,6 +39,9 @@ Route::prefix('auth')->group(function () {
     Route::post('/resend-login-code',  [AuthController::class, 'resendLoginCode']); // resend login 2FA code
     Route::post('/verify-login-code', [AuthController::class, 'verifyLoginCode']); // login 2FA code
 });
+
+Route::post('/upload/temp', [TempUploadController::class, 'upload']);
+
 
 // Authenticated routes
 Route::middleware('auth:sanctum')->group(function () {
