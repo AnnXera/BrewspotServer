@@ -16,7 +16,7 @@ class CleanupAbandonedRegistrations extends Command
      *
      * @var string
      */
-    protected $signature = 'registrations:cleanup-abandoned {--hours=1 : Number of hours before an incomplete registration is considered abandoned}';
+    protected $signature = 'registrations:cleanup-abandoned {--hours=24 : Number of hours before an incomplete registration is considered abandoned}';
 
     /**
      * The console command description.

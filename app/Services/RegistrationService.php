@@ -237,21 +237,28 @@ class RegistrationService
     }
 
     /**
-     * @param string $disk 'local' (private, default) or 'public'
+     * Move a temp-uploaded file to its permanent location and return the new path.
+     *
+     * @param  string $tempPath  Relative path on the local disk (e.g. "temp/abc.pdf")
+     * @param  string $path      Target directory (relative, no trailing slash)
+     * @param  string $disk      'local' (private, default) or 'public'
+     * @throws \RuntimeException if the temp file cannot be found — surfaces inside the DB transaction so the registration rolls back cleanly.
      */
     private function storeFile(string $tempPath, string $path, string $disk = 'local'): string
     {
-        $filename = basename($tempPath);
+        if (! \Illuminate\Support\Facades\Storage::disk('local')->exists($tempPath)) {
+            throw new \RuntimeException("Temp file not found on disk: {$tempPath}");
+        }
+
+        $filename  = basename($tempPath);
         $finalPath = rtrim($path, '/') . '/' . $filename;
 
-        if (\Illuminate\Support\Facades\Storage::disk('local')->exists($tempPath)) {
-            if ($disk === 'local') {
-                \Illuminate\Support\Facades\Storage::disk('local')->move($tempPath, $finalPath);
-            } else {
-                $content = \Illuminate\Support\Facades\Storage::disk('local')->get($tempPath);
-                \Illuminate\Support\Facades\Storage::disk($disk)->put($finalPath, $content);
-                \Illuminate\Support\Facades\Storage::disk('local')->delete($tempPath);
-            }
+        if ($disk === 'local') {
+            \Illuminate\Support\Facades\Storage::disk('local')->move($tempPath, $finalPath);
+        } else {
+            $content = \Illuminate\Support\Facades\Storage::disk('local')->get($tempPath);
+            \Illuminate\Support\Facades\Storage::disk($disk)->put($finalPath, $content);
+            \Illuminate\Support\Facades\Storage::disk('local')->delete($tempPath);
         }
 
         return $finalPath;

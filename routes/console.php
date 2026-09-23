@@ -12,6 +12,6 @@ Schedule::command('subscriptions:expire')->everyMinute();
 
 Schedule::command('subscriptions:send-expiration-reminders')->everyFiveSeconds();
 
-Schedule::command('registrations:cleanup-abandoned --hours=1')->hourly();
+Schedule::command('registrations:cleanup-abandoned --hours=24')->daily();
 
 Schedule::command('app:cleanup-temp-uploads')->daily();

@@ -24,7 +24,11 @@ class SubscriptionPlanRepository
 
     public function listActive(int $perPage = 15)
     {
-        return SubscriptionPlan::where('is_active', true)->with('features')->orderBy('price', 'asc')->paginate($perPage);
+        return SubscriptionPlan::where('is_active', true)
+            ->whereRaw('LOWER(sub_name) NOT LIKE ?', ['%trial%'])
+            ->with('features')
+            ->orderBy('price', 'asc')
+            ->paginate($perPage);
     }
 
     public function findActiveByUuid(string $uuid): ?SubscriptionPlan

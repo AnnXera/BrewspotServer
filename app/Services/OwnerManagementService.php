@@ -393,6 +393,10 @@ class OwnerManagementService
                     'branch_doc_id' => $doc->branch_doc_id,
                     'doc_type'      => $doc->doc_type,
                     'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
+                    'tin_number'    => $doc->tin_number,
+                    'vat'           => $doc->vat,
+                    'registered_at' => $doc->registered_at?->toISOString(),
+                    'expired_at'    => $doc->expired_at?->toISOString(),
                 ])->values(),
             ] : null,
 

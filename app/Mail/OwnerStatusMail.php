@@ -6,9 +6,10 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\SerializesModels;
 
-class OwnerStatusMail extends Mailable
+class OwnerStatusMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
