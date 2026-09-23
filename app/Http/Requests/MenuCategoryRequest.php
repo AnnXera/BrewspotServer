@@ -14,6 +14,15 @@ class MenuCategoryRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->items)) {
+            $this->merge([
+                'items' => json_decode($this->items, true)
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         $cafe     = $this->user()->cafes()->first();
@@ -31,6 +40,8 @@ class MenuCategoryRequest extends FormRequest
             ],
             'is_available' => ['sometimes', 'boolean'],
             'picture' => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
+            'items' => ['sometimes', 'array'],
+            'items.*' => ['string'],
         ];
     }
 

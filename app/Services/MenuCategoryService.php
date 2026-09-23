@@ -35,6 +35,11 @@ class MenuCategoryService
             }
 
             $category = $this->repo->create($cafe->cafe_id, $payload);
+
+            if (isset($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0) {
+                \App\Models\MenuItem::whereIn('uuid', $payload['items'])
+                    ->update(['men_category_id' => $category->men_category_id]);
+            }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
                 Log::channel('owner')->warning('Menu category creation blocked — duplicate name for cafe.', [
@@ -93,6 +98,18 @@ class MenuCategoryService
             }
 
             $category = $this->repo->update($category, $payload);
+
+            if (isset($payload['items']) && is_array($payload['items'])) {
+                // Clear existing items for this category
+                \App\Models\MenuItem::where('men_category_id', $category->men_category_id)
+                    ->update(['men_category_id' => null]);
+                
+                // Assign new items
+                if (count($payload['items']) > 0) {
+                    \App\Models\MenuItem::whereIn('uuid', $payload['items'])
+                        ->update(['men_category_id' => $category->men_category_id]);
+                }
+            }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
                 return ['success' => false, 'message' => 'A category with this name already exists for your cafe.'];

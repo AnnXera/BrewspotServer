@@ -16,9 +16,9 @@ class MenuItemResource extends JsonResource
             $recipes = $this->recipes;
             $recipesCount = $recipes->count();
             if ($recipesCount > 0) {
-                $previewRecipes = $recipes->take(2);
+                $previewRecipes = $recipes->take(4);
                 $recipesPreview = $previewRecipes->pluck('ingredient_name')->join(' • ');
-                $remainingCount = $recipesCount > 2 ? $recipesCount - 2 : 0;
+                $remainingCount = $recipesCount > 4 ? $recipesCount - 4 : 0;
             }
         }
 
