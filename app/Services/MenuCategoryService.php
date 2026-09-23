@@ -170,6 +170,9 @@ class MenuCategoryService
             Storage::disk('public')->delete($category->picture);
         }
 
+        \App\Models\MenuItem::where('men_category_id', $category->men_category_id)
+            ->update(['men_category_id' => null]);
+
         $this->repo->delete($category);
 
         Log::channel('owner')->info('Menu category deleted.', [
