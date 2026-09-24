@@ -29,6 +29,19 @@ class Cafe extends Model
     protected static function booted(): void
     {
         static::creating(fn ($cafe) => $cafe->uuid = (string) Str::uuid());
+
+        static::created(function ($cafe) {
+            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            foreach ($days as $day) {
+                $isWeekend = in_array($day, ['Saturday', 'Sunday']);
+                $cafe->openingHours()->create([
+                    'day_of_week' => $day,
+                    'is_closed'   => $isWeekend,
+                    'open_time'   => $isWeekend ? null : '09:00:00',
+                    'close_time'  => $isWeekend ? null : '17:00:00',
+                ]);
+            }
+        });
     }
 
     public function owner(): BelongsTo
@@ -49,5 +62,10 @@ class Cafe extends Model
     public function menuItems(): HasMany
     {
         return $this->hasMany(MenuItem::class, 'cafe_id', 'cafe_id');
+    }
+
+    public function openingHours(): HasMany
+    {
+        return $this->hasMany(CafeOpeningHour::class, 'cafe_id', 'cafe_id');
     }
 }

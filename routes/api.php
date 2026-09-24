@@ -87,6 +87,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
         Route::get('/profile',         [OwnerProfileController::class, 'profile']);
         Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
+        Route::get('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
+        Route::put('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
         Route::get('/branches',        [OwnerProfileController::class, 'branches']);
         Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']);
 

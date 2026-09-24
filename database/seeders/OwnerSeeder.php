@@ -100,6 +100,40 @@ class OwnerSeeder extends Seeder
             ]
         );
 
+        // 6. Give the cafe opening hours (in case the creating event didn't run, e.g. if the cafe already existed)
+        if ($cafe->openingHours()->count() === 0) {
+            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            foreach ($days as $day) {
+                $isWeekend = in_array($day, ['Saturday', 'Sunday']);
+                $cafe->openingHours()->create([
+                    'day_of_week' => $day,
+                    'is_closed'   => $isWeekend,
+                    'open_time'   => $isWeekend ? null : '09:00:00',
+                    'close_time'  => $isWeekend ? null : '17:00:00',
+                ]);
+            }
+        }
+
+        // 7. Add a Menu Category
+        $category = \App\Models\MenuCategory::firstOrCreate(
+            ['cafe_id' => $cafe->cafe_id, 'name' => 'Signature Coffee'],
+            [
+                'uuid' => (string) Str::uuid(),
+                'is_available' => true,
+            ]
+        );
+
+        // 8. Add a Menu Item to the category
+        \App\Models\MenuItem::firstOrCreate(
+            ['cafe_id' => $cafe->cafe_id, 'men_category_id' => $category->men_category_id, 'menu_name' => 'Caramel Macchiato'],
+            [
+                'uuid'         => (string) Str::uuid(),
+                'description'  => 'Espresso mixed with vanilla-flavored syrup, milk, and caramel drizzle.',
+                'base_price'   => 150.00,
+                'is_available' => true,
+            ]
+        );
+
         $this->command->info('Test owner ready:');
         $this->command->info('  email:    owner@brewspot.test');
         $this->command->info('  password: Password123!');
