@@ -124,7 +124,7 @@ class OwnerSeeder extends Seeder
         );
 
         // 8. Add a Menu Item to the category
-        \App\Models\MenuItem::firstOrCreate(
+        $item = \App\Models\MenuItem::firstOrCreate(
             ['cafe_id' => $cafe->cafe_id, 'men_category_id' => $category->men_category_id, 'menu_name' => 'Caramel Macchiato'],
             [
                 'uuid'         => (string) Str::uuid(),
@@ -133,6 +133,25 @@ class OwnerSeeder extends Seeder
                 'is_available' => true,
             ]
         );
+
+        // 9. Add the recipe for the menu item
+        $recipe = [
+            ['ingredient_name' => 'Espresso',       'quantity' => 2,   'unit' => 'shots'],
+            ['ingredient_name' => 'Milk',           'quantity' => 240, 'unit' => 'ml'],
+            ['ingredient_name' => 'Vanilla Syrup',  'quantity' => 15,  'unit' => 'ml'],
+            ['ingredient_name' => 'Caramel Sauce',  'quantity' => 10,  'unit' => 'ml'],
+        ];
+
+        foreach ($recipe as $ingredient) {
+            \App\Models\MenuRecipe::firstOrCreate(
+                ['men_item_id' => $item->men_item_id, 'ingredient_name' => $ingredient['ingredient_name']],
+                [
+                    'uuid'     => (string) Str::uuid(),
+                    'quantity' => $ingredient['quantity'],
+                    'unit'     => $ingredient['unit'],
+                ]
+            );
+        }
 
         $this->command->info('Test owner ready:');
         $this->command->info('  email:    owner@brewspot.test');
