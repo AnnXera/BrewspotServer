@@ -15,10 +15,21 @@ class CategoryBranchRepository
             ->first();
     }
 
-    public function upsert(int $branchId, int $categoryId, bool $isAvailable): CategoryBranch
+    /**
+     * Rows only exist for exceptions: matching the category default removes the override.
+     */
+    public function setAvailability(int $branchId, MenuCategory $category, bool $isAvailable): ?CategoryBranch
     {
+        if ($isAvailable === (bool) $category->is_available) {
+            CategoryBranch::where('branch_id', $branchId)
+                ->where('men_category_id', $category->men_category_id)
+                ->delete();
+
+            return null;
+        }
+
         return CategoryBranch::updateOrCreate(
-            ['branch_id' => $branchId, 'men_category_id' => $categoryId],
+            ['branch_id' => $branchId, 'men_category_id' => $category->men_category_id],
             ['is_available' => $isAvailable]
         );
     }

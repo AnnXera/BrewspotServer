@@ -45,7 +45,7 @@ class CategoryBranchService
             return ['success' => false, 'message' => 'Branch not found.'];
         }
 
-        $override = $this->repo->upsert($branch->branch_id, $category->men_category_id, $isAvailable);
+        $override = $this->repo->setAvailability($branch->branch_id, $category, $isAvailable);
 
         Log::channel('owner')->info('Category branch availability updated.', [
             'owner_uuid'    => $owner->uuid,
@@ -55,9 +55,14 @@ class CategoryBranchService
         ]);
 
         return [
-            'success'  => true,
-            'message'  => 'Branch availability updated successfully.',
-            'override' => new CategoryBranchResource($override->load(['branch', 'category'])),
+            'success' => true,
+            'message' => 'Branch availability updated successfully.',
+            'branch'  => [
+                'branch_uuid'  => $branch->uuid,
+                'branch_name'  => $branch->branch_name,
+                'is_available' => $isAvailable,
+                'has_override' => $override !== null,
+            ],
         ];
     }
 

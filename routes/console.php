@@ -10,7 +10,7 @@ Artisan::command('inspire', function () {
 
 Schedule::command('subscriptions:expire')->everyMinute();
 
-Schedule::command('subscriptions:send-expiration-reminders')->everyFiveSeconds();
+Schedule::command('subscriptions:send-expiration-reminders')->everyMinute();
 
 Schedule::command('registrations:cleanup-abandoned --hours=24')->daily();
 
