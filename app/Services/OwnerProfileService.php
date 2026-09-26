@@ -50,8 +50,9 @@ class OwnerProfileService
         $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage, $search, $status);
 
         return [
-            'success'  => true,
-            'branches' => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
+            'success'   => true,
+            'cafe_name' => $this->repo->findCafeNameByOwner($owner->user_id),
+            'branches'  => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
         ];
     }
 

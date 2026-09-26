@@ -37,7 +37,8 @@ class MenuCategoryService
             $category = $this->repo->create($cafe->cafe_id, $payload);
 
             if (isset($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0) {
-                \App\Models\MenuItem::whereIn('uuid', $payload['items'])
+                \App\Models\MenuItem::where('cafe_id', $cafe->cafe_id)
+                    ->whereIn('uuid', $payload['items'])
                     ->update(['men_category_id' => $category->men_category_id]);
             }
         } catch (QueryException $e) {
@@ -106,7 +107,8 @@ class MenuCategoryService
                 
                 // Assign new items
                 if (count($payload['items']) > 0) {
-                    \App\Models\MenuItem::whereIn('uuid', $payload['items'])
+                    \App\Models\MenuItem::where('cafe_id', $cafe->cafe_id)
+                        ->whereIn('uuid', $payload['items'])
                         ->update(['men_category_id' => $category->men_category_id]);
                 }
             }

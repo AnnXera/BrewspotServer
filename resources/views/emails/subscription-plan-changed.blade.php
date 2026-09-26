@@ -66,7 +66,11 @@
                             </table>
 
                             <p style="font-size: 13px; line-height: 1.6; color: #8c7668; margin-top: 20px; margin-bottom: 0;">
-                                Your new plan and its features will become active automatically on your next billing cycle. No further action is required on your part.
+                                @if (! empty($payableFrom))
+                                    <strong style="color: #2c1a0e;">Payment is required.</strong> You are not charged automatically. Payment for your new plan opens on <strong>{{ $payableFrom }}</strong>, and we will email you a payment link that day. Your current plan stays active until then.
+                                @else
+                                    Your new plan and its features will become active automatically on your next billing cycle. No further action is required on your part.
+                                @endif
                             </p>
 
                             <!-- Sign-off -->

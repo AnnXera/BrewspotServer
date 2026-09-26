@@ -23,6 +23,13 @@ class MenuItemController extends Controller
         return response()->json($result, 200);
     }
 
+    public function show(string $uuid): JsonResponse
+    {
+        $result = $this->service->getItem(auth()->user(), $uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
+
     public function store(MenuItemRequest $request): JsonResponse
     {
         $result = $this->service->createItem(auth()->user(), $request->validated());

@@ -195,9 +195,18 @@ class SubscriptionRepository
         return $subscription->fresh(['plan.features', 'user']);
     }
 
+    /**
+     * Gateway-managed subscriptions bill themselves, so owners on them are never asked to pay.
+     */
+    private function manuallyRenewed()
+    {
+        return Subscription::whereNull('gateway_subscription_id');
+    }
+
     public function findExpiringWithinDays(int $days)
     {
-        return Subscription::where('status', 'active')
+        return $this->manuallyRenewed()
+            ->where('status', 'active')
             ->whereNotNull('end_date')
             ->whereNull('expiration_reminder_sent_at')
             ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays($days)])
@@ -205,9 +214,43 @@ class SubscriptionRepository
             ->get();
     }
 
-    public function markReminderSent(Subscription $subscription): void
+    /**
+     * Active terms whose renewal window (the grace days before end_date) has opened.
+     */
+    public function findRenewalOpenUnnotified()
     {
-        $subscription->update(['expiration_reminder_sent_at' => Carbon::now()]);
+        return $this->manuallyRenewed()
+            ->where('status', 'active')
+            ->whereNotNull('end_date')
+            ->whereNull('renewal_open_reminder_sent_at')
+            ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays(Subscription::GRACE_DAYS)])
+            ->with(['plan', 'pendingPlan', 'user'])
+            ->get();
+    }
+
+    /**
+     * Terms that ran out recently without the owner starting another one.
+     *
+     * Limited to the last few days so older lapses aren't all emailed at once.
+     */
+    public function findRecentlyExpiredUnnotified(int $withinDays)
+    {
+        return Subscription::where('status', 'expired')
+            ->whereNull('expired_notice_sent_at')
+            ->where('end_date', '>=', Carbon::now()->subDays($withinDays))
+            ->whereDoesntHave('user.subscriptions', fn ($q) => $q->where('status', 'active'))
+            ->with(['plan', 'pendingPlan', 'user'])
+            ->get();
+    }
+
+    /**
+     * Claims a notice for sending. Returns false if another run already claimed it.
+     */
+    public function claimNotice(Subscription $subscription, string $marker): bool
+    {
+        return Subscription::whereKey($subscription->sub_id)
+            ->whereNull($marker)
+            ->update([$marker => Carbon::now()]) === 1;
     }
 
     public function listSubscribers(int $perPage = 15)

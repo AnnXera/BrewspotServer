@@ -38,14 +38,18 @@ class Subscription extends Model
         'billing_cycle',
         'cancel_at_period_end',
         'expiration_reminder_sent_at',
+        'renewal_open_reminder_sent_at',
+        'expired_notice_sent_at',
         'gateway_subscription_id',
     ];
 
     protected $casts = [
-        'start_date'                  => 'datetime',
-        'end_date'                     => 'datetime',
-        'cancel_at_period_end'         => 'boolean',
-        'expiration_reminder_sent_at'  => 'datetime',
+        'start_date'                    => 'datetime',
+        'end_date'                      => 'datetime',
+        'cancel_at_period_end'          => 'boolean',
+        'expiration_reminder_sent_at'   => 'datetime',
+        'renewal_open_reminder_sent_at' => 'datetime',
+        'expired_notice_sent_at'        => 'datetime',
     ];
 
     protected static function booted(): void

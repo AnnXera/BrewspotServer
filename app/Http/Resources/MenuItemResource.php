@@ -25,6 +25,7 @@ class MenuItemResource extends JsonResource
         return [
             'uuid'                    => $this->uuid,
             'category_uuid'           => $this->category->uuid ?? null,
+            'category_name'           => $this->category->name ?? null,
             'menu_name'               => $this->menu_name,
             'description'             => $this->description,
             'base_price'              => $this->base_price,

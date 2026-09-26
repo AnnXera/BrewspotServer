@@ -63,8 +63,12 @@ class MenuItemRepository
                 'base_price'      => $payload['base_price'] ?? null,
                 'is_available'    => array_key_exists('is_available', $payload) ? $payload['is_available'] : null,
                 'picture'         => array_key_exists('picture', $payload) ? $payload['picture'] : null,
-                'men_category_id' => $payload['men_category_id'] ?? null,
             ], fn ($value) => $value !== null);
+
+            // Null is meaningful here (uncategorized), so it can't go through the filter above.
+            if (array_key_exists('men_category_id', $payload)) {
+                $updateData['men_category_id'] = $payload['men_category_id'];
+            }
 
             if (!empty($updateData)) {
                 $item->update($updateData);

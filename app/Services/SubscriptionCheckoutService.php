@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Contracts\MailAdapterInterface;
+use App\Mail\SubscriptionPlanChangedMail;
 use App\Services\PaymentGatewayManager;
 use App\Models\Subscription;
 use App\Models\User;
@@ -24,7 +26,8 @@ class SubscriptionCheckoutService
         private readonly SubscriptionPlanRepository $planRepo,
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly PaymentRepository $paymentRepo,
-        private readonly PaymentGatewayManager $paymentManager
+        private readonly PaymentGatewayManager $paymentManager,
+        private readonly MailAdapterInterface $mailer
     ) {}
 
     public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly', string $gateway = 'paymongo'): array
@@ -266,6 +269,15 @@ class SubscriptionCheckoutService
             : 'the end of your current term';
 
         $payableFrom = $current->renewalOpensAt()?->format('F j, Y');
+
+        // Written confirmation of the booking. Gateway-managed subscriptions bill themselves;
+        // everyone else is told up front that they will have to pay, and when.
+        $this->mailer->sendMailable($owner->email, new SubscriptionPlanChangedMail(
+            ownerName: $owner->firstname ?? $owner->username ?? 'there',
+            newPlanName: $plan->sub_name,
+            effectiveDate: $effective,
+            payableFrom: $current->gateway_subscription_id ? null : ($payableFrom ?? $effective),
+        ));
 
         $message = "Your switch to the {$plan->sub_name} is scheduled for {$effective}. You keep your current plan until then, and nothing has been charged.";
 

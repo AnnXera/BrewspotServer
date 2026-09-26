@@ -9,41 +9,40 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 // Not queued itself: SendSubscriptionNotice queues and retries it.
-class SubscriptionExpiringMail extends Mailable
+class SubscriptionRenewalOpenMail extends Mailable
 {
     use Queueable, SerializesModels;
 
     public function __construct(
         public readonly string $ownerName,
         public readonly string $planName,
+        /** The plan the owner will pay for — the booked change if any; null for a trial with nothing booked. */
+        public readonly ?string $renewPlanName,
         public readonly string $endDate,
-        public readonly int $daysRemaining,
-        public readonly ?string $renewUrl = null,
-        /** The plan the owner will renew into — differs from $planName when a change is booked. */
-        public readonly ?string $renewPlanName = null,
-        /** When payment for the next term opens — the day the owner's paid days run out. */
-        public readonly ?string $renewalOpensOn = null,
+        public readonly string $renewUrl,
     ) {}
 
     public function envelope(): Envelope
     {
-        return new Envelope(
-            subject: 'BrewSpot — Notice of Upcoming Subscription Expiration',
-        );
+        $subject = match (true) {
+            $this->renewPlanName === null              => 'BrewSpot — Your trial is ending, choose a plan',
+            $this->renewPlanName !== $this->planName   => "BrewSpot — You can now pay for your {$this->renewPlanName}",
+            default                                    => 'BrewSpot — Your subscription is ready to renew',
+        };
+
+        return new Envelope(subject: $subject);
     }
 
     public function content(): Content
     {
         return new Content(
-            view: 'emails.subscription-expiring',
+            view: 'emails.subscription-renewal-open',
             with: [
                 'ownerName'     => $this->ownerName,
                 'planName'      => $this->planName,
+                'renewPlanName' => $this->renewPlanName,
                 'endDate'       => $this->endDate,
-                'daysRemaining' => $this->daysRemaining,
                 'renewUrl'      => $this->renewUrl,
-                'renewPlanName' => $this->renewPlanName ?? $this->planName,
-                'renewalOpensOn' => $this->renewalOpensOn,
             ],
         );
     }

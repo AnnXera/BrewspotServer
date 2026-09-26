@@ -17,6 +17,8 @@ class SubscriptionPlanChangedMail extends Mailable implements ShouldQueue
         public readonly string $ownerName,
         public readonly string $newPlanName,
         public readonly string $effectiveDate,
+        /** Set for manually paid plans: the day payment for the new plan opens. Null means it is billed automatically. */
+        public readonly ?string $payableFrom = null,
     ) {}
 
     public function envelope(): Envelope
@@ -34,6 +36,7 @@ class SubscriptionPlanChangedMail extends Mailable implements ShouldQueue
                 'ownerName'     => $this->ownerName,
                 'newPlanName'   => $this->newPlanName,
                 'effectiveDate' => $this->effectiveDate,
+                'payableFrom'   => $this->payableFrom,
             ],
         );
     }

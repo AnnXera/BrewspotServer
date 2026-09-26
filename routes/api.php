@@ -20,6 +20,7 @@ use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\MenuItemController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
+use App\Http\Controllers\ItemBranchController;
 
 use App\Http\Controllers\TempUploadController;
 
@@ -121,6 +122,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
 
             Route::get('/menu-items',                             [MenuItemController::class, 'index']);
+            Route::get('/menu-items/{uuid}',                      [MenuItemController::class, 'show']);
             Route::post('/menu-items',                            [MenuItemController::class, 'store']);
             Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
             Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
@@ -128,6 +130,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
             Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
             Route::patch('/menu-categories/{categoryUuid}/branches/{branchUuid}', [CategoryBranchController::class, 'update']);
+
+            Route::get('/menu-items/{uuid}/branches-status',                     [ItemBranchController::class, 'status']);
+            Route::patch('/menu-items/{itemUuid}/branches/{branchUuid}',         [ItemBranchController::class, 'update']);
         });
     });
 

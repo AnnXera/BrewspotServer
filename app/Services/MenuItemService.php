@@ -146,6 +146,26 @@ class MenuItemService
         ];
     }
 
+    public function getItem(User $owner, string $uuid): array
+    {
+        $cafe = $this->repo->findCafeByOwner($owner->user_id);
+
+        if (! $cafe) {
+            return ['success' => false, 'message' => 'No cafe found for this account.'];
+        }
+
+        $item = $this->repo->findByUuidForCafe($uuid, $cafe->cafe_id);
+
+        if (! $item) {
+            return ['success' => false, 'message' => 'Item not found.'];
+        }
+
+        return [
+            'success' => true,
+            'item'    => new MenuItemResource($item->load('category')),
+        ];
+    }
+
     public function deleteItem(User $owner, string $uuid): array
     {
         $cafe = $this->repo->findCafeByOwner($owner->user_id);
