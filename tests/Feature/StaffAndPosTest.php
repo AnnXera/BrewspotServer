@@ -183,6 +183,36 @@ class StaffAndPosTest extends TestCase
             ->assertStatus(422)->assertJsonMissingValidationErrors('pin');
     }
 
+    public function test_phone_must_be_a_ph_mobile_number_and_is_stored_as_plus_63(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
+        $base  = ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Staff', 'email' => 'phone@test.local', 'address' => 'Davao City'];
+
+        foreach (['0917123456', '+6391712345678', '0827123456', '+63 817 123 4567'] as $bad) {
+            $this->api('POST', $url, $token, [...$base, 'phone_number' => $bad])
+                ->assertStatus(422)->assertJsonValidationErrors('phone_number');
+        }
+
+        // Pasted "09…" numbers are normalised before validation.
+        $this->api('POST', $url, $token, [...$base, 'phone_number' => '0917 123 4567'])->assertCreated();
+        $this->assertDatabaseHas('users', ['email' => 'phone@test.local', 'phone_number' => '+639171234567']);
+    }
+
+    public function test_phone_can_be_changed_but_not_cleared_on_update(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}";
+
+        foreach ([null, '', '12345'] as $bad) {
+            $this->api('PATCH', $url, $token, ['phone_number' => $bad])
+                ->assertStatus(422)->assertJsonValidationErrors('phone_number');
+        }
+
+        $this->api('PATCH', $url, $token, ['phone_number' => '+639181112222'])->assertOk();
+        $this->assertSame('+639181112222', $this->cashier->fresh()->phone_number);
+    }
+
     public function test_staff_are_records_only(): void
     {
         $response = $this->api('POST', "/api/manager/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->manager), [

@@ -36,7 +36,7 @@ class CreateBranchStaffRequest extends FormRequest
             'lastname'     => ['required', 'string', 'max:100'],
             // Required for every employee (contact). Only managers use it to log in.
             'email'        => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone_number' => ['required', 'string', 'max:20'],
+            'phone_number' => ['required', ...self::PHONE_RULE],
             'address'      => ['required', 'string', 'max:255'],
             'role'         => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'     => ['nullable', 'date'],
@@ -58,6 +58,7 @@ class CreateBranchStaffRequest extends FormRequest
             'email.required'    => 'Email is required.',
             'email.unique'      => 'This email is already in use.',
             'phone_number.required' => 'Phone number is required.',
+            'phone_number.regex'    => self::PHONE_REGEX_MESSAGE,
             'address.required'  => 'Address is required.',
             'role.in'           => 'Position must be Manager, Cashier or Staff.',
             'pin.required'      => 'A PIN is required.',

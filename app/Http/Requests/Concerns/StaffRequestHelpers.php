@@ -12,6 +12,11 @@ trait StaffRequestHelpers
 {
     public const PIN_RULE = ['string', 'regex:/^\d{4,6}$/'];
 
+    // PH mobile only, after normalizePhoneNumber() (e.g. +639123456789).
+    public const PHONE_RULE = ['string', 'regex:/^\+639\d{9}$/'];
+
+    public const PHONE_REGEX_MESSAGE = 'Phone number must be a valid PH mobile number (+639XXXXXXXXX).';
+
     /**
      * Normalises PH numbers to +63XXXXXXXXXX (same as CreateStaffRequest).
      */
