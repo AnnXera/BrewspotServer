@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -12,7 +13,7 @@ class EnsurePlanHasFeature
     {
         $user = $request->user();
 
-        if (! $user || ! $user->canAccessFeature($feature)) {
+        if (! $user instanceof User || ! $user->canAccessFeature($feature)) {
             return response()->json([
                 'success'          => false,
                 'message'          => 'Your current subscription plan does not include access to this feature. Please upgrade your plan.',

@@ -19,6 +19,7 @@ class CafeStaffService
 {
     public function __construct(
         private readonly CafeStaffRepository $repo,
+        private readonly StaffPinService $pins,
         private readonly MailAdapterInterface $mailer
     ) {}
 
@@ -51,17 +52,28 @@ class CafeStaffService
         try {
             DB::transaction(function () use ($owner, $payload, $branches, $role, $cafe, &$result) {
 
-                $staffUser = $this->repo->createStaffUser($payload, $role->role_id);
+                $staffUser = $this->repo->createStaffUser($payload, $role);
 
-                foreach ($branches as $branch) {
-                    $this->repo->assignToBranch($staffUser->user_id, $branch->branch_id, $payload['position'] ?? null);
+                if (! empty($payload['pin'])) {
+                    $this->pins->setPin($staffUser, $payload['pin']);
                 }
 
-                $this->mailer->sendMailable($staffUser->email, new StaffAccountCreatedMail(
-                    firstname: $staffUser->firstname,
-                    roleName: $role->role_name,
-                    staffUuid: $staffUser->uuid,
-                ));
+                foreach ($branches as $branch) {
+                    $this->repo->assignToBranch(
+                        $staffUser->user_id,
+                        $branch->branch_id,
+                        $payload['hired_at'] ?? null
+                    );
+                }
+
+                // Only managers get a dashboard password; cashiers use their PIN on the POS.
+                if ($role->role_name === 'Manager') {
+                    $this->mailer->sendMailable($staffUser->email, new StaffAccountCreatedMail(
+                        firstname: $staffUser->firstname,
+                        roleName: $role->role_name,
+                        staffUuid: $staffUser->uuid,
+                    ));
+                }
 
                 Log::channel('owner')->info('Staff account created.', [
                     'owner_uuid' => $owner->uuid,
@@ -74,7 +86,9 @@ class CafeStaffService
 
                 $result = [
                     'success' => true,
-                    'message' => 'Staff account created. An email has been sent so they can set up their password.',
+                    'message' => $role->role_name === 'Manager'
+                        ? 'Staff account created. An email has been sent so they can set up their password.'
+                        : 'Cashier account created. They can sign in on the branch register with their PIN.',
                     'staff'   => new CafeStaffResource($staffUser),
                 ];
             });
@@ -111,9 +125,9 @@ class CafeStaffService
     }
 
     /**
-     * Deactivates every branch assignment for this staff member.
-     * The user account itself isn't deleted — just benched — so login
-     * history, past shifts, etc. stay intact for audit purposes.
+     * Terminates every branch assignment for this staff member and revokes
+     * their sessions. The user account itself isn't deleted, so login
+     * history, past transactions, etc. stay intact for audit purposes.
      */
     public function removeStaff(User $owner, string $staffUuid): array
     {
@@ -129,13 +143,16 @@ class CafeStaffService
             return ['success' => false, 'message' => 'Staff member not found.'];
         }
 
-        $this->repo->deactivateAllAssignments($staffUser->user_id);
+        DB::transaction(function () use ($staffUser) {
+            $this->repo->terminateAllAssignments($staffUser->user_id);
+            $this->repo->revokeAccess($staffUser);
+        });
 
-        Log::channel('owner')->info('Staff removed from all branches.', [
+        Log::channel('owner')->info('Staff terminated at all branches.', [
             'owner_uuid' => $owner->uuid,
             'staff_uuid' => $staffUser->uuid,
         ]);
 
-        return ['success' => true, 'message' => 'Staff member removed from all branches.'];
+        return ['success' => true, 'message' => 'Staff member terminated at all branches.'];
     }
 }

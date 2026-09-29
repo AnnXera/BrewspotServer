@@ -6,6 +6,7 @@ use App\Http\Requests\LoginRequest;
 use App\Http\Requests\VerifyLoginCodeRequest;
 use App\Http\Requests\ResendCodeRequest;
 
+use App\Models\User;
 use App\Services\AuthService;
 
 use Illuminate\Http\JsonResponse;
@@ -57,6 +58,11 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
+        // POS device tokens are removed via DELETE /api/pos/device instead.
+        if (! $request->user() instanceof User) {
+            return response()->json(['success' => false, 'message' => 'Not a user session.'], 403);
+        }
+
         $result = $this->service->logout($request->user());
 
         return response()->json($result, 200);

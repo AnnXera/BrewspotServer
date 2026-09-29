@@ -2,12 +2,16 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\StaffRequestHelpers;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Contracts\Validation\Validator;
-use Illuminate\Http\Exceptions\HttpResponseException;
 
+/**
+ * POST /api/owner/staff — owner creates a staff member across one or more branches.
+ */
 class CreateStaffRequest extends FormRequest
 {
+    use StaffRequestHelpers;
+
     public function authorize(): bool
     {
         return true;
@@ -15,18 +19,7 @@ class CreateStaffRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->has('phone_number') && is_string($this->input('phone_number'))) {
-            $raw = trim($this->input('phone_number'));
-            if (!empty($raw) && !preg_match('/[a-zA-Z]/', $raw)) {
-                $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '09')) {
-                    $digits = substr($digits, 1);
-                } elseif (str_starts_with($digits, '639')) {
-                    $digits = substr($digits, 2);
-                }
-                $this->merge(['phone_number' => '+63' . $digits]);
-            }
-        }
+        $this->normalizePhoneNumber();
     }
 
     public function rules(): array
@@ -35,10 +28,15 @@ class CreateStaffRequest extends FormRequest
             'firstname'      => ['required', 'string', 'max:100'],
             'middlename'     => ['nullable', 'string', 'max:100'],
             'lastname'       => ['required', 'string', 'max:100'],
-            'email'          => ['required', 'email', 'max:255', 'unique:users,email'],
+            // Managers log in to the dashboard, so they need an email.
+            // Cashiers only use the POS, so it's optional for them.
+            'email'          => ['nullable', 'required_if:role,Manager', 'email', 'max:255', 'unique:users,email'],
             'phone_number'   => ['nullable', 'string', 'max:20'],
+            'address'        => ['nullable', 'string', 'max:255'],
             'role'           => ['required', 'string', 'in:Manager,Cashier'],
-            'position'       => ['nullable', 'string', 'max:150'],
+            'hired_at'       => ['nullable', 'date'],
+            // Cashiers can't do anything without a PIN; managers may set theirs later.
+            'pin'            => ['nullable', 'required_if:role,Cashier', ...self::PIN_RULE],
             'branch_uuids'   => ['required', 'array', 'min:1'],
             'branch_uuids.*' => ['string', 'exists:cafe_branches,uuid'],
         ];
@@ -49,23 +47,14 @@ class CreateStaffRequest extends FormRequest
         return [
             'firstname.required'    => 'First name is required.',
             'lastname.required'     => 'Last name is required.',
-            'email.required'        => 'Email is required.',
+            'email.required_if'     => 'Email is required for managers.',
             'email.unique'          => 'This email is already in use.',
             'role.required'         => 'Role is required.',
             'role.in'               => 'Role must be Manager or Cashier.',
+            'pin.required_if'       => 'A PIN is required for cashiers.',
+            'pin.regex'             => 'PIN must be 4 to 6 digits.',
             'branch_uuids.required' => 'Select at least one branch.',
             'branch_uuids.*.exists' => 'One or more selected branches were not found.',
         ];
-    }
-
-    protected function failedValidation(Validator $validator): never
-    {
-        throw new HttpResponseException(
-            response()->json([
-                'success' => false,
-                'message' => 'Validation failed.',
-                'errors'  => $validator->errors(),
-            ], 422)
-        );
     }
 }

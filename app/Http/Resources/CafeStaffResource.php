@@ -23,14 +23,16 @@ class CafeStaffResource extends JsonResource
             'phone_number'   => $this->phone_number,
             'role'           => $this->whenLoaded('role', fn () => $this->role->role_name),
             'account_status' => $this->status,
+            'pin_set'        => $this->hasPin(),
+            'pin_locked'     => $this->isPinLocked(),
             'branches'       => $this->whenLoaded('staffAssignments', fn () =>
                 $this->staffAssignments->map(fn ($assignment) => [
                     'staff_uuid'        => $assignment->uuid,
                     'branch_uuid'       => $assignment->branch->uuid,
                     'branch_name'       => $assignment->branch->branch_name,
-                    'position'          => $assignment->position,
                     'employment_status' => $assignment->employment_status,
                     'hired_at'          => $assignment->hired_at?->toDateString(),
+                    'terminated_at'     => $assignment->terminated_at?->toISOString(),
                 ])
             ),
             'created_at' => $this->created_at?->toISOString(),

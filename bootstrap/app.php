@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role'         => \App\Http\Middleware\CheckRole::class,
             'plan.feature' => \App\Http\Middleware\EnsurePlanHasFeature::class,
+            'branch.access' => \App\Http\Middleware\EnsureBranchAccess::class,
+            'pos.device'   => \App\Http\Middleware\EnsurePosDevice::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

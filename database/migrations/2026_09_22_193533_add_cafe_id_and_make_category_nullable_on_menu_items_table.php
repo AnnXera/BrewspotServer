@@ -15,11 +15,15 @@ return new class extends Migration
             $table->foreignId('cafe_id')->nullable()->constrained('cafes', 'cafe_id')->onDelete('cascade');
         });
 
-        \Illuminate\Support\Facades\DB::statement('
-            UPDATE menu_items 
-            JOIN menu_categories ON menu_items.men_category_id = menu_categories.men_category_id 
-            SET menu_items.cafe_id = menu_categories.cafe_id
-        ');
+        // Backfill uses MySQL's UPDATE ... JOIN syntax. Skipped on SQLite
+        // (the in-memory test database), which has no existing rows anyway.
+        if (\Illuminate\Support\Facades\DB::getDriverName() === 'mysql') {
+            \Illuminate\Support\Facades\DB::statement('
+                UPDATE menu_items
+                JOIN menu_categories ON menu_items.men_category_id = menu_categories.men_category_id
+                SET menu_items.cafe_id = menu_categories.cafe_id
+            ');
+        }
 
         Schema::table('menu_items', function (Blueprint $table) {
             $table->unsignedBigInteger('men_category_id')->nullable()->change();

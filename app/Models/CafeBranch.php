@@ -75,4 +75,9 @@ class CafeBranch extends Model
     {
         return $this->hasMany(CategoryBranch::class, 'branch_id', 'branch_id');
     }
+
+    public function posDevices(): HasMany
+    {
+        return $this->hasMany(PosDevice::class, 'branch_id', 'branch_id');
+    }
 }

@@ -36,13 +36,17 @@ class User extends Authenticatable
         'gateway_customer_id',
     ];
 
+    // pin_hash / pin_failed_attempts / pin_locked_at are deliberately not
+    // fillable — they're only written through StaffPinService via forceFill.
     protected $hidden = [
         'password_hash',
+        'pin_hash',
         'remember_token',
     ];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'pin_locked_at'      => 'datetime',
         'created_at'         => 'datetime',
         'updated_at'         => 'datetime',
     ];
@@ -97,6 +101,56 @@ class User extends Authenticatable
         return $this->hasMany(CafeStaff::class, 'user_id', 'user_id');
     }
 
+    public function activeStaffAssignments(): HasMany
+    {
+        return $this->staffAssignments()->where('employment_status', CafeStaff::STATUS_ACTIVE);
+    }
+
+    public function roleName(): ?string
+    {
+        return $this->role?->role_name;
+    }
+
+    public function isOwner(): bool
+    {
+        return $this->roleName() === 'Cafe Owner';
+    }
+
+    public function isManager(): bool
+    {
+        return $this->roleName() === 'Manager';
+    }
+
+    public function isCashier(): bool
+    {
+        return $this->roleName() === 'Cashier';
+    }
+
+    public function hasPin(): bool
+    {
+        return $this->pin_hash !== null;
+    }
+
+    public function isPinLocked(): bool
+    {
+        return $this->pin_locked_at !== null;
+    }
+
+    /**
+     * The account whose subscription decides feature access for this user.
+     * Owners use their own; staff use the owner of the cafe they work at.
+     */
+    public function featureOwner(): ?User
+    {
+        if (! $this->isManager() && ! $this->isCashier()) {
+            return $this;
+        }
+
+        $assignment = $this->activeStaffAssignments()->with('branch.cafe.owner')->first();
+
+        return $assignment?->branch?->cafe?->owner;
+    }
+
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class, 'created_by', 'user_id');
@@ -109,8 +163,14 @@ class User extends Authenticatable
             return true;
         }
 
+        $owner = $this->featureOwner();
+
+        if (! $owner) {
+            return false;
+        }
+
         // Check active subscription plan
-        $activeSubscription = $this->subscriptions()
+        $activeSubscription = $owner->subscriptions()
             ->where('status', 'active')
             ->where(function ($query) {
                 $query->whereNull('end_date')

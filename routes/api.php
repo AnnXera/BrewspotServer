@@ -21,8 +21,30 @@ use App\Http\Controllers\MenuItemController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
 use App\Http\Controllers\ItemBranchController;
+use App\Http\Controllers\BranchStaffController;
+use App\Http\Controllers\ManagerAccountController;
+use App\Http\Controllers\PosDeviceController;
 
 use App\Http\Controllers\TempUploadController;
+
+// Employees tab + registers of one branch. Mounted under /owner and /manager,
+// always behind `branch.access`, which resolves {branchUuid} for the controller.
+$branchScopedRoutes = function () {
+    Route::middleware('plan.feature:staff_management')->group(function () {
+        Route::get('/staff',                       [BranchStaffController::class, 'index']);
+        Route::post('/staff',                      [BranchStaffController::class, 'store']);
+        Route::get('/staff/{userUuid}',            [BranchStaffController::class, 'show']);
+        Route::patch('/staff/{userUuid}',          [BranchStaffController::class, 'update']);
+        Route::put('/staff/{userUuid}/schedule',   [BranchStaffController::class, 'updateSchedule']);
+        Route::post('/staff/{userUuid}/terminate', [BranchStaffController::class, 'terminate']);
+        Route::put('/staff/{userUuid}/pin',        [BranchStaffController::class, 'setPin']); // set / reset / unlock
+    });
+
+    Route::middleware('plan.feature:pos_system')->group(function () {
+        Route::get('/pos-devices',                 [PosDeviceController::class, 'index']);
+        Route::delete('/pos-devices/{deviceUuid}', [PosDeviceController::class, 'destroy']);
+    });
+};
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -45,7 +67,7 @@ Route::post('/upload/temp', [TempUploadController::class, 'upload']);
 
 
 // Authenticated routes
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
@@ -85,7 +107,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/payment/cancel', [SubscriptionCancelController::class, 'handleGetCancel']);
 
     // Cafe Owner only
-    Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () {
+    Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
         Route::get('/profile',         [OwnerProfileController::class, 'profile']);
         Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
         Route::get('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
@@ -111,8 +133,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('plan.feature:staff_management')->group(function () {
             Route::get('/staff',           [CafeStaffController::class, 'index']);
             Route::post('/staff',          [CafeStaffController::class, 'store']);
-            Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']);
+            Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']); // terminate at all branches
         });
+
+        // Branch-scoped employees + registers (same endpoints as the manager dashboard)
+        Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
 
         // Feature-Gated: Menu Management
         Route::middleware('plan.feature:menu_management')->group(function () {
@@ -137,8 +162,31 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Manager only
-    Route::middleware('role:Manager')->prefix('manager')->group(function () {
-        //
+    Route::middleware('role:Manager')->prefix('manager')->group(function () use ($branchScopedRoutes) {
+        Route::get('/branches', [ManagerAccountController::class, 'branches']); // branch switcher
+        Route::put('/pin',      [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
+
+        // Only branches with an active assignment (enforced by branch.access).
+        // Managers can manage cashiers only (enforced in BranchStaffService).
+        Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
+    });
+
+    // POS register
+    Route::prefix('pos')->group(function () {
+        // One-time setup: an owner/manager signs in on the device and registers it.
+        Route::middleware(['role:Cafe Owner,Manager', 'plan.feature:pos_system'])->group(function () {
+            Route::get('/setup/branches', [PosDeviceController::class, 'setupBranches']);
+            Route::post('/setup',         [PosDeviceController::class, 'register']);
+        });
+
+        // Device token only. Branch comes from the token, never the request.
+        Route::middleware('pos.device')->prefix('device')->group(function () {
+            Route::get('/',                        [PosDeviceController::class, 'current']);
+            Route::delete('/',                     [PosDeviceController::class, 'unregister']);
+            Route::get('/staff',                   [PosDeviceController::class, 'staff']); // lock-screen names
+            Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
+            Route::post('/lock',                   [PosDeviceController::class, 'lock']);
+        });
     });
 
     // Cashier only
