@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\StaffRequestHelpers;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /api/owner/staff — owner creates a staff member across one or more branches.
@@ -30,13 +32,13 @@ class CreateStaffRequest extends FormRequest
             'lastname'       => ['required', 'string', 'max:100'],
             // Required for every employee (contact). Only managers use it to log in.
             'email'          => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone_number'   => ['nullable', 'string', 'max:20'],
-            'address'        => ['nullable', 'string', 'max:255'],
-            'role'           => ['required', 'string', 'in:Manager,Cashier'],
+            'phone_number'   => ['required', 'string', 'max:20'],
+            'address'        => ['required', 'string', 'max:255'],
+            'role'           => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'       => ['nullable', 'date'],
-            // Both roles need a PIN. For a manager it's temporary: they must
-            // replace it the first time they use it (see StaffPinService).
-            'pin'            => ['required', ...self::PIN_RULE],
+            // Managers/cashiers need a PIN (a manager's is temporary until they
+            // replace it — see StaffPinService). Staff are records only — no PIN.
+            'pin'            => ['exclude_if:role,Staff', 'required', ...self::PIN_RULE],
             'branch_uuids'   => ['required', 'array', 'min:1'],
             'branch_uuids.*' => ['string', 'exists:cafe_branches,uuid'],
         ];
@@ -50,7 +52,9 @@ class CreateStaffRequest extends FormRequest
             'email.required'        => 'Email is required.',
             'email.unique'          => 'This email is already in use.',
             'role.required'         => 'Role is required.',
-            'role.in'               => 'Role must be Manager or Cashier.',
+            'phone_number.required' => 'Phone number is required.',
+            'address.required'      => 'Address is required.',
+            'role.in'               => 'Position must be Manager, Cashier or Staff.',
             'pin.required'          => 'A PIN is required.',
             'pin.regex'             => 'PIN must be 4 to 6 digits.',
             'branch_uuids.required' => 'Select at least one branch.',

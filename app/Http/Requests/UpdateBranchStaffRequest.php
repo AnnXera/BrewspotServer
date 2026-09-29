@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\StaffRequestHelpers;
 use App\Models\CafeStaff;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -41,7 +42,7 @@ class UpdateBranchStaffRequest extends FormRequest
             ],
             'phone_number'      => ['sometimes', 'nullable', 'string', 'max:20'],
             'address'           => ['sometimes', 'nullable', 'string', 'max:255'],
-            'role'              => ['sometimes', 'string', 'in:Manager,Cashier'],
+            'role'              => ['sometimes', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'          => ['sometimes', 'nullable', 'date'],
             'employment_status' => ['sometimes', 'string', Rule::in(CafeStaff::EDITABLE_STATUSES)],
         ];

@@ -70,8 +70,8 @@ class BranchStaffService
 
     public function create(User $actor, CafeBranch $branch, array $payload): array
     {
-        if ($actor->isManager() && $payload['role'] !== 'Cashier') {
-            return $this->forbidden('Managers can only add cashiers. Ask the owner to add a manager.');
+        if ($actor->isManager() && $payload['role'] === 'Manager') {
+            return $this->forbidden('Managers can only add cashiers and staff. Ask the owner to add a manager.');
         }
 
         $role = $this->repo->findRoleByName($payload['role']);
@@ -87,7 +87,10 @@ class BranchStaffService
                 $staffUser = $this->repo->createStaffUser($payload, $role);
 
                 // Temporary for managers — they pick their own on first use.
-                $this->pins->setPinFor($staffUser, $payload['pin'], $actor);
+                // Staff have no PIN (the request drops it for them).
+                if (isset($payload['pin'])) {
+                    $this->pins->setPinFor($staffUser, $payload['pin'], $actor);
+                }
 
                 $assignment = $this->repo->assignToBranch(
                     $staffUser->user_id,
@@ -116,9 +119,11 @@ class BranchStaffService
                 $result = [
                     'success'  => true,
                     'http'     => 201,
-                    'message'  => $role->role_name === 'Manager'
-                        ? 'Manager added. An email has been sent so they can set up their password.'
-                        : 'Cashier added. They can now sign in on this branch\'s register with their PIN.',
+                    'message'  => match ($role->role_name) {
+                        'Manager' => 'Manager added. An email has been sent so they can set up their password.',
+                        'Cashier' => 'Cashier added. They can now sign in on this branch\'s register with their PIN.',
+                        default   => 'Employee added.',
+                    },
                     'staff'    => new StaffMemberResource($staffUser, true),
                     'warnings' => $this->scheduleWarnings($branch, $payload['schedule'] ?? []),
                 ];
@@ -146,7 +151,7 @@ class BranchStaffService
         }
 
         if (! $this->canManage($actor, $target)) {
-            return $this->forbidden('You can only edit cashiers. Ask the owner to change a manager\'s details.');
+            return $this->forbidden('You can only edit cashiers and staff. Ask the owner to change a manager\'s details.');
         }
 
         $newRole = $payload['role'] ?? $target->roleName();
@@ -216,7 +221,7 @@ class BranchStaffService
         }
 
         if (! $this->canManage($actor, $target)) {
-            return $this->forbidden('You can only change schedules for cashiers.');
+            return $this->forbidden('You can only change schedules for cashiers and staff.');
         }
 
         $assignment = $target->staffAssignments->first();
@@ -256,7 +261,7 @@ class BranchStaffService
         }
 
         if (! $this->canManage($actor, $target)) {
-            return $this->forbidden('You can only terminate cashiers. Ask the owner to terminate a manager.');
+            return $this->forbidden('You can only terminate cashiers and staff. Ask the owner to terminate a manager.');
         }
 
         $assignment = $target->staffAssignments->first();
@@ -294,6 +299,10 @@ class BranchStaffService
 
         if (! $this->canManage($actor, $target)) {
             return $this->forbidden('You can only reset PINs for cashiers.');
+        }
+
+        if ($target->isStaff()) {
+            return ['success' => false, 'http' => 422, 'message' => 'Staff don\'t use the register, so they don\'t have a PIN. Change their position first.'];
         }
 
         $this->pins->setPinFor($target, $pin, $actor);
@@ -337,7 +346,8 @@ class BranchStaffService
             return true;
         }
 
-        return $actor->isManager() && $target->isCashier();
+        // Managers handle everyone below them; other managers are owner-only.
+        return $actor->isManager() && ($target->isCashier() || $target->isStaff());
     }
 
     /**
@@ -369,7 +379,7 @@ class BranchStaffService
             return;
         }
 
-        // Manager → Cashier: no more dashboard access.
+        // → Cashier or Staff: no more dashboard access.
         $this->repo->updateUser($target, [
             'role_id'       => $role->role_id,
             'password_hash' => null,
@@ -377,6 +387,18 @@ class BranchStaffService
         ]);
 
         $target->tokens()->delete();
+
+        // → Staff: records only, so the PIN goes and any register session ends.
+        if ($newRole === 'Staff') {
+            $target->forceFill([
+                'pin_hash'            => null,
+                'pin_failed_attempts' => 0,
+                'pin_locked_at'       => null,
+                'pin_must_change'     => false,
+            ])->save();
+
+            $this->repo->endPosSessions($target->staffAssignments()->pluck('staff_id')->all());
+        }
     }
 
     private function sendSetupEmail(User $user, string $roleName): void

@@ -16,6 +16,8 @@ class RoleSeeder extends Seeder
             ['role_id' => 2, 'role_name' => 'Cafe Owner', 'uuid' => (string) Str::uuid()],
             ['role_id' => 3, 'role_name' => 'Manager', 'uuid' => (string) Str::uuid()],
             ['role_id' => 4, 'role_name' => 'Cashier', 'uuid' => (string) Str::uuid()],
+            // Records-only employees (e.g. barista, kitchen staff): no login, no PIN, not on the register.
+            ['role_id' => 5, 'role_name' => 'Staff', 'uuid' => (string) Str::uuid()],
         ];
 
         foreach ($roles as $role) {

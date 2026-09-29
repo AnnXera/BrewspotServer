@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\StaffRequestHelpers;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
@@ -34,12 +36,13 @@ class CreateBranchStaffRequest extends FormRequest
             'lastname'     => ['required', 'string', 'max:100'],
             // Required for every employee (contact). Only managers use it to log in.
             'email'        => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone_number' => ['nullable', 'string', 'max:20'],
-            'address'      => ['nullable', 'string', 'max:255'],
-            'role'         => ['required', 'string', 'in:Manager,Cashier'],
+            'phone_number' => ['required', 'string', 'max:20'],
+            'address'      => ['required', 'string', 'max:255'],
+            'role'         => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'     => ['nullable', 'date'],
-            // Temporary for managers (they replace it on first use).
-            'pin'          => ['required', ...self::PIN_RULE],
+            // Managers/cashiers sign in on the register; a manager's PIN is
+            // temporary until they replace it. Staff are records only — no PIN.
+            'pin'          => ['exclude_if:role,Staff', 'required', ...self::PIN_RULE],
             ...$this->scheduleRules(required: false),
         ];
     }
@@ -54,7 +57,9 @@ class CreateBranchStaffRequest extends FormRequest
         return [
             'email.required'    => 'Email is required.',
             'email.unique'      => 'This email is already in use.',
-            'role.in'           => 'Role must be Manager or Cashier.',
+            'phone_number.required' => 'Phone number is required.',
+            'address.required'  => 'Address is required.',
+            'role.in'           => 'Position must be Manager, Cashier or Staff.',
             'pin.required'      => 'A PIN is required.',
             'pin.regex'         => 'PIN must be 4 to 6 digits.',
         ];

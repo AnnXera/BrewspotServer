@@ -71,7 +71,7 @@ class CafeStaffRepository
     public function listByCafe(int $cafeId, int $perPage = 15)
     {
         return User::whereHas('staffAssignments.branch', fn ($q) => $q->where('cafe_id', $cafeId))
-            ->whereHas('role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
+            ->whereHas('role', fn ($q) => $q->whereIn('role_name', User::EMPLOYEE_ROLES))
             ->with([
                 'role',
                 'staffAssignments' => fn ($q) => $q
@@ -136,7 +136,7 @@ class CafeStaffRepository
                 $q->where('employment_status', $status);
             }
         })
-            ->whereHas('role', fn ($q) => $q->whereIn('role_name', $role ? [$role] : ['Manager', 'Cashier']))
+            ->whereHas('role', fn ($q) => $q->whereIn('role_name', $role ? [$role] : User::EMPLOYEE_ROLES))
             ->when($words, function ($query) use ($words) {
                 foreach ($words as $word) {
                     $like = '%' . addcslashes($word, '%_\\') . '%';
@@ -163,7 +163,7 @@ class CafeStaffRepository
     public function countByBranch(int $branchId): array
     {
         $counts = CafeStaff::where('branch_id', $branchId)
-            ->whereHas('user.role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
+            ->whereHas('user.role', fn ($q) => $q->whereIn('role_name', User::EMPLOYEE_ROLES))
             ->selectRaw('employment_status, COUNT(*) as aggregate')
             ->groupBy('employment_status')
             ->pluck('aggregate', 'employment_status');
@@ -181,7 +181,7 @@ class CafeStaffRepository
     {
         return User::where('uuid', $userUuid)
             ->whereHas('staffAssignments', fn ($q) => $q->where('branch_id', $branchId))
-            ->whereHas('role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
+            ->whereHas('role', fn ($q) => $q->whereIn('role_name', User::EMPLOYEE_ROLES))
             ->with($this->branchViewRelations($branchId))
             ->first();
     }

@@ -13,6 +13,12 @@ class User extends Authenticatable
 {
     use HasFactory, HasApiTokens;
 
+    /** Roles that belong to a cafe's branches (cafe_staff). Staff = records only. */
+    public const EMPLOYEE_ROLES = ['Manager', 'Cashier', 'Staff'];
+
+    /** Employee roles that sign in on the register with a PIN. */
+    public const POS_ROLES = ['Manager', 'Cashier'];
+
     protected $primaryKey = 'user_id';
 
     public function getRouteKeyName(): string
@@ -127,6 +133,17 @@ class User extends Authenticatable
         return $this->roleName() === 'Cashier';
     }
 
+    /** Records-only employee: no login, no PIN, not on the register. */
+    public function isStaff(): bool
+    {
+        return $this->roleName() === 'Staff';
+    }
+
+    public function isEmployee(): bool
+    {
+        return in_array($this->roleName(), self::EMPLOYEE_ROLES, true);
+    }
+
     public function hasPin(): bool
     {
         return $this->pin_hash !== null;
@@ -148,7 +165,7 @@ class User extends Authenticatable
      */
     public function featureOwner(): ?User
     {
-        if (! $this->isManager() && ! $this->isCashier()) {
+        if (! $this->isEmployee()) {
             return $this;
         }
 

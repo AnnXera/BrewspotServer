@@ -72,7 +72,7 @@ class PosDeviceRepository
             ->active()
             ->whereHas('user', fn ($q) => $q
                 ->where('status', '!=', 'inactive')
-                ->whereHas('role', fn ($r) => $r->whereIn('role_name', ['Manager', 'Cashier'])))
+                ->whereHas('role', fn ($r) => $r->whereIn('role_name', User::POS_ROLES)))
             ->with('user.role')
             ->get()
             ->sortBy(fn (CafeStaff $a) => $a->user->firstname)
@@ -86,7 +86,7 @@ class PosDeviceRepository
             ->whereHas('user', fn ($q) => $q
                 ->where('uuid', $userUuid)
                 ->where('status', '!=', 'inactive')
-                ->whereHas('role', fn ($r) => $r->whereIn('role_name', ['Manager', 'Cashier'])))
+                ->whereHas('role', fn ($r) => $r->whereIn('role_name', User::POS_ROLES)))
             ->with('user.role')
             ->first();
     }

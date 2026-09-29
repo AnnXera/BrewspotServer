@@ -43,7 +43,7 @@ class StaffAndPosTest extends TestCase
 
         Mail::fake();
 
-        foreach (['Admin', 'Cafe Owner', 'Manager', 'Cashier'] as $name) {
+        foreach (['Admin', 'Cafe Owner', 'Manager', 'Cashier', 'Staff'] as $name) {
             Role::create(['role_name' => $name]);
         }
 
@@ -154,6 +154,7 @@ class StaffAndPosTest extends TestCase
             'role'      => 'Cashier',
             'pin'       => '2468',
             'hired_at'  => '2026-01-20',
+            ...$this->contact(),
         ]);
 
         // Email is stored for contact only; cashiers get no password setup mail.
@@ -167,16 +168,53 @@ class StaffAndPosTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
-    public function test_email_and_pin_are_required_for_every_employee(): void
+    public function test_email_phone_address_are_required_and_pin_only_for_register_roles(): void
     {
         $token = $this->tokenFor($this->owner);
         $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
 
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Cashier'])
-            ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin']);
+            ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin', 'phone_number', 'address']);
 
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Manager'])
             ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin']);
+
+        $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Staff'])
+            ->assertStatus(422)->assertJsonMissingValidationErrors('pin');
+    }
+
+    public function test_staff_are_records_only(): void
+    {
+        $response = $this->api('POST', "/api/manager/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->manager), [
+            'firstname' => 'Bea',
+            'lastname'  => 'Barista',
+            'email'     => 'bea@test.local',
+            'role'      => 'Staff',
+            'pin'       => '1111', // ignored for staff
+            ...$this->contact(),
+        ])->assertCreated()
+            ->assertJsonPath('staff.role', 'Staff')
+            ->assertJsonPath('staff.pin_set', false)
+            ->assertJsonPath('staff.can_manage', true);
+
+        Mail::assertNothingOutgoing();
+        $staffUuid = $response->json('staff.uuid');
+
+        // Not on the register, and can't be given a PIN.
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->assertNotContains($staffUuid, collect($this->api('GET', '/api/pos/device/staff', $device)->json('staff'))->pluck('uuid'));
+        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$staffUuid}/pin", $this->tokenFor($this->owner), ['pin' => '2222'])
+            ->assertStatus(422);
+
+        // Listed and counted with everyone else.
+        $this->api('GET', "/api/owner/branches/{$this->mainBranch->uuid}/staff?role=Staff", $this->tokenFor($this->owner))
+            ->assertJsonCount(1, 'staff.data');
+    }
+
+    public function test_changing_a_cashier_to_staff_removes_their_pin(): void
+    {
+        $this->api('PATCH', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}", $this->tokenFor($this->owner), ['role' => 'Staff'])
+            ->assertOk()->assertJsonPath('staff.role', 'Staff')->assertJsonPath('staff.pin_set', false);
     }
 
     public function test_owner_adds_manager_with_temporary_pin_and_setup_email_is_sent(): void
@@ -187,6 +225,7 @@ class StaffAndPosTest extends TestCase
             'email'     => 'sofia@test.local',
             'role'      => 'Manager',
             'pin'       => '1357',
+            ...$this->contact(),
         ])->assertCreated()
             ->assertJsonPath('staff.account_status', 'pending_setup')
             ->assertJsonPath('staff.pin_must_change', true);
@@ -207,10 +246,10 @@ class StaffAndPosTest extends TestCase
         $token = $this->tokenFor($this->manager);
         $url   = "/api/manager/branches/{$this->mainBranch->uuid}/staff";
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'email' => 'new.cashier@test.local', 'role' => 'Cashier', 'pin' => '1111'])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'email' => 'new.cashier@test.local', 'role' => 'Cashier', 'pin' => '1111', ...$this->contact()])
             ->assertCreated();
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local', 'pin' => '2222'])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local', 'pin' => '2222', ...$this->contact()])
             ->assertForbidden();
     }
 
@@ -444,6 +483,11 @@ class StaffAndPosTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         return $this->withHeader('Authorization', "Bearer {$token}")->json($method, $uri, $data);
+    }
+
+    private function contact(): array
+    {
+        return ['phone_number' => '09171234567', 'address' => 'Ecoland, Davao City'];
     }
 
     private function tokenFor(User $user): string
