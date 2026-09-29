@@ -48,6 +48,13 @@ class StaffMemberResource extends JsonResource
                 'hired_at'          => $assignment->hired_at?->toDateString(),
                 'terminated_at'     => $assignment->terminated_at?->toISOString(),
             ] : null,
+            // Other branches this person is actively assigned to ("Also at: …").
+            'other_branches' => $this->relationLoaded('activeStaffAssignments')
+                ? $this->activeStaffAssignments
+                    ->reject(fn ($a) => $assignment && $a->branch_id === $assignment->branch_id)
+                    ->map(fn ($a) => ['uuid' => $a->branch?->uuid, 'branch_name' => $a->branch?->branch_name])
+                    ->values()
+                : [],
             'schedule' => $assignment && $assignment->relationLoaded('schedules')
                 ? $assignment->schedules->map(fn ($day) => [
                     'day_of_week' => $day->day_of_week,

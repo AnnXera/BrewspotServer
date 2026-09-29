@@ -33,13 +33,24 @@ class BranchStaffService
         private readonly MailAdapterInterface $mailer
     ) {}
 
-    public function list(User $actor, CafeBranch $branch, bool $includeTerminated, int $perPage = 15): array
+    /**
+     * @param  array{search?: ?string, status?: ?string, role?: ?string}  $filters
+     */
+    public function list(User $actor, CafeBranch $branch, array $filters, int $perPage = 15): array
     {
-        $staff = $this->repo->listByBranch($branch->branch_id, $includeTerminated, $perPage);
+        $staff = $this->repo->listByBranch($branch->branch_id, $filters, $perPage);
 
         return [
             'success' => true,
             'staff'   => $staff->through(fn (User $user) => new StaffMemberResource($user, $this->canManage($actor, $user))),
+        ];
+    }
+
+    public function stats(CafeBranch $branch): array
+    {
+        return [
+            'success' => true,
+            'stats'   => $this->repo->countByBranch($branch->branch_id),
         ];
     }
 

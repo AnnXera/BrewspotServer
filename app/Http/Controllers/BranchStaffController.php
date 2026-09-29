@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateBranchStaffRequest;
+use App\Http\Requests\ListBranchStaffRequest;
 use App\Http\Requests\SetStaffPinRequest;
 use App\Http\Requests\UpdateBranchStaffRequest;
 use App\Http\Requests\UpdateStaffScheduleRequest;
@@ -24,16 +25,24 @@ class BranchStaffController extends Controller
     ) {}
 
     /**
-     * GET .../branches/{branchUuid}/staff?include_terminated=1&per_page=15
+     * GET .../branches/{branchUuid}/staff?search=&status=&role=&per_page=10&page=1
      */
-    public function index(Request $request): JsonResponse
+    public function index(ListBranchStaffRequest $request): JsonResponse
     {
         return $this->respond($this->service->list(
             $request->user(),
             $request->attributes->get('branch'),
-            $request->boolean('include_terminated'),
-            (int) $request->input('per_page', 15)
+            $request->safe()->only(['search', 'status', 'role']),
+            (int) $request->validated('per_page', 10)
         ));
+    }
+
+    /**
+     * GET .../branches/{branchUuid}/staff/stats — counts for the Employees tab cards.
+     */
+    public function stats(Request $request): JsonResponse
+    {
+        return $this->respond($this->service->stats($request->attributes->get('branch')));
     }
 
     /**

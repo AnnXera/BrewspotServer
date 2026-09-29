@@ -32,6 +32,7 @@ use App\Http\Controllers\TempUploadController;
 $branchScopedRoutes = function () {
     Route::middleware('plan.feature:staff_management')->group(function () {
         Route::get('/staff',                       [BranchStaffController::class, 'index']);
+        Route::get('/staff/stats',                 [BranchStaffController::class, 'stats']); // before {userUuid}
         Route::post('/staff',                      [BranchStaffController::class, 'store']);
         Route::get('/staff/{userUuid}',            [BranchStaffController::class, 'show']);
         Route::patch('/staff/{userUuid}',          [BranchStaffController::class, 'update']);

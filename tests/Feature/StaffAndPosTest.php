@@ -101,6 +101,48 @@ class StaffAndPosTest extends TestCase
             ->assertForbidden();
     }
 
+    // ── Employees tab list + stats ───────────────────────────────────────
+
+    public function test_employee_list_filters_sorts_and_counts(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
+
+        $this->cashier->update(['firstname' => 'Ana', 'lastname' => 'Reyes']);
+        $gone = $this->makeStaff('Cashier', $this->mainBranch, ['firstname' => 'Aaron', 'lastname' => 'Gone']);
+        CafeStaff::where('user_id', $gone->user_id)->update(['employment_status' => 'terminated']);
+        $away = $this->makeStaff('Cashier', $this->mainBranch, ['firstname' => 'Abby', 'lastname' => 'Away']);
+        CafeStaff::where('user_id', $away->user_id)->update(['employment_status' => 'suspended']);
+
+        // Active first, terminated last — regardless of alphabetical order.
+        $statuses = collect($this->api('GET', $url, $token)->assertOk()->json('staff.data'))
+            ->pluck('assignment.employment_status')->all();
+        $this->assertSame('active', $statuses[0]);
+        $this->assertSame('terminated', end($statuses));
+
+        $this->api('GET', "$url?search=ana reyes", $token)
+            ->assertJsonCount(1, 'staff.data')->assertJsonPath('staff.data.0.uuid', $this->cashier->uuid);
+        $this->api('GET', "$url?status=terminated", $token)
+            ->assertJsonCount(1, 'staff.data')->assertJsonPath('staff.data.0.uuid', $gone->uuid);
+        $this->api('GET', "$url?role=Manager", $token)
+            ->assertJsonCount(1, 'staff.data')->assertJsonPath('staff.data.0.uuid', $this->manager->uuid);
+        $this->api('GET', "$url?status=fired", $token)->assertStatus(422);
+
+        $this->api('GET', "$url/stats", $token)->assertOk()->assertJson(['stats' => [
+            'total' => 4, 'active' => 2, 'inactive' => 0, 'suspended' => 1, 'terminated' => 1,
+        ]]);
+    }
+
+    public function test_employee_list_shows_other_branches(): void
+    {
+        CafeStaff::create(['user_id' => $this->cashier->user_id, 'branch_id' => $this->otherBranch->branch_id, 'employment_status' => 'active']);
+
+        $row = collect($this->api('GET', "/api/owner/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->owner))->json('staff.data'))
+            ->firstWhere('uuid', $this->cashier->uuid);
+
+        $this->assertSame([['uuid' => $this->otherBranch->uuid, 'branch_name' => 'Second Branch']], $row['other_branches']);
+    }
+
     // ── Creating staff ───────────────────────────────────────────────────
 
     public function test_owner_adds_cashier_and_no_setup_email_is_sent(): void

@@ -108,27 +108,73 @@ class CafeStaffRepository
     // ── Branch-scoped (owner + manager) ──────────────────────────────────
 
     /**
-     * Staff with an assignment at this branch. Terminated assignments are
-     * hidden unless explicitly requested.
+     * Staff with an assignment at this branch, for the Employees tab.
+     *
+     * Filters: search (name / email / phone, every word must match),
+     * status (employment status at this branch), role (Manager / Cashier).
+     * Sorted active first, terminated last, then by name.
+     *
+     * @param  array{search?: ?string, status?: ?string, role?: ?string}  $filters
      */
-    public function listByBranch(int $branchId, bool $includeTerminated, int $perPage = 15)
+    public function listByBranch(int $branchId, array $filters, int $perPage = 15)
     {
-        $assignmentFilter = function ($q) use ($branchId, $includeTerminated) {
+        $status = $filters['status'] ?? null;
+        $role   = $filters['role'] ?? null;
+        $words  = preg_split('/\s+/', trim($filters['search'] ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+
+        $statusOrder = CafeStaff::selectRaw(
+            "CASE employment_status WHEN 'active' THEN 0 WHEN 'terminated' THEN 2 ELSE 1 END"
+        )
+            ->whereColumn('cafe_staff.user_id', 'users.user_id')
+            ->where('branch_id', $branchId)
+            ->limit(1);
+
+        return User::whereHas('staffAssignments', function ($q) use ($branchId, $status) {
             $q->where('branch_id', $branchId);
 
-            if (! $includeTerminated) {
-                $q->where('employment_status', '!=', CafeStaff::STATUS_TERMINATED);
+            if ($status) {
+                $q->where('employment_status', $status);
             }
-        };
+        })
+            ->whereHas('role', fn ($q) => $q->whereIn('role_name', $role ? [$role] : ['Manager', 'Cashier']))
+            ->when($words, function ($query) use ($words) {
+                foreach ($words as $word) {
+                    $like = '%' . addcslashes($word, '%_\\') . '%';
 
-        return User::whereHas('staffAssignments', $assignmentFilter)
-            ->whereHas('role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
-            ->with([
-                'role',
-                'staffAssignments' => fn ($q) => $q->where('branch_id', $branchId)->with(['branch', 'schedules']),
-            ])
+                    $query->where(fn ($q) => $q
+                        ->where('firstname', 'like', $like)
+                        ->orWhere('lastname', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('phone_number', 'like', $like));
+                }
+            })
+            ->with($this->branchViewRelations($branchId))
+            ->orderBy($statusOrder)
             ->orderBy('firstname')
+            ->orderBy('lastname')
             ->paginate($perPage);
+    }
+
+    /**
+     * Counts for the Employees tab cards. Not affected by the list filters.
+     *
+     * @return array{total: int, active: int, inactive: int, suspended: int, terminated: int}
+     */
+    public function countByBranch(int $branchId): array
+    {
+        $counts = CafeStaff::where('branch_id', $branchId)
+            ->whereHas('user.role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
+            ->selectRaw('employment_status, COUNT(*) as aggregate')
+            ->groupBy('employment_status')
+            ->pluck('aggregate', 'employment_status');
+
+        return [
+            'total'      => (int) $counts->sum(),
+            'active'     => (int) ($counts['active'] ?? 0),
+            'inactive'   => (int) ($counts['inactive'] ?? 0),
+            'suspended'  => (int) ($counts['suspended'] ?? 0),
+            'terminated' => (int) ($counts['terminated'] ?? 0),
+        ];
     }
 
     public function findStaffUserAtBranch(string $userUuid, int $branchId): ?User
@@ -136,11 +182,21 @@ class CafeStaffRepository
         return User::where('uuid', $userUuid)
             ->whereHas('staffAssignments', fn ($q) => $q->where('branch_id', $branchId))
             ->whereHas('role', fn ($q) => $q->whereIn('role_name', ['Manager', 'Cashier']))
-            ->with([
-                'role',
-                'staffAssignments' => fn ($q) => $q->where('branch_id', $branchId)->with(['branch', 'schedules']),
-            ])
+            ->with($this->branchViewRelations($branchId))
             ->first();
+    }
+
+    /**
+     * `staffAssignments` holds only this branch's row (what StaffMemberResource
+     * shows); `activeStaffAssignments` feeds the "Also at: …" hint.
+     */
+    private function branchViewRelations(int $branchId): array
+    {
+        return [
+            'role',
+            'staffAssignments'              => fn ($q) => $q->where('branch_id', $branchId)->with(['branch', 'schedules']),
+            'activeStaffAssignments.branch',
+        ];
     }
 
     public function updateUser(User $user, array $attributes): User
