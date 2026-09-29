@@ -132,6 +132,7 @@ class PosDeviceService
                 'role'       => $a->user->roleName(),
                 'pin_set'    => $a->user->hasPin(),
                 'pin_locked' => $a->user->isPinLocked(),
+                'pin_must_change' => $a->user->mustChangePin(),
             ])->values(),
         ];
     }
@@ -147,12 +148,53 @@ class PosDeviceService
         $check = $this->pins->verify($assignment->user, $pin);
 
         if (! $check['success']) {
+            return $this->pinFailure($check);
+        }
+
+        // Correct temporary PIN: the register must ask for a new one
+        // (POST .../change-pin) before letting them in.
+        if ($assignment->user->mustChangePin()) {
             return [
-                ...$check,
-                'http' => ! empty($check['locked']) ? 423 : 422,
+                'success'         => false,
+                'http'            => 409,
+                'must_change_pin' => true,
+                'message'         => 'This is a temporary PIN. Please choose a new PIN to continue.',
             ];
         }
 
+        return $this->unlockAs($device, $assignment);
+    }
+
+    /**
+     * Replace a temporary PIN on the register, then unlock.
+     */
+    public function changePinAndUnlock(PosDevice $device, string $userUuid, string $currentPin, string $newPin): array
+    {
+        $assignment = $this->repo->findUnlockableAssignment($userUuid, $device->branch_id);
+
+        if (! $assignment) {
+            return ['success' => false, 'http' => 404, 'message' => 'This person is not active at this branch.'];
+        }
+
+        $result = $this->pins->changeWithCurrentPin($assignment->user, $currentPin, $newPin);
+
+        if (! $result['success']) {
+            return $this->pinFailure($result);
+        }
+
+        return $this->unlockAs($device, $assignment->fresh('user.role'));
+    }
+
+    private function pinFailure(array $check): array
+    {
+        return [
+            ...$check,
+            'http' => ! empty($check['locked']) ? 423 : 422,
+        ];
+    }
+
+    private function unlockAs(PosDevice $device, CafeStaff $assignment): array
+    {
         $this->repo->setActiveStaff($device, $assignment);
 
         Log::channel('auth')->info('POS unlocked.', [

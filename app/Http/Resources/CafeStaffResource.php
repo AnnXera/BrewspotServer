@@ -25,6 +25,7 @@ class CafeStaffResource extends JsonResource
             'account_status' => $this->status,
             'pin_set'        => $this->hasPin(),
             'pin_locked'     => $this->isPinLocked(),
+            'pin_must_change' => $this->mustChangePin(),
             'branches'       => $this->whenLoaded('staffAssignments', fn () =>
                 $this->staffAssignments->map(fn ($assignment) => [
                     'staff_uuid'        => $assignment->uuid,

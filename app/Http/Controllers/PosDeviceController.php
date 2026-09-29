@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangePinOnDeviceRequest;
 use App\Http\Requests\RegisterPosDeviceRequest;
 use App\Http\Requests\UnlockPosRequest;
 use App\Services\PosDeviceService;
@@ -93,6 +94,19 @@ class PosDeviceController extends Controller
             $request->user(),
             $userUuid,
             $request->validated('pin')
+        ));
+    }
+
+    /**
+     * POST /api/pos/device/staff/{userUuid}/change-pin — replace a temporary PIN, then unlock.
+     */
+    public function changePin(ChangePinOnDeviceRequest $request, string $userUuid): JsonResponse
+    {
+        return $this->respond($this->service->changePinAndUnlock(
+            $request->user(),
+            $userUuid,
+            $request->validated('current_pin'),
+            $request->validated('new_pin')
         ));
     }
 

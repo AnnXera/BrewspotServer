@@ -38,6 +38,7 @@ class StaffMemberResource extends JsonResource
             'account_status' => $this->status,
             'pin_set'        => $this->hasPin(),
             'pin_locked'     => $this->isPinLocked(),
+            'pin_must_change' => $this->mustChangePin(),
             'can_manage'     => $this->canManage,
             'assignment'     => $assignment ? [
                 'staff_uuid'        => $assignment->uuid,

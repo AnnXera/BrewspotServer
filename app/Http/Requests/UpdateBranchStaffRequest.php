@@ -36,7 +36,7 @@ class UpdateBranchStaffRequest extends FormRequest
             'middlename'        => ['sometimes', 'nullable', 'string', 'max:100'],
             'lastname'          => ['sometimes', 'required', 'string', 'max:100'],
             'email'             => [
-                'sometimes', 'nullable', 'email', 'max:255',
+                'sometimes', 'required', 'email', 'max:255',
                 Rule::unique('users', 'email')->ignore($this->route('userUuid'), 'uuid'),
             ],
             'phone_number'      => ['sometimes', 'nullable', 'string', 'max:20'],

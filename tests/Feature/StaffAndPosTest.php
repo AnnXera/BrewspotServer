@@ -103,19 +103,21 @@ class StaffAndPosTest extends TestCase
 
     // ── Creating staff ───────────────────────────────────────────────────
 
-    public function test_owner_adds_cashier_without_email_and_no_setup_email_is_sent(): void
+    public function test_owner_adds_cashier_and_no_setup_email_is_sent(): void
     {
         $response = $this->api('POST', "/api/owner/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->owner), [
             'firstname' => 'Ana',
             'lastname'  => 'Reyes',
+            'email'     => 'ana@test.local',
             'role'      => 'Cashier',
             'pin'       => '2468',
             'hired_at'  => '2026-01-20',
         ]);
 
+        // Email is stored for contact only; cashiers get no password setup mail.
         $response->assertCreated()
             ->assertJsonPath('staff.role', 'Cashier')
-            ->assertJsonPath('staff.email', null)
+            ->assertJsonPath('staff.email', 'ana@test.local')
             ->assertJsonPath('staff.pin_set', true)
             ->assertJsonPath('staff.account_status', 'active')
             ->assertJsonPath('staff.assignment.hired_at', '2026-01-20');
@@ -123,28 +125,39 @@ class StaffAndPosTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
-    public function test_cashier_requires_a_pin_and_manager_requires_an_email(): void
+    public function test_email_and_pin_are_required_for_every_employee(): void
     {
         $token = $this->tokenFor($this->owner);
         $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
 
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Cashier'])
-            ->assertStatus(422)->assertJsonValidationErrors('pin');
+            ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin']);
 
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Manager'])
-            ->assertStatus(422)->assertJsonValidationErrors('email');
+            ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin']);
     }
 
-    public function test_owner_adds_manager_and_setup_email_is_sent(): void
+    public function test_owner_adds_manager_with_temporary_pin_and_setup_email_is_sent(): void
     {
         $this->api('POST', "/api/owner/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->owner), [
             'firstname' => 'Sofia',
             'lastname'  => 'Miles',
             'email'     => 'sofia@test.local',
             'role'      => 'Manager',
-        ])->assertCreated()->assertJsonPath('staff.account_status', 'pending_setup');
+            'pin'       => '1357',
+        ])->assertCreated()
+            ->assertJsonPath('staff.account_status', 'pending_setup')
+            ->assertJsonPath('staff.pin_must_change', true);
 
         Mail::assertQueued(StaffAccountCreatedMail::class);
+    }
+
+    public function test_cashier_pin_set_by_owner_or_manager_is_not_temporary(): void
+    {
+        $this->api('PUT', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/pin", $this->tokenFor($this->manager), ['pin' => '2222'])
+            ->assertOk();
+
+        $this->assertFalse($this->cashier->fresh()->mustChangePin());
     }
 
     public function test_manager_can_add_cashier_but_not_manager(): void
@@ -152,10 +165,10 @@ class StaffAndPosTest extends TestCase
         $token = $this->tokenFor($this->manager);
         $url   = "/api/manager/branches/{$this->mainBranch->uuid}/staff";
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'role' => 'Cashier', 'pin' => '1111'])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'email' => 'new.cashier@test.local', 'role' => 'Cashier', 'pin' => '1111'])
             ->assertCreated();
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local'])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local', 'pin' => '2222'])
             ->assertForbidden();
     }
 
@@ -184,9 +197,56 @@ class StaffAndPosTest extends TestCase
         $this->api('PATCH', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}", $this->tokenFor($this->owner), [
             'role'  => 'Manager',
             'email' => 'promo@test.local',
-        ])->assertOk()->assertJsonPath('staff.role', 'Manager')->assertJsonPath('staff.account_status', 'pending_setup');
+        ])->assertOk()
+            ->assertJsonPath('staff.role', 'Manager')
+            ->assertJsonPath('staff.account_status', 'pending_setup')
+            // Their cashier PIN was known to others, so it becomes temporary.
+            ->assertJsonPath('staff.pin_must_change', true);
 
         Mail::assertQueued(StaffAccountCreatedMail::class);
+    }
+
+    // ── Temporary manager PIN ────────────────────────────────────────────
+
+    public function test_manager_must_replace_temporary_pin_on_register_before_unlocking(): void
+    {
+        // Owner resets the manager's PIN → temporary.
+        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->manager->uuid}/pin", $this->tokenFor($this->owner), ['pin' => '4444'])
+            ->assertOk();
+        $this->assertTrue($this->manager->fresh()->mustChangePin());
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $base   = "/api/pos/device/staff/{$this->manager->uuid}";
+
+        // Correct temporary PIN does not unlock.
+        $this->api('POST', "$base/unlock", $device, ['pin' => '4444'])
+            ->assertStatus(409)->assertJsonPath('must_change_pin', true);
+        $this->api('GET', '/api/pos/device', $device)->assertJsonPath('device.active_staff', null);
+
+        // Wrong current PIN, and reusing the temporary PIN, are rejected.
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '0000', 'new_pin' => '8642', 'new_pin_confirmation' => '8642'])
+            ->assertStatus(422);
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '4444', 'new_pin' => '4444', 'new_pin_confirmation' => '4444'])
+            ->assertStatus(422);
+
+        // Replacing it unlocks the register and clears the flag.
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '4444', 'new_pin' => '8642', 'new_pin_confirmation' => '8642'])
+            ->assertOk()->assertJsonPath('staff.uuid', $this->manager->uuid);
+
+        $this->assertFalse($this->manager->fresh()->mustChangePin());
+        $this->api('POST', "$base/unlock", $device, ['pin' => '8642'])->assertOk();
+    }
+
+    public function test_manager_can_replace_temporary_pin_from_dashboard(): void
+    {
+        app(StaffPinService::class)->setPin($this->manager, '4444', temporary: true);
+
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'wrong', 'pin' => '8642'])->assertStatus(422);
+        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'secret', 'pin' => '8642'])->assertOk();
+
+        $this->assertFalse($this->manager->fresh()->mustChangePin());
     }
 
     // ── Terminate ────────────────────────────────────────────────────────
@@ -362,7 +422,7 @@ class StaffAndPosTest extends TestCase
         return User::create([
             'firstname'         => fake()->firstName(),
             'lastname'          => fake()->lastName(),
-            'email'             => null,
+            'email'             => fake()->unique()->safeEmail(),
             'status'            => 'active',
             'email_verified_at' => now(),
             'role_id'           => Role::where('role_name', $role)->value('role_id'),

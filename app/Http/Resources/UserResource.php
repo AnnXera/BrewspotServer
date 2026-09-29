@@ -19,6 +19,9 @@ class UserResource extends JsonResource
             'phone_number'      => $this->phone_number,
             'address'           => $this->address,
             'status'            => $this->status,
+            // Lets the manager dashboard prompt "Set your PIN" after login.
+            'pin_set'           => $this->hasPin(),
+            'pin_must_change'   => $this->mustChangePin(),
             'email_verified_at' => $this->email_verified_at?->toISOString(),
             'role'              => $this->whenLoaded('role', fn () => [
                 'uuid'      => $this->role->uuid,

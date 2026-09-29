@@ -75,9 +75,8 @@ class BranchStaffService
             DB::transaction(function () use ($actor, $branch, $payload, $role, &$result) {
                 $staffUser = $this->repo->createStaffUser($payload, $role);
 
-                if (! empty($payload['pin'])) {
-                    $this->pins->setPin($staffUser, $payload['pin']);
-                }
+                // Temporary for managers — they pick their own on first use.
+                $this->pins->setPinFor($staffUser, $payload['pin'], $actor);
 
                 $assignment = $this->repo->assignToBranch(
                     $staffUser->user_id,
@@ -145,12 +144,6 @@ class BranchStaffService
             return $this->forbidden('Only the owner can change an employee\'s role.');
         }
 
-        $email = array_key_exists('email', $payload) ? $payload['email'] : $target->email;
-
-        if ($newRole === 'Manager' && ! $email) {
-            return ['success' => false, 'http' => 422, 'message' => 'Managers need an email address to sign in to the dashboard.'];
-        }
-
         $assignment = $target->staffAssignments->first();
 
         if ($assignment->employment_status === CafeStaff::STATUS_TERMINATED) {
@@ -162,8 +155,8 @@ class BranchStaffService
                 'firstname', 'middlename', 'lastname', 'email', 'phone_number', 'address',
             ]));
 
-            if (array_key_exists('email', $userFields) && $userFields['email'] && ! $target->email_verified_at) {
-                // Owner/manager vouches for the address, same as on creation.
+            if (array_key_exists('email', $userFields) && $userFields['email'] !== $target->email) {
+                // Owner/manager vouches for the new address, same as on creation.
                 $userFields['email_verified_at'] = now();
             }
 
@@ -292,15 +285,21 @@ class BranchStaffService
             return $this->forbidden('You can only reset PINs for cashiers.');
         }
 
-        $this->pins->setPin($target, $pin);
+        $this->pins->setPinFor($target, $pin, $actor);
 
         Log::channel('owner')->info('Staff PIN set/reset.', [
             'actor_uuid'  => $actor->uuid,
             'staff_uuid'  => $target->uuid,
             'branch_uuid' => $branch->uuid,
+            'temporary'   => $target->mustChangePin(),
         ]);
 
-        return ['success' => true, 'message' => 'PIN updated. It works on every branch this person is assigned to.'];
+        return [
+            'success' => true,
+            'message' => $target->mustChangePin()
+                ? 'Temporary PIN set. The manager will be asked to choose a new one the first time they use it.'
+                : 'PIN updated. It works on every branch this person is assigned to.',
+        ];
     }
 
     /**
@@ -345,6 +344,12 @@ class BranchStaffService
                 'role_id' => $role->role_id,
                 'status'  => $needsSetup ? 'pending_setup' : $target->status,
             ]);
+
+            // Their cashier PIN was set by the owner/a manager, so others may
+            // know it. As a manager it approves refunds — make it temporary.
+            if ($target->hasPin()) {
+                $target->forceFill(['pin_must_change' => true])->save();
+            }
 
             if ($needsSetup) {
                 $this->sendSetupEmail($target, 'Manager');

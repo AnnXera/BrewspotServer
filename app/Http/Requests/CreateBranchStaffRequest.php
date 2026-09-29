@@ -32,12 +32,14 @@ class CreateBranchStaffRequest extends FormRequest
             'firstname'    => ['required', 'string', 'max:100'],
             'middlename'   => ['nullable', 'string', 'max:100'],
             'lastname'     => ['required', 'string', 'max:100'],
-            'email'        => ['nullable', 'required_if:role,Manager', 'email', 'max:255', 'unique:users,email'],
+            // Required for every employee (contact). Only managers use it to log in.
+            'email'        => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone_number' => ['nullable', 'string', 'max:20'],
             'address'      => ['nullable', 'string', 'max:255'],
             'role'         => ['required', 'string', 'in:Manager,Cashier'],
             'hired_at'     => ['nullable', 'date'],
-            'pin'          => ['nullable', 'required_if:role,Cashier', ...self::PIN_RULE],
+            // Temporary for managers (they replace it on first use).
+            'pin'          => ['required', ...self::PIN_RULE],
             ...$this->scheduleRules(required: false),
         ];
     }
@@ -50,10 +52,10 @@ class CreateBranchStaffRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.required_if' => 'Email is required for managers.',
+            'email.required'    => 'Email is required.',
             'email.unique'      => 'This email is already in use.',
             'role.in'           => 'Role must be Manager or Cashier.',
-            'pin.required_if'   => 'A PIN is required for cashiers.',
+            'pin.required'      => 'A PIN is required.',
             'pin.regex'         => 'PIN must be 4 to 6 digits.',
         ];
     }

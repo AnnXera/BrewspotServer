@@ -54,9 +54,8 @@ class CafeStaffService
 
                 $staffUser = $this->repo->createStaffUser($payload, $role);
 
-                if (! empty($payload['pin'])) {
-                    $this->pins->setPin($staffUser, $payload['pin']);
-                }
+                // Temporary for managers — they pick their own on first use.
+                $this->pins->setPinFor($staffUser, $payload['pin'], $owner);
 
                 foreach ($branches as $branch) {
                     $this->repo->assignToBranch(

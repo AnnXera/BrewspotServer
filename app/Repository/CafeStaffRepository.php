@@ -43,20 +43,18 @@ class CafeStaffRepository
      */
     public function createStaffUser(array $payload, Role $role): User
     {
-        $email = $payload['email'] ?? null;
-
         return User::create([
             'firstname'         => $payload['firstname'],
             'middlename'        => $payload['middlename'] ?? null,
             'lastname'          => $payload['lastname'],
-            'email'             => $email,
+            'email'             => $payload['email'],
             'phone_number'      => $payload['phone_number'] ?? null,
             'address'           => $payload['address'] ?? null,
             'role_id'           => $role->role_id,
             'status'            => $role->role_name === 'Manager' ? 'pending_setup' : 'active',
             // Owner-created accounts skip self-service email verification —
             // the owner is vouching for this address directly.
-            'email_verified_at' => $email ? Carbon::now() : null,
+            'email_verified_at' => Carbon::now(),
         ]);
     }
 

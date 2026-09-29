@@ -185,6 +185,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::delete('/',                     [PosDeviceController::class, 'unregister']);
             Route::get('/staff',                   [PosDeviceController::class, 'staff']); // lock-screen names
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
+            Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
             Route::post('/lock',                   [PosDeviceController::class, 'lock']);
         });
     });

@@ -36,7 +36,7 @@ class User extends Authenticatable
         'gateway_customer_id',
     ];
 
-    // pin_hash / pin_failed_attempts / pin_locked_at are deliberately not
+    // pin_hash / pin_failed_attempts / pin_locked_at / pin_must_change are deliberately not
     // fillable — they're only written through StaffPinService via forceFill.
     protected $hidden = [
         'password_hash',
@@ -47,6 +47,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'pin_locked_at'      => 'datetime',
+        'pin_must_change'    => 'boolean',
         'created_at'         => 'datetime',
         'updated_at'         => 'datetime',
     ];
@@ -134,6 +135,11 @@ class User extends Authenticatable
     public function isPinLocked(): bool
     {
         return $this->pin_locked_at !== null;
+    }
+
+    public function mustChangePin(): bool
+    {
+        return (bool) $this->pin_must_change;
     }
 
     /**
