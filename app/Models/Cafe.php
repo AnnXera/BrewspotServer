@@ -68,4 +68,9 @@ class Cafe extends Model
     {
         return $this->hasMany(CafeOpeningHour::class, 'cafe_id', 'cafe_id');
     }
+
+    public function ingredients(): HasMany
+    {
+        return $this->hasMany(Ingredient::class, 'cafe_id', 'cafe_id');
+    }
 }

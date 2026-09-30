@@ -18,7 +18,8 @@ class MenuRecipe extends Model
     protected $fillable = [
         'uuid',
         'men_item_id',
-        'ingredient_name',
+        'ingredient_id',
+        'ingredient_name', // mirrors ingredients.name
         'quantity',
         'unit',
     ];
@@ -30,6 +31,11 @@ class MenuRecipe extends Model
     protected static function booted(): void
     {
         static::creating(fn ($recipe) => $recipe->uuid = (string) Str::uuid());
+    }
+
+    public function ingredient(): BelongsTo
+    {
+        return $this->belongsTo(Ingredient::class, 'ingredient_id', 'ingredient_id');
     }
 
     public function item(): BelongsTo

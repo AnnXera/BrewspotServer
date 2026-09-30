@@ -36,9 +36,9 @@ class CreateStaffRequest extends FormRequest
             'address'        => ['required', 'string', 'max:255'],
             'role'           => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'       => ['nullable', 'date'],
-            // Managers/cashiers need a PIN (a manager's is temporary until they
-            // replace it — see StaffPinService). Staff are records only — no PIN.
-            'pin'            => ['exclude_if:role,Staff', 'required', ...self::PIN_RULE],
+            // Only cashiers get a PIN here. Managers choose their own during
+            // password setup; Staff are records only — no PIN.
+            'pin'            => ['exclude_unless:role,Cashier', 'required', ...self::PIN_RULE],
             'branch_uuids'   => ['required', 'array', 'min:1'],
             'branch_uuids.*' => ['string', 'exists:cafe_branches,uuid'],
         ];
@@ -57,7 +57,7 @@ class CreateStaffRequest extends FormRequest
             'address.required'      => 'Address is required.',
             'role.in'               => 'Position must be Manager, Cashier or Staff.',
             'pin.required'          => 'A PIN is required.',
-            'pin.regex'             => 'PIN must be 4 to 6 digits.',
+            'pin.regex'             => 'PIN must be exactly 4 digits.',
             'branch_uuids.required' => 'Select at least one branch.',
             'branch_uuids.*.exists' => 'One or more selected branches were not found.',
         ];

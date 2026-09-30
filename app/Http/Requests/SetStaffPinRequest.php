@@ -28,7 +28,7 @@ class SetStaffPinRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'pin.regex' => 'PIN must be 4 to 6 digits.',
+            'pin.regex' => 'PIN must be exactly 4 digits.',
         ];
     }
 }

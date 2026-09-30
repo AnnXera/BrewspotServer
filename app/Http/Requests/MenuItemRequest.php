@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Ingredient;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class MenuItemRequest extends FormRequest
 {
@@ -35,9 +37,13 @@ class MenuItemRequest extends FormRequest
             'picture'       => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
             
             'recipes'                     => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1'],
-            'recipes.*.ingredient_name'   => ['required', 'string'],
+            // Pick an existing ingredient by uuid, or type a name (matched
+            // ignoring case, or created). Unit must match the ingredient's —
+            // both checked in MenuItemService.
+            'recipes.*.ingredient_uuid'   => ['nullable', 'string'],
+            'recipes.*.ingredient_name'   => ['required_without:recipes.*.ingredient_uuid', 'nullable', 'string', 'max:100'],
             'recipes.*.quantity'          => ['required', 'numeric', 'min:0'],
-            'recipes.*.unit'              => ['required', 'string'],
+            'recipes.*.unit'              => ['required', 'string', Rule::in(Ingredient::UNITS)],
         ];
     }
 
@@ -46,7 +52,8 @@ class MenuItemRequest extends FormRequest
         return [
             'recipes.required' => 'At least one recipe is required for a menu item.',
             'recipes.min'      => 'At least one recipe is required for a menu item.',
-            'recipes.*.ingredient_name.required' => 'Ingredient name is required.',
+            'recipes.*.ingredient_name.required_without' => 'Ingredient name is required.',
+            'recipes.*.unit.in'                  => 'Choose a unit from the list.',
             'recipes.*.quantity.required'        => 'Quantity is required.',
             'recipes.*.unit.required'            => 'Unit is required.',
         ];

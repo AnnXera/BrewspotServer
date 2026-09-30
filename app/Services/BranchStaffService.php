@@ -86,8 +86,8 @@ class BranchStaffService
             DB::transaction(function () use ($actor, $branch, $payload, $role, &$result) {
                 $staffUser = $this->repo->createStaffUser($payload, $role);
 
-                // Temporary for managers — they pick their own on first use.
-                // Staff have no PIN (the request drops it for them).
+                // Cashiers only — managers set their own PIN during password
+                // setup, and Staff have none (the request drops it for both).
                 if (isset($payload['pin'])) {
                     $this->pins->setPinFor($staffUser, $payload['pin'], $actor);
                 }

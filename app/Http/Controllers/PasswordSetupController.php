@@ -32,7 +32,11 @@ class PasswordSetupController extends Controller
      */
     public function setup(SetupPasswordRequest $request, string $uuid): JsonResponse
     {
-        $result = $this->service->setupPassword($uuid, $request->validated('password'));
+        $result = $this->service->setupPassword(
+            $uuid,
+            $request->validated('password'),
+            $request->validated('pin')
+        );
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }

@@ -40,9 +40,9 @@ class CreateBranchStaffRequest extends FormRequest
             'address'      => ['required', 'string', 'max:255'],
             'role'         => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'     => ['nullable', 'date'],
-            // Managers/cashiers sign in on the register; a manager's PIN is
-            // temporary until they replace it. Staff are records only — no PIN.
-            'pin'          => ['exclude_if:role,Staff', 'required', ...self::PIN_RULE],
+            // Only cashiers get a PIN here. Managers choose their own during
+            // password setup; Staff are records only — no PIN.
+            'pin'          => ['exclude_unless:role,Cashier', 'required', ...self::PIN_RULE],
             ...$this->scheduleRules(required: false),
         ];
     }
@@ -62,7 +62,7 @@ class CreateBranchStaffRequest extends FormRequest
             'address.required'  => 'Address is required.',
             'role.in'           => 'Position must be Manager, Cashier or Staff.',
             'pin.required'      => 'A PIN is required.',
-            'pin.regex'         => 'PIN must be 4 to 6 digits.',
+            'pin.regex'         => 'PIN must be exactly 4 digits.',
         ];
     }
 }

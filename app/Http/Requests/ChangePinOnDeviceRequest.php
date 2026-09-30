@@ -29,7 +29,7 @@ class ChangePinOnDeviceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'new_pin.regex'     => 'PIN must be 4 to 6 digits.',
+            'new_pin.regex'     => 'PIN must be exactly 4 digits.',
             'new_pin.confirmed' => 'The two new PINs don\'t match.',
         ];
     }

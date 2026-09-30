@@ -35,7 +35,7 @@ class MenuItemController extends Controller
         $result = $this->service->createItem(auth()->user(), $request->validated());
 
         if (! $result['success']) {
-            return response()->json($result, 400);
+            return response()->json($result, $result['http'] ?? 400);
         }
 
         return response()->json($result, 201);
@@ -46,7 +46,7 @@ class MenuItemController extends Controller
         $result = $this->service->updateItem(auth()->user(), $uuid, $request->validated());
 
         if (! $result['success']) {
-            return response()->json($result, 400);
+            return response()->json($result, $result['http'] ?? 400);
         }
 
         return response()->json($result, 200);

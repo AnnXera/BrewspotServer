@@ -18,7 +18,8 @@ class IngredientConsumptionLog extends Model
     protected $fillable = [
         'uuid',
         'transaction_item_id',
-        'ingredient_name',
+        'ingredient_id',
+        'ingredient_name', // snapshot at time of sale
         'quantity_consumed',
         'unit',
     ];
@@ -30,6 +31,11 @@ class IngredientConsumptionLog extends Model
     protected static function booted(): void
     {
         static::creating(fn ($log) => $log->uuid = (string) Str::uuid());
+    }
+
+    public function ingredient(): BelongsTo
+    {
+        return $this->belongsTo(Ingredient::class, 'ingredient_id', 'ingredient_id');
     }
 
     public function transactionItem(): BelongsTo

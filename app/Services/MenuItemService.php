@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Http\Resources\MenuItemResource;
+use App\Models\Ingredient;
 use App\Models\User;
+use App\Repository\IngredientRepository;
 use App\Repository\MenuItemRepository;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +15,8 @@ use Illuminate\Http\UploadedFile;
 class MenuItemService
 {
     public function __construct(
-        private readonly MenuItemRepository $repo
+        private readonly MenuItemRepository $repo,
+        private readonly IngredientRepository $ingredients
     ) {}
 
     public function createItem(User $owner, array $payload): array
@@ -37,13 +40,18 @@ class MenuItemService
             }
         }
 
+        $recipes = $this->resolveRecipes($cafe->cafe_id, $payload['recipes']);
+
+        if (isset($recipes['errors'])) {
+            return $recipes;
+        }
+
         try {
             if (isset($payload['picture']) && $payload['picture'] instanceof UploadedFile) {
                 $path = 'users/' . $owner->uuid . '/cafes/menu-item';
                 $payload['picture'] = $payload['picture']->store($path, 'public');
             }
 
-            $recipes = $payload['recipes'];
             $item = $this->repo->create($cafe->cafe_id, $category?->men_category_id, $payload, $recipes);
         } catch (\Exception $e) {
             Log::channel('owner')->error('Failed to create menu item.', [
@@ -98,6 +106,16 @@ class MenuItemService
             }
         }
 
+        $recipes = null;
+
+        if (isset($payload['recipes'])) {
+            $recipes = $this->resolveRecipes($cafe->cafe_id, $payload['recipes']);
+
+            if (isset($recipes['errors'])) {
+                return $recipes;
+            }
+        }
+
         try {
             if (isset($payload['picture']) && $payload['picture'] instanceof UploadedFile) {
                 if ($item->picture) {
@@ -107,7 +125,6 @@ class MenuItemService
                 $payload['picture'] = $payload['picture']->store($path, 'public');
             }
 
-            $recipes = $payload['recipes'] ?? null;
             $item = $this->repo->update($item, $payload, $recipes);
         } catch (\Exception $e) {
             Log::channel('owner')->error('Failed to update menu item.', [
@@ -128,6 +145,69 @@ class MenuItemService
             'message' => 'Menu item updated successfully.',
             'item'    => new MenuItemResource($item),
         ];
+    }
+
+    /**
+     * Matches each recipe row to one of the cafe's ingredients (by uuid, or by
+     * name ignoring case/spacing). Unmatched names become new ingredients when
+     * the item is saved. Rejects the same ingredient twice in one recipe, and a
+     * unit that differs from the ingredient's.
+     *
+     * @return array Resolved rows for MenuItemRepository, or a 422 result with 'errors'.
+     */
+    private function resolveRecipes(int $cafeId, array $recipes): array
+    {
+        $byUuid = $this->ingredients->findByUuids(
+            $cafeId, array_values(array_filter(array_column($recipes, 'ingredient_uuid')))
+        )->keyBy('uuid');
+
+        $byName = $this->ingredients->findByNormalizedNames(
+            $cafeId, array_map(fn ($n) => Ingredient::normalize($n), array_filter(array_column($recipes, 'ingredient_name')))
+        )->keyBy('normalized_name');
+
+        $resolved = [];
+        $seen     = [];
+        $errors   = [];
+
+        foreach (array_values($recipes) as $i => $row) {
+            if (! empty($row['ingredient_uuid'])) {
+                $ingredient = $byUuid->get($row['ingredient_uuid']);
+
+                if (! $ingredient) {
+                    $errors["recipes.$i.ingredient_uuid"][] = 'That ingredient no longer exists. Pick it again.';
+                    continue;
+                }
+            } else {
+                $ingredient = $byName->get(Ingredient::normalize($row['ingredient_name']));
+            }
+
+            $name = $ingredient?->name ?? Ingredient::tidy($row['ingredient_name']);
+            $key  = $ingredient ? "id:{$ingredient->ingredient_id}" : 'new:' . Ingredient::normalize($name);
+
+            if (isset($seen[$key])) {
+                $errors["recipes.$i.ingredient_name"][] = "{$name} is already in this recipe.";
+                continue;
+            }
+            $seen[$key] = true;
+
+            if ($ingredient && $ingredient->unit !== $row['unit']) {
+                $errors["recipes.$i.unit"][] = "{$ingredient->name} is measured in {$ingredient->unit}.";
+                continue;
+            }
+
+            $resolved[] = [
+                'ingredient' => $ingredient,
+                'name'       => $name,
+                'quantity'   => $row['quantity'],
+                'unit'       => $row['unit'],
+            ];
+        }
+
+        if ($errors) {
+            return ['success' => false, 'http' => 422, 'message' => 'Validation failed.', 'errors' => $errors];
+        }
+
+        return $resolved;
     }
 
     public function listItems(User $owner, ?string $categoryUuid = null): array

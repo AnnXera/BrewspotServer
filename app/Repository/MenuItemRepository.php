@@ -3,12 +3,17 @@
 namespace App\Repository;
 
 use App\Models\Cafe;
+use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use Illuminate\Support\Facades\DB;
 
 class MenuItemRepository
 {
+    public function __construct(
+        private readonly IngredientRepository $ingredients
+    ) {}
+
     public function findCafeByOwner(int $userId): ?Cafe
     {
         return Cafe::where('user_id', $userId)->first();
@@ -21,6 +26,10 @@ class MenuItemRepository
             ->first();
     }
 
+    /**
+     * @param array<int, array{ingredient: ?Ingredient, name: string, quantity: mixed, unit: string}> $recipes
+     *        Already resolved by MenuItemService::resolveRecipes().
+     */
     public function create(int $cafeId, ?int $categoryId, array $payload, array $recipes): MenuItem
     {
         return DB::transaction(function () use ($cafeId, $categoryId, $payload, $recipes) {
@@ -34,15 +43,9 @@ class MenuItemRepository
                 'picture'         => $payload['picture'] ?? null,
             ]);
 
-            foreach ($recipes as $recipe) {
-                $item->recipes()->create([
-                    'ingredient_name' => $recipe['ingredient_name'],
-                    'quantity'        => $recipe['quantity'],
-                    'unit'            => $recipe['unit'],
-                ]);
-            }
+            $this->saveRecipes($item, $recipes);
 
-            return $item->load('recipes');
+            return $item->load('recipes.ingredient');
         });
     }
 
@@ -50,7 +53,7 @@ class MenuItemRepository
     {
         return MenuItem::where('uuid', $uuid)
             ->where('cafe_id', $cafeId)
-            ->with('recipes')
+            ->with('recipes.ingredient')
             ->first();
     }
 
@@ -77,16 +80,10 @@ class MenuItemRepository
             if ($recipes !== null) {
                 // Delete old recipes and insert new ones
                 $item->recipes()->delete();
-                foreach ($recipes as $recipe) {
-                    $item->recipes()->create([
-                        'ingredient_name' => $recipe['ingredient_name'],
-                        'quantity'        => $recipe['quantity'],
-                        'unit'            => $recipe['unit'],
-                    ]);
-                }
+                $this->saveRecipes($item, $recipes);
             }
 
-            return $item->fresh('recipes');
+            return $item->fresh('recipes.ingredient');
         });
     }
 
@@ -102,9 +99,33 @@ class MenuItemRepository
             });
         }
 
-        return $query->with(['category', 'recipes'])
+        return $query->with(['category', 'recipes.ingredient'])
             ->orderBy('menu_name')
             ->get();
+    }
+
+    /**
+     * New ingredient names are added to the cafe's list here, inside the
+     * caller's transaction, so a failed save leaves no orphan ingredients.
+     */
+    private function saveRecipes(MenuItem $item, array $recipes): void
+    {
+        foreach ($recipes as $recipe) {
+            $ingredient = $recipe['ingredient']
+                ?? $this->ingredients->findOrCreate($item->cafe_id, $recipe['name'], $recipe['unit']);
+
+            // Used again in a recipe → back on the picker list.
+            if (! $ingredient->is_active) {
+                $ingredient->update(['is_active' => true]);
+            }
+
+            $item->recipes()->create([
+                'ingredient_id'   => $ingredient->ingredient_id,
+                'ingredient_name' => $ingredient->name,
+                'quantity'        => $recipe['quantity'],
+                'unit'            => $ingredient->unit,
+            ]);
+        }
     }
 
     public function delete(MenuItem $item): void

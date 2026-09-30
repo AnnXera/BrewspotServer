@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\StaffRequestHelpers;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -9,6 +10,8 @@ use Illuminate\Validation\Rules\Password;
 
 class SetupPasswordRequest extends FormRequest
 {
+    use StaffRequestHelpers;
+
     public function authorize(): bool
     {
         return true;
@@ -26,6 +29,9 @@ class SetupPasswordRequest extends FormRequest
                     ->numbers()
                     ->symbols(),
             ],
+            // Managers only — PasswordSetupService requires it for them and
+            // ignores it for everyone else.
+            'pin' => ['nullable', 'confirmed', ...self::PIN_RULE],
         ];
     }
 
@@ -34,6 +40,8 @@ class SetupPasswordRequest extends FormRequest
         return [
             'password.required'  => 'Password is required.',
             'password.confirmed' => 'Password confirmation does not match.',
+            'pin.regex'          => 'PIN must be exactly 4 digits.',
+            'pin.confirmed'      => 'The two PINs don\'t match.',
         ];
     }
 

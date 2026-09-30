@@ -11,6 +11,7 @@ class MenuRecipeResource extends JsonResource
     {
         return [
             'uuid'            => $this->uuid,
+            'ingredient_uuid' => $this->whenLoaded('ingredient', fn () => $this->ingredient?->uuid),
             'ingredient_name' => $this->ingredient_name,
             'quantity'        => $this->quantity,
             'unit'            => $this->unit,

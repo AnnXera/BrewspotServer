@@ -168,7 +168,7 @@ class StaffAndPosTest extends TestCase
         Mail::assertNothingOutgoing();
     }
 
-    public function test_email_phone_address_are_required_and_pin_only_for_register_roles(): void
+    public function test_email_phone_address_are_required_and_pin_only_for_cashiers(): void
     {
         $token = $this->tokenFor($this->owner);
         $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
@@ -176,8 +176,9 @@ class StaffAndPosTest extends TestCase
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Cashier'])
             ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin', 'phone_number', 'address']);
 
+        // Managers choose their own PIN during password setup.
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Manager'])
-            ->assertStatus(422)->assertJsonValidationErrors(['email', 'pin']);
+            ->assertStatus(422)->assertJsonValidationErrors('email')->assertJsonMissingValidationErrors('pin');
 
         $this->api('POST', $url, $token, ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Staff'])
             ->assertStatus(422)->assertJsonMissingValidationErrors('pin');
@@ -247,20 +248,65 @@ class StaffAndPosTest extends TestCase
             ->assertOk()->assertJsonPath('staff.role', 'Staff')->assertJsonPath('staff.pin_set', false);
     }
 
-    public function test_owner_adds_manager_with_temporary_pin_and_setup_email_is_sent(): void
+    public function test_owner_adds_manager_without_pin_and_setup_email_is_sent(): void
     {
         $this->api('POST', "/api/owner/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->owner), [
             'firstname' => 'Sofia',
             'lastname'  => 'Miles',
             'email'     => 'sofia@test.local',
             'role'      => 'Manager',
-            'pin'       => '1357',
+            'pin'       => '1357', // ignored: the manager picks their own
             ...$this->contact(),
         ])->assertCreated()
             ->assertJsonPath('staff.account_status', 'pending_setup')
-            ->assertJsonPath('staff.pin_must_change', true);
+            ->assertJsonPath('staff.pin_set', false);
 
         Mail::assertQueued(StaffAccountCreatedMail::class);
+    }
+
+    public function test_manager_sets_password_and_own_pin_during_setup(): void
+    {
+        $uuid = $this->api('POST', "/api/owner/branches/{$this->mainBranch->uuid}/staff", $this->tokenFor($this->owner), [
+            'firstname' => 'Sofia',
+            'lastname'  => 'Miles',
+            'email'     => 'sofia@test.local',
+            'role'      => 'Manager',
+            ...$this->contact(),
+        ])->json('staff.uuid');
+
+        $password = ['password' => 'Secret#123', 'password_confirmation' => 'Secret#123'];
+
+        $this->postJson("/api/auth/setup-password/{$uuid}", $password)
+            ->assertStatus(422)->assertJsonValidationErrors('pin');
+        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '1357', 'pin_confirmation' => '7531'])
+            ->assertStatus(422)->assertJsonValidationErrors('pin');
+        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '13579', 'pin_confirmation' => '13579'])
+            ->assertStatus(422)->assertJsonValidationErrors('pin');
+
+        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '1357', 'pin_confirmation' => '1357'])
+            ->assertOk()->assertJsonPath('success', true);
+
+        $manager = User::where('uuid', $uuid)->first();
+        $this->assertSame('active', $manager->status);
+        $this->assertTrue(Hash::check('1357', $manager->pin_hash));
+        $this->assertFalse($manager->mustChangePin());
+    }
+
+    public function test_promoted_cashier_replaces_shared_pin_during_setup(): void
+    {
+        $this->api('PATCH', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}", $this->tokenFor($this->owner), [
+            'role'  => 'Manager',
+            'email' => 'promo@test.local',
+        ])->assertOk();
+
+        $this->postJson("/api/auth/setup-password/{$this->cashier->uuid}", [
+            'password' => 'Secret#123', 'password_confirmation' => 'Secret#123',
+            'pin'      => '8642',       'pin_confirmation'      => '8642',
+        ])->assertOk();
+
+        $cashier = $this->cashier->fresh();
+        $this->assertTrue(Hash::check('8642', $cashier->pin_hash));
+        $this->assertFalse($cashier->mustChangePin());
     }
 
     public function test_cashier_pin_set_by_owner_or_manager_is_not_temporary(): void

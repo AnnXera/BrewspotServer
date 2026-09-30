@@ -18,6 +18,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\MenuItemController;
+use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
 use App\Http\Controllers\ItemBranchController;
@@ -156,6 +157,10 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
             Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
             Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
+
+            Route::get('/ingredients',                            [IngredientController::class, 'index']); // picker + Ingredients page
+            Route::post('/ingredients',                           [IngredientController::class, 'store']);
+            Route::patch('/ingredients/{uuid}',                   [IngredientController::class, 'update']); // rename, unit, retire/restore
 
             Route::get('/menu-items',                             [MenuItemController::class, 'index']);
             Route::get('/menu-items/{uuid}',                      [MenuItemController::class, 'show']);

@@ -142,13 +142,25 @@ class OwnerSeeder extends Seeder
             ['ingredient_name' => 'Caramel Sauce',  'quantity' => 10,  'unit' => 'ml'],
         ];
 
-        foreach ($recipe as $ingredient) {
-            \App\Models\MenuRecipe::firstOrCreate(
-                ['men_item_id' => $item->men_item_id, 'ingredient_name' => $ingredient['ingredient_name']],
+        // DatabaseSeeder runs WithoutModelEvents, so the models' creating/saving
+        // hooks don't fire: set uuid and normalized_name explicitly.
+        foreach ($recipe as $row) {
+            $ingredient = \App\Models\Ingredient::firstOrCreate(
+                ['cafe_id' => $item->cafe_id, 'normalized_name' => \App\Models\Ingredient::normalize($row['ingredient_name'])],
                 [
-                    'uuid'     => (string) Str::uuid(),
-                    'quantity' => $ingredient['quantity'],
-                    'unit'     => $ingredient['unit'],
+                    'uuid' => (string) Str::uuid(),
+                    'name' => $row['ingredient_name'],
+                    'unit' => $row['unit'],
+                ]
+            );
+
+            \App\Models\MenuRecipe::firstOrCreate(
+                ['men_item_id' => $item->men_item_id, 'ingredient_id' => $ingredient->ingredient_id],
+                [
+                    'uuid'            => (string) Str::uuid(),
+                    'ingredient_name' => $ingredient->name,
+                    'quantity'        => $row['quantity'],
+                    'unit'            => $ingredient->unit,
                 ]
             );
         }

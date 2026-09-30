@@ -13,7 +13,8 @@ class PasswordSetupService
 {
     public function __construct(
         private readonly PasswordSetupRepository $repo,
-        private readonly SubscriptionRepository $subscriptionRepo
+        private readonly SubscriptionRepository $subscriptionRepo,
+        private readonly StaffPinService $pins
     ) {}
 
     public function checkSetupStatus(string $uuid): array
@@ -53,7 +54,11 @@ class PasswordSetupService
         ];
     }
 
-    public function setupPassword(string $uuid, string $plainPassword): array
+    /**
+     * Managers pick their own PIN here (it approves voids/refunds), so the
+     * owner never knows it. A promoted cashier's old, shared PIN is replaced.
+     */
+    public function setupPassword(string $uuid, string $plainPassword, ?string $plainPin = null): array
     {
         $account = $this->repo->findAccountAwaitingSetupByUuid($uuid);
 
@@ -84,15 +89,28 @@ class PasswordSetupService
             ];
         }
 
-        $isOwner = $account->role->role_name === 'Cafe Owner';
-        $result  = [];
+        $isOwner   = $account->role->role_name === 'Cafe Owner';
+        $isManager = $account->role->role_name === 'Manager';
+        $result    = [];
+
+        if ($isManager && $plainPin === null) {
+            return [
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors'  => ['pin' => ['A PIN is required.']],
+            ];
+        }
 
         try {
-            DB::transaction(function () use ($account, $plainPassword, $isOwner, &$result) {
+            DB::transaction(function () use ($account, $plainPassword, $plainPin, $isOwner, $isManager, &$result) {
 
                 $hashedPassword = Hash::make($plainPassword);
 
                 $account = $this->repo->activateOwner($account, $hashedPassword);
+
+                if ($isManager) {
+                    $this->pins->setPin($account, $plainPin);
+                }
 
                 if ($isOwner) {
                     // Owner-only onboarding: activate their branch(es) and
