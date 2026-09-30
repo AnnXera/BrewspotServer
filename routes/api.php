@@ -24,10 +24,11 @@ use App\Http\Controllers\ItemBranchController;
 use App\Http\Controllers\BranchStaffController;
 use App\Http\Controllers\ManagerAccountController;
 use App\Http\Controllers\PosDeviceController;
+use App\Http\Controllers\ServingController;
 
 use App\Http\Controllers\TempUploadController;
 
-// Employees tab + registers of one branch. Mounted under /owner and /manager,
+// Employees tab, registers and today's servings of one branch. Mounted under /owner and /manager,
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
 $branchScopedRoutes = function () {
     Route::middleware('plan.feature:staff_management')->group(function () {
@@ -44,6 +45,15 @@ $branchScopedRoutes = function () {
     Route::middleware('plan.feature:pos_system')->group(function () {
         Route::get('/pos-devices',                 [PosDeviceController::class, 'index']);
         Route::delete('/pos-devices/{deviceUuid}', [PosDeviceController::class, 'destroy']);
+    });
+
+    // Today's servings (current day only, app timezone)
+    Route::middleware('plan.feature:menu_management')->group(function () {
+        Route::get('/servings',                    [ServingController::class, 'index']);
+        Route::get('/servings/available-items',    [ServingController::class, 'availableItems']); // before {servingUuid}
+        Route::post('/servings',                   [ServingController::class, 'store']);
+        Route::patch('/servings/{servingUuid}',    [ServingController::class, 'update']);
+        Route::delete('/servings/{servingUuid}',   [ServingController::class, 'destroy']);
     });
 };
 
