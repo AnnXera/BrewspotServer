@@ -40,7 +40,7 @@ class SetupPasswordRequest extends FormRequest
         return [
             'password.required'  => 'Password is required.',
             'password.confirmed' => 'Password confirmation does not match.',
-            'pin.regex'          => 'PIN must be exactly 4 digits.',
+            'pin.regex'          => 'PIN must be exactly 6 digits.',
             'pin.confirmed'      => 'The two PINs don\'t match.',
         ];
     }

@@ -28,7 +28,7 @@ class ChangeOwnPinRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'pin.regex' => 'PIN must be exactly 4 digits.',
+            'pin.regex' => 'PIN must be exactly 6 digits.',
         ];
     }
 }

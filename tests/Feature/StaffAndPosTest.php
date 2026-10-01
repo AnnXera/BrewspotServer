@@ -72,8 +72,8 @@ class StaffAndPosTest extends TestCase
         $this->otherCashier = $this->makeStaff('Cashier', $this->otherBranch);
 
         app(StaffPinService::class)->setPin($this->manager, '9999');
-        app(StaffPinService::class)->setPin($this->cashier, '1234');
-        app(StaffPinService::class)->setPin($this->otherCashier, '4321');
+        app(StaffPinService::class)->setPin($this->cashier, '123456');
+        app(StaffPinService::class)->setPin($this->otherCashier, '432101');
     }
 
     // ── Branch access ────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ class StaffAndPosTest extends TestCase
             'lastname'  => 'Reyes',
             'email'     => 'ana@test.local',
             'role'      => 'Cashier',
-            'pin'       => '2468',
+            'pin'       => '246802',
             'hired_at'  => '2026-01-20',
             ...$this->contact(),
         ]);
@@ -265,7 +265,7 @@ class StaffAndPosTest extends TestCase
             'lastname'  => 'Barista',
             'email'     => 'bea@test.local',
             'role'      => 'Staff',
-            'pin'       => '1111', // ignored for staff
+            'pin'       => '111111', // ignored for staff
             ...$this->contact(),
         ])->assertCreated()
             ->assertJsonPath('staff.role', 'Staff')
@@ -278,7 +278,7 @@ class StaffAndPosTest extends TestCase
         // Not on the register, and can't be given a PIN.
         $device = $this->registerDevice($this->owner, $this->mainBranch);
         $this->assertNotContains($staffUuid, collect($this->api('GET', '/api/pos/device/staff', $device)->json('staff'))->pluck('uuid'));
-        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$staffUuid}/pin", $this->tokenFor($this->owner), ['pin' => '2222'])
+        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$staffUuid}/pin", $this->tokenFor($this->owner), ['pin' => '222222'])
             ->assertStatus(422);
 
         // Listed and counted with everyone else.
@@ -299,7 +299,7 @@ class StaffAndPosTest extends TestCase
             'lastname'  => 'Miles',
             'email'     => 'sofia@test.local',
             'role'      => 'Manager',
-            'pin'       => '1357', // ignored: the manager picks their own
+            'pin'       => '135792', // ignored: the manager picks their own
             ...$this->contact(),
         ])->assertCreated()
             ->assertJsonPath('staff.account_status', 'pending_setup')
@@ -322,17 +322,17 @@ class StaffAndPosTest extends TestCase
 
         $this->postJson("/api/auth/setup-password/{$uuid}", $password)
             ->assertStatus(422)->assertJsonValidationErrors('pin');
-        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '1357', 'pin_confirmation' => '7531'])
+        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '135792', 'pin_confirmation' => '753192'])
             ->assertStatus(422)->assertJsonValidationErrors('pin');
         $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '13579', 'pin_confirmation' => '13579'])
             ->assertStatus(422)->assertJsonValidationErrors('pin');
 
-        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '1357', 'pin_confirmation' => '1357'])
+        $this->postJson("/api/auth/setup-password/{$uuid}", [...$password, 'pin' => '135792', 'pin_confirmation' => '135792'])
             ->assertOk()->assertJsonPath('success', true);
 
         $manager = User::where('uuid', $uuid)->first();
         $this->assertSame('active', $manager->status);
-        $this->assertTrue(Hash::check('1357', $manager->pin_hash));
+        $this->assertTrue(Hash::check('135792', $manager->pin_hash));
         $this->assertFalse($manager->mustChangePin());
     }
 
@@ -345,17 +345,17 @@ class StaffAndPosTest extends TestCase
 
         $this->postJson("/api/auth/setup-password/{$this->cashier->uuid}", [
             'password' => 'Secret#123', 'password_confirmation' => 'Secret#123',
-            'pin'      => '8642',       'pin_confirmation'      => '8642',
+            'pin'      => '864203',       'pin_confirmation'      => '864203',
         ])->assertOk();
 
         $cashier = $this->cashier->fresh();
-        $this->assertTrue(Hash::check('8642', $cashier->pin_hash));
+        $this->assertTrue(Hash::check('864203', $cashier->pin_hash));
         $this->assertFalse($cashier->mustChangePin());
     }
 
     public function test_cashier_pin_set_by_owner_or_manager_is_not_temporary(): void
     {
-        $this->api('PUT', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/pin", $this->tokenFor($this->manager), ['pin' => '2222'])
+        $this->api('PUT', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/pin", $this->tokenFor($this->manager), ['pin' => '222222'])
             ->assertOk();
 
         $this->assertFalse($this->cashier->fresh()->mustChangePin());
@@ -366,10 +366,10 @@ class StaffAndPosTest extends TestCase
         $token = $this->tokenFor($this->manager);
         $url   = "/api/manager/branches/{$this->mainBranch->uuid}/staff";
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'email' => 'new.cashier@test.local', 'role' => 'Cashier', 'pin' => '1111', ...$this->contact()])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Cashier', 'email' => 'new.cashier@test.local', 'role' => 'Cashier', 'pin' => '111111', ...$this->contact()])
             ->assertCreated();
 
-        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local', 'pin' => '2222', ...$this->contact()])
+        $this->api('POST', $url, $token, ['firstname' => 'New', 'lastname' => 'Boss', 'role' => 'Manager', 'email' => 'boss@test.local', 'pin' => '222222', ...$this->contact()])
             ->assertForbidden();
     }
 
@@ -384,7 +384,7 @@ class StaffAndPosTest extends TestCase
         $this->api('GET', $base, $token)->assertOk()->assertJsonPath('staff.can_manage', false);
         $this->api('PATCH', $base, $token, ['firstname' => 'Changed'])->assertForbidden();
         $this->api('POST', "$base/terminate", $token)->assertForbidden();
-        $this->api('PUT', "$base/pin", $token, ['pin' => '0000'])->assertForbidden();
+        $this->api('PUT', "$base/pin", $token, ['pin' => '000000'])->assertForbidden();
         $this->api('PUT', "$base/schedule", $token, ['schedule' => [['day_of_week' => 1, 'is_day_off' => true]]])->assertForbidden();
     }
 
@@ -412,7 +412,7 @@ class StaffAndPosTest extends TestCase
     public function test_manager_must_replace_temporary_pin_on_register_before_unlocking(): void
     {
         // Owner resets the manager's PIN → temporary.
-        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->manager->uuid}/pin", $this->tokenFor($this->owner), ['pin' => '4444'])
+        $this->api('PUT', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->manager->uuid}/pin", $this->tokenFor($this->owner), ['pin' => '444404'])
             ->assertOk();
         $this->assertTrue($this->manager->fresh()->mustChangePin());
 
@@ -420,32 +420,32 @@ class StaffAndPosTest extends TestCase
         $base   = "/api/pos/device/staff/{$this->manager->uuid}";
 
         // Correct temporary PIN does not unlock.
-        $this->api('POST', "$base/unlock", $device, ['pin' => '4444'])
+        $this->api('POST', "$base/unlock", $device, ['pin' => '444404'])
             ->assertStatus(409)->assertJsonPath('must_change_pin', true);
         $this->api('GET', '/api/pos/device', $device)->assertJsonPath('device.active_staff', null);
 
         // Wrong current PIN, and reusing the temporary PIN, are rejected.
-        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '0000', 'new_pin' => '8642', 'new_pin_confirmation' => '8642'])
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '000000', 'new_pin' => '864203', 'new_pin_confirmation' => '864203'])
             ->assertStatus(422);
-        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '4444', 'new_pin' => '4444', 'new_pin_confirmation' => '4444'])
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '444404', 'new_pin' => '444404', 'new_pin_confirmation' => '444404'])
             ->assertStatus(422);
 
         // Replacing it unlocks the register and clears the flag.
-        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '4444', 'new_pin' => '8642', 'new_pin_confirmation' => '8642'])
+        $this->api('POST', "$base/change-pin", $device, ['current_pin' => '444404', 'new_pin' => '864203', 'new_pin_confirmation' => '864203'])
             ->assertOk()->assertJsonPath('staff.uuid', $this->manager->uuid);
 
         $this->assertFalse($this->manager->fresh()->mustChangePin());
-        $this->api('POST', "$base/unlock", $device, ['pin' => '8642'])->assertOk();
+        $this->api('POST', "$base/unlock", $device, ['pin' => '864203'])->assertOk();
     }
 
     public function test_manager_can_replace_temporary_pin_from_dashboard(): void
     {
-        app(StaffPinService::class)->setPin($this->manager, '4444', temporary: true);
+        app(StaffPinService::class)->setPin($this->manager, '444404', temporary: true);
 
         $token = $this->tokenFor($this->manager);
 
-        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'wrong', 'pin' => '8642'])->assertStatus(422);
-        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'secret', 'pin' => '8642'])->assertOk();
+        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'wrong', 'pin' => '864203'])->assertStatus(422);
+        $this->api('PUT', '/api/manager/pin', $token, ['current_password' => 'secret', 'pin' => '864203'])->assertOk();
 
         $this->assertFalse($this->manager->fresh()->mustChangePin());
     }
@@ -455,7 +455,7 @@ class StaffAndPosTest extends TestCase
     public function test_manager_terminates_cashier_which_revokes_access_and_ends_pos_session(): void
     {
         $device = $this->registerDevice($this->manager, $this->mainBranch);
-        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '1234'])->assertOk();
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
 
         $this->api('POST', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/terminate", $this->tokenFor($this->manager))
             ->assertOk();
@@ -468,7 +468,7 @@ class StaffAndPosTest extends TestCase
         // Gone from the lock screen, and can't unlock any more.
         $names = collect($this->api('GET', '/api/pos/device/staff', $device)->json('staff'))->pluck('uuid');
         $this->assertNotContains($this->cashier->uuid, $names);
-        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '1234'])->assertNotFound();
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertNotFound();
     }
 
     public function test_terminated_manager_loses_dashboard_access(): void
@@ -552,7 +552,7 @@ class StaffAndPosTest extends TestCase
 
         $this->api('GET', '/api/pos/device/staff', $device)->assertOk()->assertJsonCount(2, 'staff'); // manager + cashier
 
-        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '1234'])
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])
             ->assertOk()
             ->assertJsonPath('staff.uuid', $this->cashier->uuid);
 
@@ -566,7 +566,7 @@ class StaffAndPosTest extends TestCase
     {
         $device = $this->registerDevice($this->owner, $this->mainBranch);
 
-        $this->api('POST', "/api/pos/device/staff/{$this->otherCashier->uuid}/unlock", $device, ['pin' => '4321'])
+        $this->api('POST', "/api/pos/device/staff/{$this->otherCashier->uuid}/unlock", $device, ['pin' => '432101'])
             ->assertNotFound();
     }
 
@@ -576,17 +576,17 @@ class StaffAndPosTest extends TestCase
         $url    = "/api/pos/device/staff/{$this->cashier->uuid}/unlock";
 
         for ($i = 1; $i < StaffPinService::MAX_ATTEMPTS; $i++) {
-            $this->api('POST', $url, $device, ['pin' => '0000'])->assertStatus(422);
+            $this->api('POST', $url, $device, ['pin' => '000000'])->assertStatus(422);
         }
-        $this->api('POST', $url, $device, ['pin' => '0000'])->assertStatus(423);
+        $this->api('POST', $url, $device, ['pin' => '000000'])->assertStatus(423);
 
         // Correct PIN no longer works while locked.
-        $this->api('POST', $url, $device, ['pin' => '1234'])->assertStatus(423);
+        $this->api('POST', $url, $device, ['pin' => '123456'])->assertStatus(423);
 
-        $this->api('PUT', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/pin", $this->tokenFor($this->manager), ['pin' => '5678'])
+        $this->api('PUT', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/pin", $this->tokenFor($this->manager), ['pin' => '567890'])
             ->assertOk();
 
-        $this->api('POST', $url, $device, ['pin' => '5678'])->assertOk();
+        $this->api('POST', $url, $device, ['pin' => '567890'])->assertOk();
     }
 
     public function test_device_and_user_tokens_cannot_cross_over(): void

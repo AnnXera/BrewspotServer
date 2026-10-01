@@ -12,7 +12,7 @@ use Illuminate\Http\Exceptions\HttpResponseException;
  */
 trait StaffRequestHelpers
 {
-    public const PIN_RULE = ['string', 'regex:/^\d{4}$/'];
+    public const PIN_RULE = ['string', 'regex:/^\d{6}$/'];
 
     // PH mobile only, after normalizePhoneNumber() (e.g. +639123456789).
     public const PHONE_RULE = ['string', 'regex:/^\+639\d{9}$/'];

@@ -62,7 +62,7 @@ class CreateBranchStaffRequest extends FormRequest
             'address.required'  => 'Address is required.',
             'role.in'           => 'Position must be Manager, Cashier or Staff.',
             'pin.required'      => 'A PIN is required.',
-            'pin.regex'         => 'PIN must be exactly 4 digits.',
+            'pin.regex'         => 'PIN must be exactly 6 digits.',
         ];
     }
 }

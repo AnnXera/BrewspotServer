@@ -57,7 +57,7 @@ class CreateStaffRequest extends FormRequest
             'address.required'      => 'Address is required.',
             'role.in'               => 'Position must be Manager, Cashier or Staff.',
             'pin.required'          => 'A PIN is required.',
-            'pin.regex'             => 'PIN must be exactly 4 digits.',
+            'pin.regex'             => 'PIN must be exactly 6 digits.',
             'branch_uuids.required' => 'Select at least one branch.',
             'branch_uuids.*.exists' => 'One or more selected branches were not found.',
         ];
