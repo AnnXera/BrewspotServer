@@ -30,18 +30,16 @@ class Cafe extends Model
     {
         static::creating(fn ($cafe) => $cafe->uuid = (string) Str::uuid());
 
-        static::created(function ($cafe) {
-            $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-            foreach ($days as $day) {
-                $isWeekend = in_array($day, ['Saturday', 'Sunday']);
-                $cafe->openingHours()->create([
-                    'day_of_week' => $day,
-                    'is_closed'   => $isWeekend,
-                    'open_time'   => $isWeekend ? null : '09:00:00',
-                    'close_time'  => $isWeekend ? null : '17:00:00',
-                ]);
-            }
-        });
+        static::created(fn ($cafe) => $cafe->ensureOpeningHours());
+    }
+
+    public function ensureOpeningHours(): void
+    {
+        if ($this->openingHours()->exists()) {
+            return;
+        }
+
+        $this->openingHours()->createMany(CafeOpeningHour::defaultRows());
     }
 
     public function owner(): BelongsTo

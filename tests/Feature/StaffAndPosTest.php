@@ -461,6 +461,28 @@ class StaffAndPosTest extends TestCase
             ->assertJsonCount(2, 'warnings'); // Sunday closed + Tuesday starts early
     }
 
+    public function test_schedule_warnings_understand_24_hour_and_after_midnight_opening(): void
+    {
+        $cafeId = $this->mainBranch->cafe_id;
+        \App\Models\CafeOpeningHour::where('cafe_id', $cafeId)->where('day_of_week', 'Monday')
+            ->update(['is_closed' => false, 'is_24_hours' => true, 'open_time' => null, 'close_time' => null]);
+        \App\Models\CafeOpeningHour::where('cafe_id', $cafeId)->where('day_of_week', 'Thursday')
+            ->update(['open_time' => '18:00', 'close_time' => '02:00']); // closes Friday 2 AM
+        \App\Models\CafeOpeningHour::where('cafe_id', $cafeId)->where('day_of_week', 'Friday')
+            ->update(['open_time' => '09:00', 'close_time' => '17:00']);
+
+        $url = "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/schedule";
+
+        $warnings = $this->api('PUT', $url, $this->tokenFor($this->manager), ['schedule' => [
+            ['day_of_week' => 1, 'is_day_off' => false, 'start_time' => '03:00', 'end_time' => '23:00'], // 24h: fine
+            ['day_of_week' => 4, 'is_day_off' => false, 'start_time' => '20:00', 'end_time' => '23:59'], // Thu evening: fine
+            ['day_of_week' => 5, 'is_day_off' => false, 'start_time' => '00:30', 'end_time' => '01:30'], // Thu's late hours: fine
+            ['day_of_week' => 3, 'is_day_off' => false, 'start_time' => '00:30', 'end_time' => '01:30'], // Wed: Tuesday doesn't run late
+        ]])->assertOk()->json('warnings');
+
+        $this->assertSame(['Wednesday: shift 00:30-01:30 is outside opening hours (09:00-17:00).'], $warnings);
+    }
+
     // ── POS register ─────────────────────────────────────────────────────
 
     public function test_manager_registers_device_only_for_their_branch(): void

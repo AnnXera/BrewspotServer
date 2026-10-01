@@ -12,17 +12,7 @@ use App\Repository\CafeStaffRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Employee management inside one branch, used by both the owner dashboard
- * and the manager dashboard. The branch has already been authorised by the
- * `branch.access` middleware; this class decides what the actor may do to
- * a given person:
- *
- *   Owner   — create/edit/terminate Managers and Cashiers, change roles.
- *   Manager — create/edit/terminate Cashiers only. Managers are read-only.
- *
- * Results carry an `http` key that the controller turns into the status code.
- */
+
 class BranchStaffService
 {
     private const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -86,8 +76,6 @@ class BranchStaffService
             DB::transaction(function () use ($actor, $branch, $payload, $role, &$result) {
                 $staffUser = $this->repo->createStaffUser($payload, $role);
 
-                // Cashiers only — managers set their own PIN during password
-                // setup, and Staff have none (the request drops it for both).
                 if (isset($payload['pin'])) {
                     $this->pins->setPinFor($staffUser, $payload['pin'], $actor);
                 }
@@ -172,7 +160,6 @@ class BranchStaffService
             ]));
 
             if (array_key_exists('email', $userFields) && $userFields['email'] !== $target->email) {
-                // Owner/manager vouches for the new address, same as on creation.
                 $userFields['email_verified_at'] = now();
             }
 
@@ -248,10 +235,6 @@ class BranchStaffService
         ];
     }
 
-    /**
-     * Ends employment at this branch only. If the person has no other active
-     * branch, their dashboard sessions are revoked too.
-     */
     public function terminate(User $actor, CafeBranch $branch, string $userUuid): array
     {
         $target = $this->repo->findStaffUserAtBranch($userUuid, $branch->branch_id);
@@ -322,9 +305,6 @@ class BranchStaffService
         ];
     }
 
-    /**
-     * Branch switcher list for the manager dashboard.
-     */
     public function managedBranches(User $manager): array
     {
         return [
@@ -346,19 +326,14 @@ class BranchStaffService
             return true;
         }
 
-        // Managers handle everyone below them; other managers are owner-only.
         return $actor->isManager() && ($target->isCashier() || $target->isStaff());
     }
 
-    /**
-     * Role is account-wide, so this affects every branch the person is at.
-     */
     private function changeRole(User $target, string $newRole): void
     {
         $role = $this->repo->findRoleByName($newRole);
 
         if ($newRole === 'Manager') {
-            // A cashier never had a password; they need to set one to use the dashboard.
             $needsSetup = ! $target->password_hash;
 
             $this->repo->updateUser($target, [
@@ -366,8 +341,6 @@ class BranchStaffService
                 'status'  => $needsSetup ? 'pending_setup' : $target->status,
             ]);
 
-            // Their cashier PIN was set by the owner/a manager, so others may
-            // know it. As a manager it approves refunds — make it temporary.
             if ($target->hasPin()) {
                 $target->forceFill(['pin_must_change' => true])->save();
             }
@@ -379,8 +352,7 @@ class BranchStaffService
             return;
         }
 
-        // → Cashier or Staff: no more dashboard access.
-        $this->repo->updateUser($target, [
+            $this->repo->updateUser($target, [
             'role_id'       => $role->role_id,
             'password_hash' => null,
             'status'        => 'active',
@@ -388,7 +360,6 @@ class BranchStaffService
 
         $target->tokens()->delete();
 
-        // → Staff: records only, so the PIN goes and any register session ends.
         if ($newRole === 'Staff') {
             $target->forceFill([
                 'pin_hash'            => null,
@@ -410,11 +381,6 @@ class BranchStaffService
         ));
     }
 
-    /**
-     * Non-blocking warnings when a shift falls outside the cafe's opening hours.
-     *
-     * @return array<int, string>
-     */
     private function scheduleWarnings(CafeBranch $branch, array $days): array
     {
         if (empty($days)) {
@@ -441,10 +407,25 @@ class BranchStaffService
                 continue;
             }
 
+            if ($open->is_24_hours) {
+                continue;
+            }
+
             $opens  = substr((string) $open->open_time, 0, 5);
             $closes = substr((string) $open->close_time, 0, 5);
 
-            if ($opens && $closes && ($day['start_time'] < $opens || $day['end_time'] > $closes)) {
+            if (! $opens || ! $closes) {
+                continue;
+            }
+
+            $todayEnd = $open->closesAfterMidnight() ? '24:00' : $closes;
+            $fitsToday = $day['start_time'] >= $opens && $day['end_time'] <= $todayEnd;
+
+            $yesterday = $hours->get(self::DAY_NAMES[($day['day_of_week'] + 6) % 7]);
+            $fitsYesterdaysLateHours = $yesterday?->closesAfterMidnight()
+                && $day['end_time'] <= substr((string) $yesterday->close_time, 0, 5);
+
+            if (! $fitsToday && ! $fitsYesterdaysLateHours) {
                 $warnings[] = "{$dayName}: shift {$day['start_time']}-{$day['end_time']} is outside opening hours ({$opens}-{$closes}).";
             }
         }

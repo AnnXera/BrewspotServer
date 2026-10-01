@@ -24,7 +24,7 @@ class AdminSeeder extends Seeder
                 'lastname'          => 'Jupiter',
                 'username'          => 'brewspot_admin',
                 'password_hash'     => Hash::make('Brewspot1'), 
-                'phone_number'      => '09123456789',
+                'phone_number'      => '+639123456789',
                 'role_id'           => 1,
                 'status'            => 'active',
                 'email_verified_at' => now(), 

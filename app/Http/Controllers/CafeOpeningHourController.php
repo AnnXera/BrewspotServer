@@ -3,8 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateCafeOpeningHoursRequest;
+use App\Http\Resources\CafeOpeningHourResource;
+use App\Models\Cafe;
+use App\Models\CafeOpeningHour;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CafeOpeningHourController extends Controller
 {
@@ -12,18 +16,18 @@ class CafeOpeningHourController extends Controller
     {
         $cafe = $request->user()->cafes()->first();
 
-        if (!$cafe) {
+        if (! $cafe) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cafe not found.',
             ], 404);
         }
 
-        $openingHours = $cafe->openingHours()->orderByRaw("FIELD(day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')")->get();
+        $cafe->ensureOpeningHours();
 
         return response()->json([
             'success' => true,
-            'data'    => $openingHours,
+            'data'    => $this->week($cafe),
         ]);
     }
 
@@ -31,30 +35,41 @@ class CafeOpeningHourController extends Controller
     {
         $cafe = $request->user()->cafes()->first();
 
-        if (!$cafe) {
+        if (! $cafe) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cafe not found.',
             ], 404);
         }
 
-        $validated = $request->validated();
+        DB::transaction(function () use ($cafe, $request) {
+            foreach ($request->validated('hours') as $day) {
+                $is24     = ! empty($day['is_24_hours']);
+                $hasTimes = ! $day['is_closed'] && ! $is24;
 
-        foreach ($validated['hours'] as $hourData) {
-            $cafe->openingHours()->updateOrCreate(
-                ['day_of_week' => $hourData['day_of_week']],
-                [
-                    'is_closed'  => $hourData['is_closed'],
-                    'open_time'  => $hourData['open_time'],
-                    'close_time' => $hourData['close_time'],
-                ]
-            );
-        }
+                $cafe->openingHours()->updateOrCreate(
+                    ['day_of_week' => $day['day_of_week']],
+                    [
+                        'is_closed'   => $day['is_closed'],
+                        'is_24_hours' => ! $day['is_closed'] && $is24,
+                        'open_time'   => $hasTimes ? $day['open_time'] : null,
+                        'close_time'  => $hasTimes ? $day['close_time'] : null,
+                    ]
+                );
+            }
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Opening hours updated successfully.',
-            'data'    => $cafe->openingHours()->orderByRaw("FIELD(day_of_week, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')")->get(),
+            'data'    => $this->week($cafe),
         ]);
+    }
+
+    private function week(Cafe $cafe)
+    {
+        return CafeOpeningHourResource::collection(
+            $cafe->openingHours()->get()->sortBy(fn ($h) => array_search($h->day_of_week, CafeOpeningHour::DAYS))->values()
+        );
     }
 }
