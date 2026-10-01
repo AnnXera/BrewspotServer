@@ -83,7 +83,7 @@ class BranchStaffService
                 $assignment = $this->repo->assignToBranch(
                     $staffUser->user_id,
                     $branch->branch_id,
-                    $payload['hired_at'] ?? null
+                    $payload['hired_at'] ?? now()->toDateString()
                 );
 
                 if (! empty($payload['schedule'])) {

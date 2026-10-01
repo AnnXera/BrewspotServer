@@ -45,7 +45,7 @@ class StaffMemberResource extends JsonResource
                 'branch_uuid'       => $assignment->branch?->uuid,
                 'branch_name'       => $assignment->branch?->branch_name,
                 'employment_status' => $assignment->employment_status,
-                'hired_at'          => $assignment->hired_at?->toDateString(),
+                'hired_at'          => $assignment->hired_at?->toDateString() ?? $assignment->created_at?->toDateString(),
                 'terminated_at'     => $assignment->terminated_at?->toISOString(),
             ] : null,
             // Other branches this person is actively assigned to ("Also at: …").
