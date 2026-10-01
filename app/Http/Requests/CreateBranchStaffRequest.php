@@ -35,8 +35,9 @@ class CreateBranchStaffRequest extends FormRequest
             'middlename'   => ['nullable', 'string', 'max:100'],
             'lastname'     => ['required', 'string', 'max:100'],
             // Required for every employee (contact). Only managers use it to log in.
-            'email'        => ['required', 'email', 'max:255', 'unique:users,email'],
-            'phone_number' => ['required', ...self::PHONE_RULE],
+            // Neither may belong to another user or a cafe branch.
+            'email'        => ['required', 'email', 'max:255', $this->uniqueEmailRule()],
+            'phone_number' => ['required', ...self::PHONE_RULE, $this->uniquePhoneRule()],
             'address'      => ['required', 'string', 'max:255'],
             'role'         => ['required', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'     => ['nullable', 'date'],
@@ -56,7 +57,6 @@ class CreateBranchStaffRequest extends FormRequest
     {
         return [
             'email.required'    => 'Email is required.',
-            'email.unique'      => 'This email is already in use.',
             'phone_number.required' => 'Phone number is required.',
             'phone_number.regex'    => self::PHONE_REGEX_MESSAGE,
             'address.required'  => 'Address is required.',

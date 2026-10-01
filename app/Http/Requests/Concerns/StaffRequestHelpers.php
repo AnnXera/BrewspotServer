@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Concerns;
 
+use App\Models\CafeBranch;
+use App\Models\User;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -34,6 +36,63 @@ trait StaffRequestHelpers
                 $this->merge(['phone_number' => '+63' . $digits]);
             }
         }
+    }
+
+    /**
+     * No other user and no cafe branch may have this phone. Older rows store
+     * numbers as 09…/639… rather than +639…, so every equivalent form is
+     * checked. Runs after normalizePhoneNumber(); format is PHONE_RULE's job.
+     */
+    protected function uniquePhoneRule(?string $ignoreUserUuid = null): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreUserUuid) {
+            if (! is_string($value) || ! preg_match('/^\+639\d{9}$/', $value)) {
+                return;
+            }
+
+            $local    = substr($value, 3); // 9XXXXXXXXX
+            $variants = ["+63{$local}", "63{$local}", "0{$local}", $local];
+
+            $usedByUser = User::whereIn('phone_number', $variants)
+                ->when($ignoreUserUuid, fn ($q) => $q->where('uuid', '!=', $ignoreUserUuid))
+                ->exists();
+
+            if ($usedByUser) {
+                $fail('This phone number is already used by another account.');
+                return;
+            }
+
+            if (CafeBranch::whereIn('cafe_phonenumber', $variants)->exists()) {
+                $fail('This phone number is already used by a cafe branch.');
+            }
+        };
+    }
+
+    /**
+     * No other user and no cafe branch may have this email (ignoring case).
+     */
+    protected function uniqueEmailRule(?string $ignoreUserUuid = null): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreUserUuid) {
+            if (! is_string($value) || $value === '') {
+                return;
+            }
+
+            $email = mb_strtolower(trim($value));
+
+            $usedByUser = User::whereRaw('LOWER(email) = ?', [$email])
+                ->when($ignoreUserUuid, fn ($q) => $q->where('uuid', '!=', $ignoreUserUuid))
+                ->exists();
+
+            if ($usedByUser) {
+                $fail('This email is already used by another account.');
+                return;
+            }
+
+            if (CafeBranch::whereRaw('LOWER(cafe_email) = ?', [$email])->exists()) {
+                $fail('This email is already used by a cafe branch.');
+            }
+        };
     }
 
     protected function scheduleRules(bool $required): array

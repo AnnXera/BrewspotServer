@@ -200,6 +200,50 @@ class StaffAndPosTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => 'phone@test.local', 'phone_number' => '+639171234567']);
     }
 
+    public function test_email_and_phone_must_not_be_used_by_another_user_or_a_branch(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = "/api/owner/branches/{$this->mainBranch->uuid}/staff";
+        $base  = ['firstname' => 'A', 'lastname' => 'B', 'role' => 'Staff', 'address' => 'Davao City'];
+
+        // An older user row stored the 09… way still counts as the same number.
+        $this->owner->update(['phone_number' => '09181234567']);
+        $this->mainBranch->update(['cafe_phonenumber' => '+639191234567']);
+
+        $this->api('POST', $url, $token, [...$base, 'email' => 'fresh1@test.local', 'phone_number' => '+63 918 123 4567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.phone_number.0', 'This phone number is already used by another account.');
+
+        $this->api('POST', $url, $token, [...$base, 'email' => 'fresh2@test.local', 'phone_number' => '09191234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.phone_number.0', 'This phone number is already used by a cafe branch.');
+
+        // Emails: other users and branch emails, ignoring case.
+        $this->api('POST', $url, $token, [...$base, 'email' => 'OWNER@test.local', 'phone_number' => '09201234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.email.0', 'This email is already used by another account.');
+
+        $this->api('POST', $url, $token, [...$base, 'email' => strtoupper($this->otherBranch->cafe_email), 'phone_number' => '09201234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.email.0', 'This email is already used by a cafe branch.');
+
+        // Owner-level create (several branches) has the same rules.
+        $this->api('POST', '/api/owner/staff', $token, [...$base, 'email' => $this->mainBranch->cafe_email,
+            'phone_number' => '09191234567', 'branch_uuids' => [$this->mainBranch->uuid]])
+            ->assertStatus(422)->assertJsonValidationErrors(['email', 'phone_number']);
+
+        // Editing: another person's details are refused, keeping your own is fine.
+        $this->cashier->update(['phone_number' => '+639211234567']);
+        $edit = "$url/{$this->cashier->uuid}";
+
+        $this->api('PATCH', $edit, $token, ['phone_number' => '09181234567'])
+            ->assertStatus(422)->assertJsonValidationErrors('phone_number');
+        $this->api('PATCH', $edit, $token, ['email' => 'manager@test.local'])
+            ->assertStatus(422)->assertJsonValidationErrors('email');
+        $this->api('PATCH', $edit, $token, ['phone_number' => '09211234567', 'email' => strtoupper($this->cashier->email)])
+            ->assertOk();
+    }
+
     public function test_phone_can_be_changed_but_not_cleared_on_update(): void
     {
         $token = $this->tokenFor($this->owner);
@@ -583,9 +627,12 @@ class StaffAndPosTest extends TestCase
         return $this->withHeader('Authorization', "Bearer {$token}")->json($method, $uri, $data);
     }
 
+    // Phones must be unique across users and branches, so each call gets its own number.
     private function contact(): array
     {
-        return ['phone_number' => '09171234567', 'address' => 'Ecoland, Davao City'];
+        static $n = 0;
+
+        return ['phone_number' => sprintf('0917%07d', 1000 + ++$n), 'address' => 'Ecoland, Davao City'];
     }
 
     private function tokenFor(User $user): string

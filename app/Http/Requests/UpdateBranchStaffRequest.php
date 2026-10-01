@@ -36,11 +36,12 @@ class UpdateBranchStaffRequest extends FormRequest
             'firstname'         => ['sometimes', 'required', 'string', 'max:100'],
             'middlename'        => ['sometimes', 'nullable', 'string', 'max:100'],
             'lastname'          => ['sometimes', 'required', 'string', 'max:100'],
+            // Neither may belong to another user or a cafe branch; keeping your own is fine.
             'email'             => [
                 'sometimes', 'required', 'email', 'max:255',
-                Rule::unique('users', 'email')->ignore($this->route('userUuid'), 'uuid'),
+                $this->uniqueEmailRule($this->route('userUuid')),
             ],
-            'phone_number'      => ['sometimes', 'required', ...self::PHONE_RULE],
+            'phone_number'      => ['sometimes', 'required', ...self::PHONE_RULE, $this->uniquePhoneRule($this->route('userUuid'))],
             'address'           => ['sometimes', 'nullable', 'string', 'max:255'],
             'role'              => ['sometimes', 'string', Rule::in(User::EMPLOYEE_ROLES)],
             'hired_at'          => ['sometimes', 'nullable', 'date'],
@@ -51,7 +52,6 @@ class UpdateBranchStaffRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.unique'         => 'This email is already in use.',
             'phone_number.regex'   => self::PHONE_REGEX_MESSAGE,
             'employment_status.in' => 'Status must be active, inactive or suspended. Use Terminate to end employment.',
         ];
