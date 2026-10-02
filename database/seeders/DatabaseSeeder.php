@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             OwnerSeeder::class,
             DocumentSeeder::class,
+            FloorPlanSeeder::class,
         ]);
     }
 }
