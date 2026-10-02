@@ -7,6 +7,7 @@ use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\CategoryBranch;
 use App\Models\Feature;
+use App\Models\IngredientConsumptionLog;
 use App\Models\InventoryServing;
 use App\Models\MenuBranch;
 use App\Models\MenuCategory;
@@ -14,6 +15,8 @@ use App\Models\MenuItem;
 use App\Models\Role;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -250,7 +253,130 @@ class ServingsTest extends TestCase
         $this->api('GET', $this->url(), $token)->assertForbidden();
     }
 
+    public function test_categories_overview_rolls_up_today_and_filters(): void
+    {
+        $token  = $this->tokenFor($this->manager);
+        $bakery = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Bakery', 'is_available' => true]);
+        $tart   = $this->makeItem('Tart', $bakery);
+
+        $this->makeServing($this->latte, ['expected_servings' => 70, 'servings_sold' => 18, 'spoilage_qty' => 2]);
+        $this->makeServing($tart, ['expected_servings' => 10, 'servings_sold' => 10]);
+        $this->makeServing($this->croissant, ['expected_servings' => 5, 'is_sold_out' => true]);
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            ->assertJsonCount(3, 'categories.data')
+            ->assertJsonPath('categories.data.0.name', 'Bakery')
+            ->assertJsonPath('categories.data.0.status', 'sold_out')
+            ->assertJsonPath('categories.data.1.name', 'Drinks')
+            ->assertJsonPath('categories.data.1.remaining', 50)
+            ->assertJsonPath('categories.data.1.expected_servings', 70)
+            ->assertJsonPath('categories.data.1.status', 'available')
+            ->assertJsonPath('categories.data.2.name', 'Uncategorized')
+            ->assertJsonPath('categories.data.2.status', 'sold_out');
+
+        $this->api('GET', $this->url('/categories?search=drin&sort=remaining_desc&per_page=1'), $token)
+            ->assertOk()->assertJsonCount(1, 'categories.data')->assertJsonPath('categories.total', 1);
+
+        $this->api('GET', $this->url('/categories?sort=bogus'), $token)->assertStatus(422)->assertJsonValidationErrors('sort');
+    }
+
+    public function test_categories_overview_lists_visible_categories_without_servings(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Bakery', 'is_available' => true]);
+        MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Hidden', 'is_available' => false]);
+        $shown = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Shown here', 'is_available' => false]);
+        $off   = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Off here', 'is_available' => true]);
+        CategoryBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_category_id' => $shown->men_category_id, 'is_available' => true]);
+        CategoryBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_category_id' => $off->men_category_id, 'is_available' => false]);
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            ->assertJsonPath('categories.total', 3)
+            ->assertJsonPath('categories.data.0.name', 'Bakery')
+            ->assertJsonPath('categories.data.0.expected_servings', 0)
+            ->assertJsonPath('categories.data.0.status', 'sold_out')
+            ->assertJsonPath('categories.data.1.name', 'Drinks')
+            ->assertJsonPath('categories.data.2.name', 'Shown here');
+    }
+
+    public function test_ingredients_used_sums_todays_completed_sales_only(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $this->sell($this->latte, 2, [['Espresso', 'shots', 2], ['Milk', 'cups', 1.5], ['Salt', 'pinch', 1]]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 1]]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['status' => 'voided']);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['created_at' => now()->subDay()]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['branch_id' => $this->otherBranch->branch_id]);
+
+        $this->api('GET', $this->url('/ingredients-used'), $token)
+            ->assertOk()
+            ->assertJsonCount(2, 'ingredients')
+            ->assertJsonPath('ingredients.0', ['name' => 'Espresso', 'unit' => 'shots', 'quantity' => 3, 'percent' => 100])
+            ->assertJsonPath('ingredients.1.name', 'Milk')
+            ->assertJsonPath('ingredients.1.percent', 50);
+
+        $this->api('GET', $this->url('/ingredients-used?search=mil&sort=quantity_asc'), $token)
+            ->assertOk()->assertJsonCount(1, 'ingredients');
+    }
+
+    public function test_log_lists_todays_sold_lines_newest_first(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $this->sell($this->latte, 2);
+        $this->sell($this->croissant, 1);
+        $this->sell($this->latte, 1, [], ['created_at' => now()->subDay()]);
+
+        $this->api('GET', $this->url('/log'), $token)
+            ->assertOk()
+            ->assertJsonCount(2, 'log.data')
+            ->assertJsonPath('log.data.0.menu_name', 'Croissant')
+            ->assertJsonPath('log.data.0.quantity', 1)
+            ->assertJsonPath('log.data.1.menu_name', 'Latte')
+            ->assertJsonPath('log.data.1.quantity', 2);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * @param  array<int, array{0: string, 1: string, 2: float|int}>  $ingredients  name, unit, quantity
+     */
+    private function sell(MenuItem $item, int $qty, array $ingredients = [], array $transaction = []): TransactionItem
+    {
+        $created = $transaction['created_at'] ?? null;
+        unset($transaction['created_at']);
+
+        $tx = Transaction::create([
+            'branch_id'    => $this->mainBranch->branch_id,
+            'total_amount' => 120 * $qty,
+            ...$transaction,
+        ]);
+
+        if ($created) {
+            $tx->forceFill(['created_at' => $created])->save();
+        }
+
+        $line = TransactionItem::create([
+            'transaction_id' => $tx->transaction_id,
+            'men_item_id'    => $item->men_item_id,
+            'quantity'       => $qty,
+            'unit_price'     => 120,
+        ]);
+
+        foreach ($ingredients as [$name, $unit, $quantity]) {
+            IngredientConsumptionLog::create([
+                'transaction_item_id' => $line->transaction_item_id,
+                'ingredient_name'     => $name,
+                'quantity_consumed'   => $quantity,
+                'unit'                => $unit,
+            ]);
+        }
+
+        return $line;
+    }
 
     private function url(string $suffix = '', ?CafeBranch $branch = null): string
     {

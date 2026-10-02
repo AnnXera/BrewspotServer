@@ -26,6 +26,7 @@ use App\Http\Controllers\BranchStaffController;
 use App\Http\Controllers\ManagerAccountController;
 use App\Http\Controllers\PosDeviceController;
 use App\Http\Controllers\ServingController;
+use App\Http\Controllers\ServingOverviewController;
 
 use App\Http\Controllers\TempUploadController;
 
@@ -52,6 +53,9 @@ $branchScopedRoutes = function () {
     Route::middleware('plan.feature:menu_management')->group(function () {
         Route::get('/servings',                    [ServingController::class, 'index']);
         Route::get('/servings/available-items',    [ServingController::class, 'availableItems']); // before {servingUuid}
+        Route::get('/servings/categories',         [ServingOverviewController::class, 'categories']);
+        Route::get('/servings/ingredients-used',   [ServingOverviewController::class, 'ingredientsUsed']);
+        Route::get('/servings/log',                [ServingOverviewController::class, 'log']);
         Route::post('/servings',                   [ServingController::class, 'store']);
         Route::patch('/servings/{servingUuid}',    [ServingController::class, 'update']);
         Route::delete('/servings/{servingUuid}',   [ServingController::class, 'destroy']);
