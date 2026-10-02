@@ -19,6 +19,14 @@ class OwnerProfileController extends Controller
         return response()->json($result);
     }
 
+    public function dashboardStats(Request $request): JsonResponse
+    {
+        $result = $this->service->getDashboardStats($request->user());
+
+        return response()->json($result);
+    }
+
+
     public function cafes(Request $request): JsonResponse
     {
         $result = $this->service->getCafes($request->user());

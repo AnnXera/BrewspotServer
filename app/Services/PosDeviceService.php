@@ -7,8 +7,17 @@ use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\PosDevice;
 use App\Models\User;
+use App\Models\MenuCategory;
+use App\Models\MenuItem;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
+use App\Models\Payment;
+use App\Http\Resources\MenuCategoryResource;
+use App\Http\Resources\MenuItemResource;
 use App\Repository\PosDeviceRepository;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 use Laravel\Sanctum\PersonalAccessToken;
 
 /**
@@ -117,7 +126,7 @@ class PosDeviceService
     {
         return [
             'success' => true,
-            'device'  => new PosDeviceResource($device->load(['branch', 'registeredBy', 'activeStaff.user'])),
+            'device'  => new PosDeviceResource($device->load(['branch.cafe', 'registeredBy', 'activeStaff.user'])),
         ];
     }
 
@@ -135,6 +144,134 @@ class PosDeviceService
                 'pin_must_change' => $a->user->mustChangePin(),
             ])->values(),
         ];
+    }
+
+    public function menu(PosDevice $device): array
+    {
+        $cafeId = $device->branch->cafe_id;
+        
+        $categories = MenuCategory::where('cafe_id', $cafeId)->orderBy('name')->get();
+        
+        $items = MenuItem::where('cafe_id', $cafeId)
+            ->where('is_available', true)
+            ->with('category')
+            ->orderBy('menu_name')
+            ->get();
+            
+        return [
+            'success' => true,
+            'categories' => MenuCategoryResource::collection($categories)->resolve(),
+            'items' => MenuItemResource::collection($items)->resolve(),
+        ];
+    }
+
+    public function transactions(PosDevice $device): array
+    {
+        $today = Carbon::today();
+        $thisMonth = Carbon::now()->startOfMonth();
+
+        $todayTotal = Transaction::where('branch_id', $device->branch_id)
+            ->whereDate('created_at', $today)
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        $todayCount = Transaction::where('branch_id', $device->branch_id)
+            ->whereDate('created_at', $today)
+            ->where('status', 'completed')
+            ->count();
+
+        $monthTotal = Transaction::where('branch_id', $device->branch_id)
+            ->where('created_at', '>=', $thisMonth)
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        $transactions = Transaction::where('branch_id', $device->branch_id)
+            ->with(['staff.user', 'items.menuItem'])
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get();
+
+        return [
+            'success' => true,
+            'today_total' => $todayTotal,
+            'today_count' => $todayCount,
+            'month_total' => $monthTotal,
+            'transactions' => $transactions->map(fn($t) => [
+                'uuid' => $t->uuid,
+                'receipt_number' => $t->receipt_number,
+                'staff_name' => $t->staff ? trim($t->staff->user->firstname . ' ' . $t->staff->user->lastname) : 'Unknown',
+                'total_amount' => $t->total_amount,
+                'status' => $t->status,
+                'created_at' => $t->created_at->toISOString(),
+                'items_count' => $t->items->sum('quantity'),
+            ])->values(),
+        ];
+    }
+
+    public function checkout(PosDevice $device, array $data): array
+    {
+        if (!$device->active_staff_id) {
+            abort(403, 'No active staff assigned to this register');
+        }
+
+        return DB::transaction(function () use ($device, $data) {
+            $totalAmount = 0;
+            $itemsToInsert = [];
+            
+            foreach ($data['items'] as $reqItem) {
+                $menuItem = MenuItem::where('uuid', $reqItem['uuid'])->firstOrFail();
+                $totalAmount += $menuItem->base_price * $reqItem['quantity'];
+                
+                $itemsToInsert[] = [
+                    'menuItem' => $menuItem,
+                    'quantity' => $reqItem['quantity'],
+                    'unit_price' => $menuItem->base_price,
+                ];
+            }
+            
+            $subtotal = $totalAmount;
+            $tax = $subtotal * 0.12;
+            $finalTotal = $subtotal + $tax;
+
+            $latestTransactionId = Transaction::max('transaction_id') ?? 0;
+            $nextNumber = $latestTransactionId + 1;
+            $receiptNumber = 'CF' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+
+            $transaction = Transaction::create([
+                'branch_id' => $device->branch_id,
+                'staff_id' => $device->active_staff_id,
+                'total_amount' => $finalTotal,
+                'receipt_number' => $receiptNumber,
+                'status' => 'completed',
+            ]);
+
+            foreach ($itemsToInsert as $insertData) {
+                TransactionItem::create([
+                    'transaction_id' => $transaction->transaction_id,
+                    'men_item_id' => $insertData['menuItem']->men_item_id,
+                    'quantity' => $insertData['quantity'],
+                    'unit_price' => $insertData['unit_price'],
+                ]);
+            }
+            
+            Payment::create([
+                'user_id' => $device->activeStaff->user_id,
+                'payable_type' => Transaction::class,
+                'payable_id' => $transaction->transaction_id,
+                'amount' => $finalTotal,
+                'amount_tendered' => $data['amount_tendered'],
+                'amount_change' => max(0, $data['amount_tendered'] - $finalTotal),
+                'payment_method_type' => $data['payment_method'],
+                'status' => 'completed',
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Order completed successfully',
+                'transaction_uuid' => $transaction->uuid,
+                'receipt_number' => $transaction->receipt_number,
+            ];
+        });
     }
 
     public function unlock(PosDevice $device, string $userUuid, string $pin): array

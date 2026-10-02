@@ -19,6 +19,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'uuid',
+        'receipt_number',
         'branch_id',
         'staff_id',
         'total_amount',

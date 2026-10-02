@@ -121,6 +121,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
         Route::get('/profile',         [OwnerProfileController::class, 'profile']);
+        Route::get('/dashboard-stats', [OwnerProfileController::class, 'dashboardStats']);
         Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
         Route::get('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
         Route::put('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
@@ -199,6 +200,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::middleware('pos.device')->prefix('device')->group(function () {
             Route::get('/',                        [PosDeviceController::class, 'current']);
             Route::delete('/',                     [PosDeviceController::class, 'unregister']);
+            Route::get('/menu',                    [PosDeviceController::class, 'menu']);
+            Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
+            Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
             Route::get('/staff',                   [PosDeviceController::class, 'staff']); // lock-screen names
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN

@@ -153,4 +153,53 @@ class OwnerProfileService
 
         return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }
+
+    public function getDashboardStats(User $owner): array
+    {
+        $branchIds = \App\Models\CafeBranch::whereHas('cafe', fn ($q) => $q->where('user_id', $owner->user_id))
+            ->pluck('branch_id')
+            ->toArray();
+
+        // Total earnings
+        $totalEarnings = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        // Today's revenue and orders
+        $todayTransactions = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+            ->where('status', 'completed')
+            ->whereDate('created_at', today())
+            ->get();
+            
+        $todayRevenue = $todayTransactions->sum('total_amount');
+        $todayOrders = $todayTransactions->count();
+        $avgOrderValue = $todayOrders > 0 ? $todayRevenue / $todayOrders : 0;
+        
+        // Chart Data (Last 6 months revenue)
+        $chartData = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = today()->subMonths($i);
+            $revenue = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+                ->where('status', 'completed')
+                ->whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->sum('total_amount');
+            $chartData[] = [
+                'month' => $month->format('M Y'),
+                'revenue' => (float)$revenue,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'total_earnings' => (float)$totalEarnings,
+            'detailed_stats' => [
+                'today_revenue' => (float)$todayRevenue,
+                'today_orders' => $todayOrders,
+                'avg_order_value' => (float)$avgOrderValue,
+                'active_customers' => $todayOrders, // approximate
+            ],
+            'chart_data' => $chartData,
+        ];
+    }
 }

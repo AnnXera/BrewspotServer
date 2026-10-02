@@ -16,6 +16,7 @@ class PosDeviceResource extends JsonResource
             'name'          => $this->name,
             'branch_uuid'   => $this->branch?->uuid,
             'branch_name'   => $this->branch?->branch_name,
+            'cafe_name'     => $this->branch?->cafe?->cafe_name,
             'registered_by' => $this->registeredBy
                 ? trim("{$this->registeredBy->firstname} {$this->registeredBy->lastname}")
                 : null,
