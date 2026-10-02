@@ -39,10 +39,12 @@ class SaveFloorPlanLayoutRequest extends FormRequest
             'elements'                  => ['present', 'array', 'max:' . $limits['max_elements']],
             'elements.*.uuid'           => ['nullable', 'string', 'max:64', 'distinct'],
             'elements.*.category'       => ['required', 'string', Rule::in($this->elementCategories())],
-            'elements.*.asset_key'      => ['required', 'string', Rule::in($elementKeys)],
+            'elements.*.asset_key'      => ['nullable', 'string', Rule::in($elementKeys)],
             'elements.*.label'          => ['nullable', 'string', 'max:120'],
             'elements.*.x_location'     => ['required', 'numeric', 'min:0'],
             'elements.*.y_location'     => ['required', 'numeric', 'min:0'],
+            'elements.*.width'          => ['nullable', 'numeric', 'min:' . $limits['element_min_size'], 'max:' . $limits['canvas_max']],
+            'elements.*.height'         => ['nullable', 'numeric', 'min:' . $limits['element_min_size'], 'max:' . $limits['canvas_max']],
             'elements.*.rotation'       => ['nullable', 'numeric', 'min:0', 'max:360'],
             'elements.*.z_index'        => ['nullable', 'integer', 'min:-1000', 'max:1000'],
         ];
@@ -68,9 +70,27 @@ class SaveFloorPlanLayoutRequest extends FormRequest
             }
 
             $assets = config('floor_plan.assets');
+            $drawn  = config('floor_plan.drawn_categories');
 
             foreach ($this->input('elements', []) as $i => $element) {
-                if (($assets[$element['asset_key']]['category'] ?? null) !== $element['category']) {
+                if (in_array($element['category'], $drawn, true)) {
+                    // Drawn by the client as a rectangle: size instead of an image.
+                    if (! empty($element['asset_key'])) {
+                        $v->errors()->add("elements.$i.asset_key", 'This kind of element is drawn, so it has no asset.');
+                    }
+
+                    foreach (['width', 'height'] as $size) {
+                        if (! isset($element[$size])) {
+                            $v->errors()->add("elements.$i.$size", "A {$element['category']} needs a $size.");
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (empty($element['asset_key'])) {
+                    $v->errors()->add("elements.$i.asset_key", 'Choose an asset.');
+                } elseif (($assets[$element['asset_key']]['category'] ?? null) !== $element['category']) {
                     $v->errors()->add("elements.$i.asset_key", 'This asset does not belong to that category.');
                 }
             }
@@ -80,10 +100,12 @@ class SaveFloorPlanLayoutRequest extends FormRequest
     /** @return array<int, string> */
     private function elementCategories(): array
     {
-        return array_values(array_unique(array_filter(
+        $fromAssets = array_filter(
             array_column(config('floor_plan.assets'), 'category'),
             fn ($c) => $c !== 'table'
-        )));
+        );
+
+        return array_values(array_unique([...$fromAssets, ...config('floor_plan.drawn_categories')]));
     }
 
     public function messages(): array

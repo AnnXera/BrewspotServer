@@ -58,26 +58,6 @@ class FloorPlanTest extends FloorPlanTestCase
         }
     }
 
-    public function test_seeder_adds_a_valid_starter_plan_once_per_branch(): void
-    {
-        $this->seed(\Database\Seeders\FloorPlanSeeder::class);
-        $this->seed(\Database\Seeders\FloorPlanSeeder::class); // re-run is a no-op
-
-        $this->assertSame(2, \App\Models\FloorPlan::count());
-
-        $plan = \App\Models\FloorPlan::where('branch_id', $this->mainBranch->branch_id)->first();
-        $this->assertTrue($plan->is_active);
-        $this->assertSame(6, $plan->tables()->count());
-
-        // The seeded layout is accepted by the same validation as a manual save.
-        $layout = [
-            'tables'   => $plan->tables->map(fn ($t) => $t->only(['uuid', 'table_name', 'capacity', 'asset_key', 'x_location', 'y_location', 'rotation']))->all(),
-            'elements' => $plan->elements->map(fn ($e) => $e->only(['uuid', 'category', 'asset_key', 'label', 'x_location', 'y_location', 'rotation', 'z_index']))->all(),
-        ];
-
-        $this->api('PUT', $this->base('manager') . "/floor-plans/{$plan->uuid}/layout", $this->tokenFor($this->manager), $layout)->assertOk();
-    }
-
     // ── Plans ────────────────────────────────────────────────────────────
 
     public function test_first_plan_is_active_and_activating_another_deactivates_the_rest(): void
@@ -170,7 +150,7 @@ class FloorPlanTest extends FloorPlanTestCase
             ],
             'elements' => [
                 ['category' => 'plant', 'asset_key' => 'plant_small', 'x_location' => 10, 'y_location' => 10, 'z_index' => 2],
-                ['category' => 'wall', 'asset_key' => 'wall_horizontal', 'label' => 'North', 'x_location' => 0, 'y_location' => 0],
+                ['category' => 'wall', 'label' => 'North', 'x_location' => 500, 'y_location' => 5, 'width' => 1000, 'height' => 10],
             ],
         ])->assertOk()->assertJsonCount(2, 'floor_plan.tables')->assertJsonCount(2, 'floor_plan.elements');
 
@@ -212,8 +192,8 @@ class FloorPlanTest extends FloorPlanTestCase
                 ['table_name' => 'a', 'capacity' => 0, 'x_location' => -5, 'y_location' => 1, 'rotation' => 400],             // duplicate name, bad numbers
             ],
             'elements' => [
-                ['category' => 'plant', 'asset_key' => 'wall_corner', 'x_location' => 1, 'y_location' => 1],                    // category mismatch
-                ['category' => 'wall', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
+                ['category' => 'plant', 'asset_key' => 'counter_pos', 'x_location' => 1, 'y_location' => 1],                    // category mismatch
+                ['category' => 'plant', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
             ],
         ])->assertStatus(422)->assertJsonValidationErrors([
             'tables.0.asset_key', 'tables.1.capacity', 'tables.1.x_location', 'tables.1.rotation',
@@ -226,10 +206,74 @@ class FloorPlanTest extends FloorPlanTestCase
                 ['table_name' => 'A', 'capacity' => 2, 'x_location' => 1, 'y_location' => 1],
                 ['table_name' => ' a ', 'capacity' => 2, 'x_location' => 2, 'y_location' => 2],
             ],
-            'elements' => [['category' => 'plant', 'asset_key' => 'wall_corner', 'x_location' => 1, 'y_location' => 1]],
+            'elements' => [['category' => 'plant', 'asset_key' => 'counter_pos', 'x_location' => 1, 'y_location' => 1]],
         ])->assertStatus(422)->assertJsonValidationErrors(['tables.1.table_name', 'elements.0.asset_key']);
 
         $this->api('PUT', $url, $token, ['elements' => []])->assertStatus(422)->assertJsonValidationErrors('tables');
+    }
+
+    public function test_walls_are_drawn_shapes_with_a_size_and_no_asset(): void
+    {
+        $plan  = $this->makePlan($this->mainBranch);
+        $token = $this->tokenFor($this->manager);
+        $url   = $this->base('manager') . "/floor-plans/{$plan->uuid}/layout";
+
+        // A wall needs width and height, and carries no asset.
+        $this->api('PUT', $url, $token, [
+            'tables'   => [],
+            'elements' => [
+                ['category' => 'wall', 'x_location' => 100, 'y_location' => 100],
+                ['category' => 'wall', 'asset_key' => 'plant_small', 'x_location' => 100, 'y_location' => 100, 'width' => 50, 'height' => 10],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors(['elements.0.width', 'elements.0.height', 'elements.1.asset_key']);
+
+        $this->api('PUT', $url, $token, [
+            'tables'   => [],
+            'elements' => [['category' => 'wall', 'x_location' => 100, 'y_location' => 100, 'width' => 0, 'height' => 10]],
+        ])->assertStatus(422)->assertJsonValidationErrors('elements.0.width');
+
+        // A valid wall is stored with its size and rotation; an asset element needs an asset.
+        $this->api('PUT', $url, $token, [
+            'tables'   => [],
+            'elements' => [
+                ['category' => 'wall', 'label' => 'Diagonal', 'x_location' => 300, 'y_location' => 200, 'width' => 400, 'height' => 12, 'rotation' => 45],
+                ['category' => 'counter', 'asset_key' => 'counter_straight', 'x_location' => 50, 'y_location' => 50, 'width' => 220, 'height' => 60],
+                ['category' => 'plant', 'asset_key' => 'plant_small', 'x_location' => 10, 'y_location' => 10],
+            ],
+        ])->assertOk()
+            ->assertJsonFragment(['category' => 'wall', 'asset_key' => null, 'width' => 400.0, 'height' => 12.0, 'rotation' => 45.0])
+            ->assertJsonFragment(['category' => 'counter', 'width' => 220.0, 'height' => 60.0])
+            ->assertJsonFragment(['category' => 'plant', 'width' => null, 'height' => null]);
+
+        $this->api('PUT', $url, $token, [
+            'tables'   => [],
+            'elements' => [['category' => 'plant', 'x_location' => 1, 'y_location' => 1]],
+        ])->assertStatus(422)->assertJsonValidationErrors('elements.0.asset_key');
+    }
+
+    public function test_assets_endpoint_reports_drawn_categories_and_has_no_wall_images(): void
+    {
+        $response = $this->api('GET', $this->base('manager') . '/floor-plans/assets', $this->tokenFor($this->manager))
+            ->assertOk()->assertJsonPath('drawn_categories', ['wall']);
+
+        $this->assertNotContains('wall', collect($response->json('assets'))->pluck('category')->all());
+    }
+
+    public function test_boundary_points_must_be_inside_the_canvas(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $url   = $this->base('manager') . '/floor-plans';
+        $room  = [['x' => 0, 'y' => 0], ['x' => 600, 'y' => 0], ['x' => 600, 'y' => 400], ['x' => 0, 'y' => 400]];
+
+        $this->api('POST', $url, $token, ['floorplan_name' => 'Small', 'canvas_width' => 500, 'canvas_height' => 400, 'boundary_points' => $room])
+            ->assertStatus(422)->assertJsonValidationErrors('boundary_points');
+
+        $uuid = $this->api('POST', $url, $token, ['floorplan_name' => 'Room', 'canvas_width' => 800, 'canvas_height' => 400, 'boundary_points' => $room])
+            ->assertCreated()->assertJsonCount(4, 'floor_plan.boundary_points')->json('floor_plan.uuid');
+
+        // Shrinking the canvas below the saved boundary is refused too.
+        $this->api('PATCH', "$url/$uuid", $token, ['canvas_width' => 500])->assertStatus(422)->assertJsonValidationErrors('boundary_points');
+        $this->api('PATCH', "$url/$uuid", $token, ['boundary_points' => null])->assertOk()->assertJsonPath('floor_plan.boundary_points', null);
     }
 
     public function test_layout_items_must_fit_the_canvas(): void

@@ -3,8 +3,8 @@
 /**
  * Floor plan + reservations settings.
  *
- * The images for every asset live in the client (Nuxt public/); the server
- * only stores and validates the `asset_key`. Adding an asset means adding the
+ * The images for every asset live in the client (Nuxt public/floor-plan/); the
+ * server only stores and validates the `asset_key`. Adding an asset means adding the
  * image on the client and its key here.
  */
 return [
@@ -33,7 +33,12 @@ return [
         'max_elements'       => 500,
         'max_table_capacity' => 50,
         'max_boundary_points' => 200,
+        'element_min_size'   => 1,
     ],
+
+    // Categories the client draws itself (a plain rectangle) instead of loading an
+    // image: no asset_key, but a width and height are required. Walls are drawn.
+    'drawn_categories' => ['wall'],
 
     'reservations' => [
         // The end time is chosen per reservation; the default only pre-fills the form.
@@ -54,10 +59,6 @@ return [
         'table_rect_6'    => ['category' => 'table', 'capacity' => 6],
         'table_rect_8'    => ['category' => 'table', 'capacity' => 8],
         'table_bar_high'  => ['category' => 'table', 'capacity' => 2],
-
-        'wall_horizontal' => ['category' => 'wall'],
-        'wall_vertical'   => ['category' => 'wall'],
-        'wall_corner'     => ['category' => 'wall'],
 
         'door_single'     => ['category' => 'door'],
         'door_double'     => ['category' => 'door'],

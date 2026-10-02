@@ -39,6 +39,7 @@ class FloorPlanService
         return [
             'success'              => true,
             'assets'               => $assets,
+            'drawn_categories'     => config('floor_plan.drawn_categories'),
             'table_statuses'       => config('floor_plan.table_statuses'),
             'reservation_statuses' => config('floor_plan.reservation_statuses'),
             'reservation_rules'    => config('floor_plan.reservations'),
@@ -69,6 +70,10 @@ class FloorPlanService
 
     public function create(CafeBranch $branch, array $data): array
     {
+        if ($this->pointsOutside($data['boundary_points'] ?? null, (float) $data['canvas_width'], (float) $data['canvas_height'])) {
+            return $this->invalid('boundary_points', 'Boundary points must be inside the canvas.');
+        }
+
         $plan = $this->repo->create($branch->branch_id, $data);
 
         return [
@@ -93,6 +98,12 @@ class FloorPlanService
         if ($plan->tables()->max('x_location') > $width || $plan->elements()->max('x_location') > $width
             || $plan->tables()->max('y_location') > $height || $plan->elements()->max('y_location') > $height) {
             return $this->invalid('canvas_width', 'Tables or decor sit outside the new canvas size. Move them first.');
+        }
+
+        $points = array_key_exists('boundary_points', $data) ? $data['boundary_points'] : $plan->boundary_points;
+
+        if ($this->pointsOutside($points, $width, $height)) {
+            return $this->invalid('boundary_points', 'Boundary points must be inside the canvas.');
         }
 
         $this->repo->update($plan, $data);
@@ -199,10 +210,12 @@ class FloorPlanService
         foreach ($rows as $i => $row) {
             $attributes = [
                 'category'   => $row['category'],
-                'asset_key'  => $row['asset_key'],
+                'asset_key'  => $row['asset_key'] ?? null,
                 'label'      => $row['label'] ?? null,
                 'x_location' => $row['x_location'],
                 'y_location' => $row['y_location'],
+                'width'      => $row['width'] ?? null,
+                'height'     => $row['height'] ?? null,
                 'rotation'   => $row['rotation'] ?? 0,
                 'z_index'    => $row['z_index'] ?? 0,
             ];
@@ -232,6 +245,17 @@ class FloorPlanService
         ];
 
         return $creating ? $attributes + ['status' => 'available'] : $attributes;
+    }
+
+    private function pointsOutside(?array $points, float $width, float $height): bool
+    {
+        foreach ($points ?? [] as $point) {
+            if ((float) $point['x'] > $width || (float) $point['y'] > $height) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function outOfCanvas(FloorPlan $plan, string $field, array $rows): array
