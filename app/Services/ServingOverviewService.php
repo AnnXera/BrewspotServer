@@ -58,6 +58,78 @@ class ServingOverviewService
     }
 
     /**
+     * One category's items with today's daily limit, stock and status. `uncategorized`
+     * stands for items without a category. Items switched off for this branch are
+     * listed too (status `branch_unavailable`) but can't be edited.
+     *
+     * Items visible at the branch start out `available` (eye on, limit 0 = not set);
+     * the manager decides to switch one off (`unavailable`).
+     *
+     * status: available | sold_out (limit used up) | unavailable (switched off today)
+     * | branch_unavailable (hidden for this branch by the owner)
+     */
+    public function categoryItems(CafeBranch $branch, string $categoryUuid, ?string $search, string $sort, int $page, int $perPage): array
+    {
+        $category = null;
+
+        if ($categoryUuid !== 'uncategorized') {
+            $category = $this->repo->findCategoryForCafe($categoryUuid, $branch->cafe_id);
+
+            if (! $category) {
+                return ['success' => false, 'http' => 404, 'message' => 'Category not found.'];
+            }
+        }
+
+        $servings     = $this->repo->listForDate($branch->branch_id, $this->today())->keyBy('men_item_id');
+        $availableIds = $this->repo->listAvailableItemsForBranch($branch)->pluck('men_item_id')->flip();
+
+        $rows = $this->repo->listItemsForCategory($branch->cafe_id, $category?->men_category_id)
+            ->map(function ($item) use ($servings, $availableIds) {
+                /** @var InventoryServing|null $serving */
+                $serving  = $servings->get($item->men_item_id);
+                $onBranch = $availableIds->has($item->men_item_id);
+
+                $status = match (true) {
+                    ! $onBranch                         => 'branch_unavailable',
+                    $serving?->is_sold_out              => 'unavailable', // the manager switched it off
+                    ! $serving                          => 'available',   // visible and not yet decided
+                    $this->remaining($serving) === 0    => 'sold_out',
+                    default                             => 'available',
+                };
+
+                return [
+                    'uuid'            => $item->uuid,
+                    'menu_name'       => $item->menu_name,
+                    'picture'         => $item->picture ? Storage::disk('public')->url($item->picture) : null,
+                    'status'          => $status,
+                    'daily_limit'     => $serving?->expected_servings ?? 0,
+                    'servings_sold'   => $serving?->servings_sold ?? 0,
+                    'available_stock' => $serving ? $this->remaining($serving) : 0,
+                    // The eye: on for every item visible at the branch until the manager switches it off.
+                    'enabled'         => $onBranch && ! $serving?->is_sold_out,
+                    'editable'        => $onBranch,
+                ];
+            });
+
+        if ($search !== null && $search !== '') {
+            $rows = $rows->filter(fn (array $r) => stripos($r['menu_name'], $search) !== false);
+        }
+
+        $rows = match ($sort) {
+            'stock_desc' => $rows->sortByDesc('available_stock'),
+            'stock_asc'  => $rows->sortBy('available_stock'),
+            default      => $rows->sortBy(fn (array $r) => strtolower($r['menu_name'])),
+        };
+
+        return [
+            'success'  => true,
+            'date'     => $this->today()->toDateString(),
+            'category' => ['uuid' => $category?->uuid, 'name' => $category?->name ?? 'Uncategorized'],
+            'items'    => $this->paginate($rows->values(), $page, $perPage),
+        ];
+    }
+
+    /**
      * Ingredients consumed by today's sales, with each one's share of the
      * most-used ingredient (`percent`) for the progress bars.
      */

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\SaveCategoryServingsRequest;
 use App\Http\Requests\StoreServingRequest;
 use App\Http\Requests\UpdateServingRequest;
 use App\Services\ServingService;
@@ -47,6 +48,19 @@ class ServingController extends Controller
             $request->validated('menu_item_uuid'),
             (int) $request->validated('expected_servings')
         ), 201);
+    }
+
+    /**
+     * PUT .../branches/{branchUuid}/servings/categories/{categoryUuid}/items — Save Changes on a category page.
+     */
+    public function saveCategoryItems(SaveCategoryServingsRequest $request, string $branchUuid, string $categoryUuid): JsonResponse
+    {
+        return $this->respond($this->service->saveCategoryItems(
+            $request->user(),
+            $request->attributes->get('branch'),
+            $categoryUuid,
+            $request->validated('items')
+        ));
     }
 
     /**

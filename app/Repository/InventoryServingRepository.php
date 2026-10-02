@@ -87,6 +87,22 @@ class InventoryServingRepository
         })->values();
     }
 
+    public function findCategoryForCafe(string $uuid, int $cafeId): ?MenuCategory
+    {
+        return MenuCategory::where('uuid', $uuid)->where('cafe_id', $cafeId)->first();
+    }
+
+    /**
+     * All menu items of a category, or of no category when $categoryId is null.
+     */
+    public function listItemsForCategory(int $cafeId, ?int $categoryId): Collection
+    {
+        return MenuItem::where('cafe_id', $cafeId)
+            ->where('men_category_id', $categoryId)
+            ->orderBy('menu_name')
+            ->get();
+    }
+
     /**
      * Cafe categories that are visible at the branch (branch override, else the category default).
      */

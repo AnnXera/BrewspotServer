@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Repository\InventoryServingRepository;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -141,6 +142,111 @@ class ServingService
             'message' => 'Serving updated successfully.',
             'serving' => new InventoryServingResource($serving),
         ];
+    }
+
+    /**
+     * Save Changes on a category's page: each row sets an item's daily limit and
+     * whether it is switched on. All rows apply together or none do.
+     *
+     * Visible items start switched on. The manager decides to switch one off:
+     *  - on with no limit (0): back to the default, no serving row
+     *  - limit > 0: serving created or updated
+     *  - switched off: kept as a sold-out serving, even at limit 0, so the decision is saved
+     *  - a limit below servings sold plus spoilage (so 0 once there are sales) is rejected
+     *
+     * @param  array<int, array{menu_item_uuid: string, daily_limit: int, enabled: bool}>  $rows
+     */
+    public function saveCategoryItems(User $actor, CafeBranch $branch, string $categoryUuid, array $rows): array
+    {
+        $category = null;
+
+        if ($categoryUuid !== 'uncategorized') {
+            $category = $this->repo->findCategoryForCafe($categoryUuid, $branch->cafe_id);
+
+            if (! $category) {
+                return ['success' => false, 'http' => 404, 'message' => 'Category not found.'];
+            }
+        }
+
+        $items        = $this->repo->listItemsForCategory($branch->cafe_id, $category?->men_category_id)->keyBy('uuid');
+        $availableIds = $this->repo->listAvailableItemsForBranch($branch)->pluck('men_item_id')->flip();
+        $servings     = $this->repo->listForDate($branch->branch_id, $this->today())->keyBy('men_item_id');
+
+        $errors = [];
+        $plan   = [];
+        $seen   = [];
+
+        foreach (array_values($rows) as $i => $row) {
+            $item = $items->get($row['menu_item_uuid']);
+
+            if (! $item) {
+                $errors["items.$i.menu_item_uuid"][] = 'This item is not in this category.';
+                continue;
+            }
+
+            if (isset($seen[$item->uuid])) {
+                $errors["items.$i.menu_item_uuid"][] = "{$item->menu_name} is listed twice.";
+                continue;
+            }
+            $seen[$item->uuid] = true;
+
+            if (! $availableIds->has($item->men_item_id)) {
+                $errors["items.$i.menu_item_uuid"][] = "{$item->menu_name} is not available at this branch.";
+                continue;
+            }
+
+            $serving = $servings->get($item->men_item_id);
+            $limit   = (int) $row['daily_limit'];
+
+            if ($serving && $serving->servings_sold + $serving->spoilage_qty > $limit) {
+                $errors["items.$i.daily_limit"][] = $limit === 0
+                    ? "{$item->menu_name} already has sales today, so its limit can't be 0."
+                    : "{$item->menu_name}: the limit can't be lower than servings sold ({$serving->servings_sold}) plus spoilage ({$serving->spoilage_qty}).";
+                continue;
+            }
+
+            $plan[] = ['item' => $item, 'serving' => $serving, 'limit' => $limit, 'enabled' => (bool) $row['enabled']];
+        }
+
+        if ($errors) {
+            return ['success' => false, 'http' => 422, 'message' => 'Some changes could not be saved.', 'errors' => $errors];
+        }
+
+        try {
+            DB::transaction(function () use ($plan, $branch) {
+                foreach ($plan as ['item' => $item, 'serving' => $serving, 'limit' => $limit, 'enabled' => $enabled]) {
+                    // Visible items are on by default, so on with no limit is the same as no row.
+                    if ($limit === 0 && $enabled) {
+                        if ($serving) {
+                            $this->repo->delete($serving);
+                        }
+                        continue;
+                    }
+
+                    if ($serving) {
+                        $this->repo->update($serving, ['expected_servings' => $limit, 'is_sold_out' => ! $enabled]);
+                        continue;
+                    }
+
+                    $created = $this->repo->create($item->men_item_id, $branch->branch_id, $this->today(), $limit);
+
+                    if (! $enabled) {
+                        $this->repo->update($created, ['is_sold_out' => true]);
+                    }
+                }
+            });
+        } catch (UniqueConstraintViolationException) {
+            return ['success' => false, 'http' => 422, 'message' => 'Servings changed while saving. Reload and try again.'];
+        }
+
+        Log::channel('owner')->info('Category servings saved.', [
+            'actor_uuid'    => $actor->uuid,
+            'branch_uuid'   => $branch->uuid,
+            'category_uuid' => $category?->uuid,
+            'rows'          => count($plan),
+        ]);
+
+        return ['success' => true, 'message' => 'Servings saved.'];
     }
 
     public function delete(User $actor, CafeBranch $branch, string $servingUuid): array

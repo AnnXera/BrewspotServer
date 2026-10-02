@@ -24,6 +24,7 @@ class ServingOverviewRequest extends FormRequest
     {
         $sorts = match ($this->route()?->getActionMethod()) {
             'categories'      => ['name', 'remaining_desc', 'remaining_asc'],
+            'categoryItems'   => ['name', 'stock_desc', 'stock_asc'],
             'ingredientsUsed' => ['name', 'quantity_desc', 'quantity_asc'],
             default           => [],
         };

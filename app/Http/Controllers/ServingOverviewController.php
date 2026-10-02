@@ -34,6 +34,21 @@ class ServingOverviewController extends Controller
     }
 
     /**
+     * GET .../servings/categories/{categoryUuid}/items?search=&sort=name|stock_desc|stock_asc&page=&per_page=
+     */
+    public function categoryItems(ServingOverviewRequest $request, string $branchUuid, string $categoryUuid): JsonResponse
+    {
+        return $this->respond($this->service->categoryItems(
+            $request->attributes->get('branch'),
+            $categoryUuid,
+            $request->validated('search'),
+            $request->validated('sort') ?? 'name',
+            (int) ($request->validated('page') ?? 1),
+            (int) ($request->validated('per_page') ?? 6)
+        ));
+    }
+
+    /**
      * GET .../servings/ingredients-used?search=&sort=name|quantity_desc|quantity_asc
      */
     public function ingredientsUsed(ServingOverviewRequest $request): JsonResponse

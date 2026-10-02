@@ -54,6 +54,8 @@ $branchScopedRoutes = function () {
         Route::get('/servings',                    [ServingController::class, 'index']);
         Route::get('/servings/available-items',    [ServingController::class, 'availableItems']); // before {servingUuid}
         Route::get('/servings/categories',         [ServingOverviewController::class, 'categories']);
+        Route::get('/servings/categories/{categoryUuid}/items', [ServingOverviewController::class, 'categoryItems']);
+        Route::put('/servings/categories/{categoryUuid}/items', [ServingController::class, 'saveCategoryItems']);
         Route::get('/servings/ingredients-used',   [ServingOverviewController::class, 'ingredientsUsed']);
         Route::get('/servings/log',                [ServingOverviewController::class, 'log']);
         Route::post('/servings',                   [ServingController::class, 'store']);
