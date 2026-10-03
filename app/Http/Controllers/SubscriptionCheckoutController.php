@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CancelSubscriptionPlanRequest;
 use App\Http\Requests\CreateSubscriptionCheckoutRequest;
 use App\Http\Requests\SchedulePlanChangeRequest;
 use App\Services\SubscriptionCheckoutService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SubscriptionCheckoutController extends Controller
 {
@@ -42,6 +44,29 @@ class SubscriptionCheckoutController extends Controller
             $request->validated('plan_uuid'),
             $request->validated('billing_cycle')
         );
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * POST /api/owner/subscriptions/cancel-plan
+     *
+     * Cancels the booked next plan (`target: next`) or stops the current plan from renewing
+     * (`target: current`). Either way the owner keeps the days they already paid for.
+     */
+    public function cancelPlan(CancelSubscriptionPlanRequest $request): JsonResponse
+    {
+        $result = $this->service->cancelPlan($request->user(), $request->validated('target'));
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * POST /api/owner/subscriptions/resume
+     */
+    public function resume(Request $request): JsonResponse
+    {
+        $result = $this->service->resumePlan($request->user());
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }

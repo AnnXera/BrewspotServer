@@ -164,6 +164,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/schedule-change', [SubscriptionCheckoutController::class, 'schedule']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
+        Route::post('/subscriptions/cancel-plan', [SubscriptionCheckoutController::class, 'cancelPlan']); // cancel current (at period end) or next plan
+        Route::post('/subscriptions/resume', [SubscriptionCheckoutController::class, 'resume']); // undo a cancellation
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
         Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
