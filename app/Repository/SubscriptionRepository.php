@@ -196,11 +196,37 @@ class SubscriptionRepository
     }
 
     /**
+     * Mark the term as not continuing once it ends, and drop any booked plan change with it.
+     *
+     * Status and end_date are left alone on purpose: the owner paid for these days, so the
+     * subscription stays active until ExpireSubscriptions retires it at end_date.
+     */
+    public function markCancelAtPeriodEnd(Subscription $subscription): Subscription
+    {
+        $subscription->update([
+            'cancel_at_period_end'  => true,
+            'pending_sub_plan_id'   => null,
+            'pending_billing_cycle' => null,
+        ]);
+
+        return $subscription->fresh(['plan.features', 'pendingPlan.features', 'user']);
+    }
+
+    public function resumeRenewal(Subscription $subscription): Subscription
+    {
+        $subscription->update(['cancel_at_period_end' => false]);
+
+        return $subscription->fresh(['plan.features', 'pendingPlan.features', 'user']);
+    }
+
+    /**
      * Gateway-managed subscriptions bill themselves, so owners on them are never asked to pay.
+     * Terms the owner has cancelled are not chased for renewal either.
      */
     private function manuallyRenewed()
     {
-        return Subscription::whereNull('gateway_subscription_id');
+        return Subscription::whereNull('gateway_subscription_id')
+            ->where('cancel_at_period_end', false);
     }
 
     public function findExpiringWithinDays(int $days)
@@ -236,6 +262,7 @@ class SubscriptionRepository
     public function findRecentlyExpiredUnnotified(int $withinDays)
     {
         return Subscription::where('status', 'expired')
+            ->where('cancel_at_period_end', false)
             ->whereNull('expired_notice_sent_at')
             ->where('end_date', '>=', Carbon::now()->subDays($withinDays))
             ->whereDoesntHave('user.subscriptions', fn ($q) => $q->where('status', 'active'))

@@ -239,6 +239,18 @@ class IngredientTest extends TestCase
         $this->assertEquals(200, DB::table('menu_recipes')->where('men_item_id', $latte->men_item_id)->value('quantity'));
     }
 
+    public function test_units_the_client_offers_are_accepted(): void
+    {
+        $this->createItem('Tart', [
+            ['ingredient_name' => 'Strawberry', 'quantity' => 5, 'unit' => 'slice'],
+            ['ingredient_name' => 'Butter', 'quantity' => 1, 'unit' => 'stick'],
+            ['ingredient_name' => 'Cream', 'quantity' => 1, 'unit' => 'pint'],
+        ])->assertCreated();
+
+        $this->createItem('Bad', [['ingredient_name' => 'Rock', 'quantity' => 1, 'unit' => 'boulder']])
+            ->assertStatus(422)->assertJsonValidationErrors('recipes.0.unit');
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private function createItem(string $name, array $recipes): TestResponse

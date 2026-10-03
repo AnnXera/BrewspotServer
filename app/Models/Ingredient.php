@@ -18,7 +18,7 @@ class Ingredient extends Model
     // Mirrors INGREDIENT_UNITS in the client (app/utils/constants.ts).
     public const UNITS = [
         'tbsp', 'tsp', 'ml', 'l', 'g', 'kg', 'pumps', 'shots', 'cups', 'pieces',
-        'oz', 'lb', 'to taste', 'as needed', 'dash', 'pinch',
+        'oz', 'lb', 'slice', 'stick', 'pint', 'to taste', 'as needed', 'dash', 'pinch',
     ];
 
     // No real amount — recorded, but left out of usage totals.

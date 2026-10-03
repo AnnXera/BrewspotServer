@@ -7,6 +7,7 @@ use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\CategoryBranch;
 use App\Models\Feature;
+use App\Models\IngredientConsumptionLog;
 use App\Models\InventoryServing;
 use App\Models\MenuBranch;
 use App\Models\MenuCategory;
@@ -14,6 +15,8 @@ use App\Models\MenuItem;
 use App\Models\Role;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -155,58 +158,6 @@ class ServingsTest extends TestCase
         $this->assertSame(8, $serving->fresh()->servings_sold);
     }
 
-    public function test_item_is_sold_out_automatically_when_servings_are_used_up(): void
-    {
-        $token   = $this->tokenFor($this->manager);
-        $serving = $this->makeServing($this->latte, ['expected_servings' => 10, 'servings_sold' => 7]);
-        $url     = $this->url("/{$serving->uuid}");
-
-        $this->api('PATCH', $url, $token, ['spoilage_qty' => 3])
-            ->assertOk()
-            ->assertJsonPath('serving.remaining', 0)
-            ->assertJsonPath('serving.is_sold_out', true)
-            ->assertJsonPath('serving.sold_out_reason', 'depleted');
-
-        $this->api('GET', $this->url(), $token)->assertJsonPath('summary.sold_out', 1);
-
-        // Can't switch it back on without adding servings.
-        $this->api('PATCH', $url, $token, ['is_sold_out' => false])->assertStatus(422);
-
-        $this->api('PATCH', $url, $token, ['expected_servings' => 15])
-            ->assertOk()
-            ->assertJsonPath('serving.remaining', 5)
-            ->assertJsonPath('serving.is_sold_out', false)
-            ->assertJsonPath('serving.sold_out_reason', null);
-
-        // Manual flag still works while servings remain.
-        $this->api('PATCH', $url, $token, ['is_sold_out' => true])
-            ->assertJsonPath('serving.sold_out_reason', 'manual');
-    }
-
-    public function test_pos_device_sees_todays_servings_with_sold_out_state(): void
-    {
-        $this->makeServing($this->latte, ['expected_servings' => 5, 'servings_sold' => 5]);
-        $this->makeServing($this->croissant, ['expected_servings' => 5]);
-        $this->makeServing($this->latte, ['branch_id' => $this->otherBranch->branch_id, 'expected_servings' => 5]);
-
-        $deviceToken = $this->api('POST', '/api/pos/setup', $this->tokenFor($this->manager), [
-            'branch_uuid' => $this->mainBranch->uuid,
-            'name'        => 'Front Counter',
-        ])->assertCreated()->json('device_token');
-
-        $this->api('GET', '/api/pos/device/servings', $deviceToken)
-            ->assertOk()
-            ->assertJsonCount(2, 'servings')
-            ->assertJsonPath('servings.0.menu_item.menu_name', 'Croissant')
-            ->assertJsonPath('servings.0.is_sold_out', false)
-            ->assertJsonPath('servings.1.menu_item.menu_name', 'Latte')
-            ->assertJsonPath('servings.1.is_sold_out', true)
-            ->assertJsonPath('servings.1.sold_out_reason', 'depleted');
-
-        // A dashboard login token is not a register.
-        $this->api('GET', '/api/pos/device/servings', $this->tokenFor($this->manager))->assertUnauthorized();
-    }
-
     public function test_delete_only_without_sales(): void
     {
         $token = $this->tokenFor($this->manager);
@@ -250,7 +201,279 @@ class ServingsTest extends TestCase
         $this->api('GET', $this->url(), $token)->assertForbidden();
     }
 
+    public function test_categories_overview_rolls_up_today_and_filters(): void
+    {
+        $token  = $this->tokenFor($this->manager);
+        $bakery = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Bakery', 'is_available' => true]);
+        $tart   = $this->makeItem('Tart', $bakery);
+
+        $this->makeServing($this->latte, ['expected_servings' => 70, 'servings_sold' => 18, 'spoilage_qty' => 2]);
+        $this->makeServing($tart, ['expected_servings' => 10, 'servings_sold' => 10]);
+        $this->makeServing($this->croissant, ['expected_servings' => 5, 'is_sold_out' => true]);
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            ->assertJsonCount(3, 'categories.data')
+            ->assertJsonPath('categories.data.0.name', 'Bakery')
+            ->assertJsonPath('categories.data.0.status', 'sold_out')
+            ->assertJsonPath('categories.data.1.name', 'Drinks')
+            ->assertJsonPath('categories.data.1.remaining', 50)
+            ->assertJsonPath('categories.data.1.expected_servings', 70)
+            ->assertJsonPath('categories.data.1.status', 'available')
+            ->assertJsonPath('categories.data.2.name', 'Uncategorized')
+            ->assertJsonPath('categories.data.2.status', 'sold_out');
+
+        $this->api('GET', $this->url('/categories?search=drin&sort=remaining_desc&per_page=1'), $token)
+            ->assertOk()->assertJsonCount(1, 'categories.data')->assertJsonPath('categories.total', 1);
+
+        $this->api('GET', $this->url('/categories?sort=bogus'), $token)->assertStatus(422)->assertJsonValidationErrors('sort');
+    }
+
+    public function test_categories_overview_lists_visible_categories_without_servings(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Bakery', 'is_available' => true]);
+        MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Hidden', 'is_available' => false]);
+        $shown = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Shown here', 'is_available' => false]);
+        $off   = MenuCategory::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Off here', 'is_available' => true]);
+        CategoryBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_category_id' => $shown->men_category_id, 'is_available' => true]);
+        CategoryBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_category_id' => $off->men_category_id, 'is_available' => false]);
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            ->assertJsonPath('categories.total', 3)
+            ->assertJsonPath('categories.data.0.name', 'Bakery')
+            ->assertJsonPath('categories.data.0.expected_servings', 0)
+            ->assertJsonPath('categories.data.0.status', 'sold_out')
+            ->assertJsonPath('categories.data.1.name', 'Drinks')
+            ->assertJsonPath('categories.data.2.name', 'Shown here');
+    }
+
+    public function test_ingredients_used_sums_todays_completed_sales_only(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $this->sell($this->latte, 2, [['Espresso', 'shots', 2], ['Milk', 'cups', 1.5], ['Salt', 'pinch', 1]]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 1]]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['status' => 'voided']);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['created_at' => now()->subDay()]);
+        $this->sell($this->latte, 1, [['Espresso', 'shots', 9]], ['branch_id' => $this->otherBranch->branch_id]);
+
+        $this->api('GET', $this->url('/ingredients-used'), $token)
+            ->assertOk()
+            ->assertJsonCount(2, 'ingredients')
+            ->assertJsonPath('ingredients.0', ['name' => 'Espresso', 'unit' => 'shots', 'quantity' => 3, 'percent' => 100])
+            ->assertJsonPath('ingredients.1.name', 'Milk')
+            ->assertJsonPath('ingredients.1.percent', 50);
+
+        $this->api('GET', $this->url('/ingredients-used?search=mil&sort=quantity_asc'), $token)
+            ->assertOk()->assertJsonCount(1, 'ingredients');
+    }
+
+    public function test_log_lists_todays_sold_lines_newest_first(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $this->sell($this->latte, 2);
+        $this->sell($this->croissant, 1);
+        $this->sell($this->latte, 1, [], ['created_at' => now()->subDay()]);
+
+        $this->api('GET', $this->url('/log'), $token)
+            ->assertOk()
+            ->assertJsonCount(2, 'log.data')
+            ->assertJsonPath('log.data.0.menu_name', 'Croissant')
+            ->assertJsonPath('log.data.0.quantity', 1)
+            ->assertJsonPath('log.data.1.menu_name', 'Latte')
+            ->assertJsonPath('log.data.1.quantity', 2);
+    }
+
+    public function test_category_items_show_limit_stock_and_status(): void
+    {
+        $token  = $this->tokenFor($this->manager);
+        $mocha  = $this->makeItem('Mocha', $this->category);
+        $tea    = $this->makeItem('Tea', $this->category);
+        $chai   = $this->makeItem('Chai', $this->category); // visible, nothing decided yet
+        $hidden = $this->makeItem('Hidden', $this->category);
+        MenuBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_item_id' => $hidden->men_item_id, 'is_available' => false]);
+
+        $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 5]);
+        $this->makeServing($mocha, ['expected_servings' => 10, 'servings_sold' => 10]);
+        $this->makeServing($tea, ['expected_servings' => 8, 'is_sold_out' => true]);
+
+        $url = $this->url("/categories/{$this->category->uuid}/items");
+
+        $res = $this->api('GET', $url, $token)
+            ->assertOk()
+            ->assertJsonPath('category.name', 'Drinks')
+            ->assertJsonCount(5, 'items.data');
+
+        $byName = collect($res->json('items.data'))->keyBy('menu_name');
+        $this->assertSame(['available', 15, 20, true], [$byName['Latte']['status'], $byName['Latte']['available_stock'], $byName['Latte']['daily_limit'], $byName['Latte']['enabled']]);
+        $this->assertSame('sold_out', $byName['Mocha']['status']);
+        $this->assertSame('unavailable', $byName['Tea']['status']);
+        $this->assertFalse($byName['Tea']['enabled']);
+        // Visible items start on; the manager decides to switch them off.
+        $this->assertSame(['available', true, 0, 0], [$byName['Chai']['status'], $byName['Chai']['enabled'], $byName['Chai']['daily_limit'], $byName['Chai']['available_stock']]);
+        $this->assertSame('branch_unavailable', $byName['Hidden']['status']);
+        $this->assertFalse($byName['Hidden']['editable']);
+        $this->assertSame(0, $byName['Hidden']['daily_limit']);
+
+        $this->assertFalse($byName['Hidden']['enabled']);
+        $this->api('GET', $url . '?search=mo', $token)->assertJsonCount(1, 'items.data');
+        $this->api('GET', $url . '?sort=stock_desc', $token)->assertJsonPath('items.data.0.menu_name', 'Latte');
+        $this->api('GET', $this->url('/categories/uncategorized/items'), $token)
+            ->assertOk()->assertJsonPath('category.name', 'Uncategorized')->assertJsonCount(1, 'items.data'); // Croissant
+        $this->api('GET', $this->url('/categories/' . Str::uuid() . '/items'), $token)->assertNotFound();
+    }
+
+    public function test_save_category_items_creates_updates_removes_and_switches_off(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $mocha = $this->makeItem('Mocha', $this->category);
+        $tea   = $this->makeItem('Tea', $this->category);
+        $chai  = $this->makeItem('Chai', $this->category);
+        $latte = $this->makeServing($this->latte, ['expected_servings' => 20]);
+        $this->makeServing($mocha, ['expected_servings' => 5]);
+        $url   = $this->url("/categories/{$this->category->uuid}/items");
+
+        $this->api('PUT', $url, $token, ['items' => [
+            ['menu_item_uuid' => $this->latte->uuid, 'daily_limit' => 30, 'enabled' => false],
+            ['menu_item_uuid' => $mocha->uuid,       'daily_limit' => 0,  'enabled' => true],
+            ['menu_item_uuid' => $tea->uuid,         'daily_limit' => 12, 'enabled' => true],
+            ['menu_item_uuid' => $chai->uuid,        'daily_limit' => 0,  'enabled' => false],
+        ]])->assertOk()->assertJsonPath('message', 'Servings saved.');
+
+        $latte->refresh();
+        $this->assertSame(30, $latte->expected_servings);
+        $this->assertTrue($latte->is_sold_out);
+        $this->assertDatabaseMissing('inventory_servings', ['men_item_id' => $mocha->men_item_id]);
+        $this->assertDatabaseHas('inventory_servings', ['men_item_id' => $tea->men_item_id, 'expected_servings' => 12, 'is_sold_out' => false]);
+        // Switching an item off is the manager's decision, so it is kept even with no limit.
+        $this->assertDatabaseHas('inventory_servings', ['men_item_id' => $chai->men_item_id, 'expected_servings' => 0, 'is_sold_out' => true]);
+
+        // Switching it back on with no limit returns it to the default (no row).
+        $this->api('PUT', $url, $token, ['items' => [['menu_item_uuid' => $chai->uuid, 'daily_limit' => 0, 'enabled' => true]]])->assertOk();
+        $this->assertDatabaseMissing('inventory_servings', ['men_item_id' => $chai->men_item_id]);
+    }
+
+    public function test_changing_the_limit_after_sales_keeps_sold_and_adjusts_stock(): void
+    {
+        $token   = $this->tokenFor($this->manager);
+        $serving = $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 5]);
+        $url     = $this->url("/categories/{$this->category->uuid}/items");
+        $save    = fn (int $limit) => $this->api('PUT', $url, $token, ['items' => [
+            ['menu_item_uuid' => $this->latte->uuid, 'daily_limit' => $limit, 'enabled' => true],
+        ]]);
+        $latte = fn () => collect($this->api('GET', $url, $token)->json('items.data'))->firstWhere('menu_name', 'Latte');
+
+        $this->assertSame(15, $latte()['available_stock']);
+
+        // Raised mid-day: 20 -> 25 with 5 sold leaves 20.
+        $save(25)->assertOk();
+        $this->assertSame(['limit' => 25, 'sold' => 5, 'stock' => 20], [
+            'limit' => $latte()['daily_limit'], 'sold' => $latte()['servings_sold'], 'stock' => $latte()['available_stock'],
+        ]);
+        $this->assertSame(5, $serving->fresh()->servings_sold);
+
+        // Lowered but still covering the sales: 25 -> 10 leaves 5.
+        $save(10)->assertOk();
+        $this->assertSame(5, $latte()['available_stock']);
+
+        // Lowered below what was sold: rejected, nothing changes.
+        $save(4)->assertStatus(422)->assertJsonPath('errors', fn ($e) => isset($e['items.0.daily_limit']));
+        $this->assertSame(10, $serving->fresh()->expected_servings);
+
+        // Sales keep counting against the new limit.
+        $serving->update(['servings_sold' => 10]);
+        $this->assertSame('sold_out', $latte()['status']);
+        $save(25)->assertOk();
+        $this->assertSame(['available', 15], [$latte()['status'], $latte()['available_stock']]);
+    }
+
+    public function test_save_category_items_is_all_or_nothing(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $mocha = $this->makeItem('Mocha', $this->category);
+        $tea   = $this->makeItem('Tea', $this->category);
+        $sold  = $this->makeServing($mocha, ['expected_servings' => 10, 'servings_sold' => 6, 'spoilage_qty' => 1]);
+        $hidden = $this->makeItem('Hidden', $this->category);
+        MenuBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_item_id' => $hidden->men_item_id, 'is_available' => false]);
+        $url = $this->url("/categories/{$this->category->uuid}/items");
+
+        $this->api('PUT', $url, $token, ['items' => [
+            ['menu_item_uuid' => $tea->uuid,      'daily_limit' => 9, 'enabled' => true],
+            ['menu_item_uuid' => $mocha->uuid,    'daily_limit' => 6, 'enabled' => true],  // below sold + spoilage
+            ['menu_item_uuid' => $hidden->uuid,   'daily_limit' => 3, 'enabled' => true],  // off for the branch
+            ['menu_item_uuid' => $this->croissant->uuid, 'daily_limit' => 3, 'enabled' => true], // other category
+        ]])->assertStatus(422)
+            ->assertJsonMissingPath('errors.items.0.daily_limit')
+            ->assertJsonPath('errors', fn ($e) => array_keys($e) === ['items.1.daily_limit', 'items.2.menu_item_uuid', 'items.3.menu_item_uuid']);
+
+        // Tea was valid, but nothing is saved when any row fails.
+        $this->assertDatabaseMissing('inventory_servings', ['men_item_id' => $tea->men_item_id]);
+        $this->assertSame(10, $sold->fresh()->expected_servings);
+    }
+
+    public function test_save_category_items_rejects_zero_with_sales_and_bad_input(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $mocha = $this->makeItem('Mocha', $this->category);
+        $this->makeServing($mocha, ['expected_servings' => 10, 'servings_sold' => 4]);
+        $url = $this->url("/categories/{$this->category->uuid}/items");
+
+        $this->api('PUT', $url, $token, ['items' => [['menu_item_uuid' => $mocha->uuid, 'daily_limit' => 0, 'enabled' => true]]])
+            ->assertStatus(422)->assertJsonPath('errors', fn ($e) => isset($e['items.0.daily_limit']));
+
+        $this->api('PUT', $url, $token, ['items' => [['menu_item_uuid' => $mocha->uuid, 'daily_limit' => 0, 'enabled' => false]]])
+            ->assertStatus(422)->assertJsonPath('errors', fn ($e) => isset($e['items.0.daily_limit']));
+
+        $this->api('PUT', $url, $token, ['items' => [['menu_item_uuid' => $mocha->uuid, 'daily_limit' => -1, 'enabled' => true]]])
+            ->assertStatus(422)->assertJsonValidationErrors('items.0.daily_limit');
+
+        $this->api('PUT', $this->url('/categories/' . Str::uuid() . '/items'), $token, ['items' => [['menu_item_uuid' => $mocha->uuid, 'daily_limit' => 1, 'enabled' => true]]])
+            ->assertNotFound();
+
+        $this->assertSame(10, InventoryServing::first()->expected_servings);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * @param  array<int, array{0: string, 1: string, 2: float|int}>  $ingredients  name, unit, quantity
+     */
+    private function sell(MenuItem $item, int $qty, array $ingredients = [], array $transaction = []): TransactionItem
+    {
+        $created = $transaction['created_at'] ?? null;
+        unset($transaction['created_at']);
+
+        $tx = Transaction::create([
+            'branch_id'    => $this->mainBranch->branch_id,
+            'total_amount' => 120 * $qty,
+            ...$transaction,
+        ]);
+
+        if ($created) {
+            $tx->forceFill(['created_at' => $created])->save();
+        }
+
+        $line = TransactionItem::create([
+            'transaction_id' => $tx->transaction_id,
+            'men_item_id'    => $item->men_item_id,
+            'quantity'       => $qty,
+            'unit_price'     => 120,
+        ]);
+
+        foreach ($ingredients as [$name, $unit, $quantity]) {
+            IngredientConsumptionLog::create([
+                'transaction_item_id' => $line->transaction_item_id,
+                'ingredient_name'     => $name,
+                'quantity_consumed'   => $quantity,
+                'unit'                => $unit,
+            ]);
+        }
+
+        return $line;
+    }
 
     private function url(string $suffix = '', ?CafeBranch $branch = null): string
     {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\PosDevice;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
@@ -12,6 +13,11 @@ class EnsurePlanHasFeature
     public function handle(Request $request, Closure $next, string $feature): Response
     {
         $user = $request->user();
+
+        // A POS device has no plan of its own: it uses its cafe owner's.
+        if ($user instanceof PosDevice) {
+            $user = $user->loadMissing('branch.cafe.owner')->branch?->cafe?->owner;
+        }
 
         if (! $user instanceof User || ! $user->canAccessFeature($feature)) {
             return response()->json([

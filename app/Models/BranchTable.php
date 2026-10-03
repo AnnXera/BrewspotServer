@@ -5,10 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class BranchTable extends Model
 {
+    // Soft deleted so reservation history keeps its table.
+    use SoftDeletes;
+
     protected $primaryKey = 'table_id';
 
     public function getRouteKeyName(): string

@@ -23,6 +23,8 @@ class FloorPlanElement extends Model
         'label',
         'x_location',
         'y_location',
+        'width',
+        'height',
         'rotation',
         'z_index',
     ];
@@ -30,6 +32,8 @@ class FloorPlanElement extends Model
     protected $casts = [
         'x_location' => 'decimal:2',
         'y_location' => 'decimal:2',
+        'width' => 'decimal:2',
+        'height' => 'decimal:2',
         'rotation' => 'decimal:2',
         'z_index' => 'integer',
     ];

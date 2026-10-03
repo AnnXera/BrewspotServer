@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Contracts\MailAdapterInterface;
+use App\Mail\SubscriptionCancelledMail;
 use App\Mail\SubscriptionPlanChangedMail;
 use App\Services\PaymentGatewayManager;
 use App\Models\Subscription;
@@ -224,6 +225,13 @@ class SubscriptionCheckoutService
             ];
         }
 
+        if ($current->cancel_at_period_end) {
+            return [
+                'success' => false,
+                'message' => 'Your subscription is set to end on ' . ($current->end_date?->format('F j, Y') ?? 'its end date') . '. Resume it first if you want to switch plans.',
+            ];
+        }
+
         // Picking the plan and cycle they already hold means "cancel my scheduled change".
         if ($current->sub_plan_id === $plan->sub_plan_id && $current->billing_cycle === $billingCycle) {
             if (! $current->pending_sub_plan_id) {
@@ -288,6 +296,103 @@ class SubscriptionCheckoutService
         return [
             'success' => true,
             'message' => $message,
+        ];
+    }
+
+    /**
+     * Cancel what the owner has lined up, without touching the days they already paid for.
+     *
+     * Nothing here ends the running term early — status and end_date stay as they are, so
+     * the owner keeps every remaining day and ExpireSubscriptions retires the term on its end
+     * date as usual.
+     *
+     *  - `next`: drop the booked plan change; the owner stays on their current plan.
+     *  - `current`: stop the subscription continuing past this term. Any booked change goes
+     *    with it, since there is no next term for it to start.
+     */
+    public function cancelPlan(User $owner, string $target): array
+    {
+        $current = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
+
+        if (! $current) {
+            return ['success' => false, 'message' => 'You do not have an active subscription to cancel.'];
+        }
+
+        $endsOn = $current->end_date?->format('F j, Y') ?? 'the end of your current term';
+
+        if ($target === 'next') {
+            if (! $current->pending_sub_plan_id) {
+                return ['success' => false, 'message' => 'You have no scheduled plan change to cancel.'];
+            }
+
+            $this->subscriptionRepo->clearPendingChange($current);
+
+            Log::channel('owner')->info('Scheduled plan change cancelled by owner.', [
+                'owner_uuid'        => $owner->uuid,
+                'subscription_uuid' => $current->uuid,
+            ]);
+
+            return [
+                'success' => true,
+                'message' => "Your scheduled plan change has been cancelled. You will stay on the {$current->plan?->sub_name}.",
+            ];
+        }
+
+        if ($current->cancel_at_period_end) {
+            return ['success' => false, 'message' => "Your subscription is already set to end on {$endsOn}."];
+        }
+
+        // A trial is free and ends by itself, and gateway-managed subscriptions have to be
+        // stopped at the gateway, which this app has no call for yet.
+        if ($this->isUnpaidTerm($current)) {
+            return ['success' => false, 'message' => 'A free trial ends on its own, so there is nothing to cancel.'];
+        }
+
+        if ($current->gateway_subscription_id) {
+            return ['success' => false, 'message' => 'This subscription is billed by your payment provider. Please contact support to cancel it.'];
+        }
+
+        $this->subscriptionRepo->markCancelAtPeriodEnd($current);
+
+        Log::channel('owner')->info('Subscription cancelled at period end by owner.', [
+            'owner_uuid'        => $owner->uuid,
+            'subscription_uuid' => $current->uuid,
+            'access_until'      => $current->end_date?->toDateString(),
+        ]);
+
+        $this->mailer->sendMailable($owner->email, new SubscriptionCancelledMail(
+            ownerName: $owner->firstname ?? $owner->username ?? 'there',
+            planName: $current->plan?->sub_name ?? 'subscription',
+            endDate: $endsOn,
+        ));
+
+        return [
+            'success' => true,
+            'message' => "Your subscription will not renew. You keep full access to the {$current->plan?->sub_name} until {$endsOn}.",
+        ];
+    }
+
+    /**
+     * Undo a cancellation made earlier in the same term.
+     */
+    public function resumePlan(User $owner): array
+    {
+        $current = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
+
+        if (! $current || ! $current->cancel_at_period_end) {
+            return ['success' => false, 'message' => 'You have no cancelled subscription to resume.'];
+        }
+
+        $this->subscriptionRepo->resumeRenewal($current);
+
+        Log::channel('owner')->info('Cancelled subscription resumed by owner.', [
+            'owner_uuid'        => $owner->uuid,
+            'subscription_uuid' => $current->uuid,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => "Your {$current->plan?->sub_name} is back on. You can renew it when your paid days run out.",
         ];
     }
 

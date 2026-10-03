@@ -25,7 +25,11 @@ use App\Http\Controllers\ItemBranchController;
 use App\Http\Controllers\BranchStaffController;
 use App\Http\Controllers\ManagerAccountController;
 use App\Http\Controllers\PosDeviceController;
+use App\Http\Controllers\PosFloorPlanController;
+use App\Http\Controllers\FloorPlanController;
+use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\ServingController;
+use App\Http\Controllers\ServingOverviewController;
 
 use App\Http\Controllers\TempUploadController;
 
@@ -52,9 +56,33 @@ $branchScopedRoutes = function () {
     Route::middleware('plan.feature:menu_management')->group(function () {
         Route::get('/servings',                    [ServingController::class, 'index']);
         Route::get('/servings/available-items',    [ServingController::class, 'availableItems']); // before {servingUuid}
+        Route::get('/servings/categories',         [ServingOverviewController::class, 'categories']);
+        Route::get('/servings/categories/{categoryUuid}/items', [ServingOverviewController::class, 'categoryItems']);
+        Route::put('/servings/categories/{categoryUuid}/items', [ServingController::class, 'saveCategoryItems']);
+        Route::get('/servings/ingredients-used',   [ServingOverviewController::class, 'ingredientsUsed']);
+        Route::get('/servings/log',                [ServingOverviewController::class, 'log']);
         Route::post('/servings',                   [ServingController::class, 'store']);
         Route::patch('/servings/{servingUuid}',    [ServingController::class, 'update']);
         Route::delete('/servings/{servingUuid}',   [ServingController::class, 'destroy']);
+    });
+
+    // Floor plans, tables and reservations (the `reservations` plan feature)
+    Route::middleware('plan.feature:reservations')->group(function () {
+        Route::get('/floor-plans/assets',                 [FloorPlanController::class, 'assets']); // before {planUuid}
+        Route::get('/floor-plans',                        [FloorPlanController::class, 'index']);
+        Route::post('/floor-plans',                       [FloorPlanController::class, 'store']);
+        Route::get('/floor-plans/{planUuid}',             [FloorPlanController::class, 'show']);
+        Route::patch('/floor-plans/{planUuid}',           [FloorPlanController::class, 'update']);
+        Route::delete('/floor-plans/{planUuid}',          [FloorPlanController::class, 'destroy']);
+        Route::post('/floor-plans/{planUuid}/activate',   [FloorPlanController::class, 'activate']);
+        Route::put('/floor-plans/{planUuid}/layout',      [FloorPlanController::class, 'saveLayout']);
+        Route::patch('/tables/{tableUuid}/status',        [FloorPlanController::class, 'tableStatus']);
+
+        Route::get('/reservations',                       [ReservationController::class, 'index']);
+        Route::post('/reservations',                      [ReservationController::class, 'store']);
+        Route::get('/reservations/{reservationUuid}',     [ReservationController::class, 'show']);
+        Route::patch('/reservations/{reservationUuid}',   [ReservationController::class, 'update']);
+        Route::post('/reservations/{reservationUuid}/status', [ReservationController::class, 'updateStatus']);
     });
 };
 
@@ -137,6 +165,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/subscriptions/checkout', [SubscriptionCheckoutController::class, 'store']);
         Route::post('/subscriptions/schedule-change', [SubscriptionCheckoutController::class, 'schedule']);
         Route::post('/subscriptions/cancel', [SubscriptionCancelController::class, 'cancel']);
+        Route::post('/subscriptions/cancel-plan', [SubscriptionCheckoutController::class, 'cancelPlan']); // cancel current (at period end) or next plan
+        Route::post('/subscriptions/resume', [SubscriptionCheckoutController::class, 'resume']); // undo a cancellation
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
         Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
@@ -207,6 +237,13 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
             Route::post('/lock',                   [PosDeviceController::class, 'lock']);
+        });
+
+        // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.
+        Route::middleware(['pos.device', 'plan.feature:reservations'])->prefix('device')->group(function () {
+            Route::get('/floor-plan',                  [PosFloorPlanController::class, 'floorPlan']);
+            Route::patch('/tables/{tableUuid}/status', [PosFloorPlanController::class, 'tableStatus']);
+            Route::get('/reservations',                [PosFloorPlanController::class, 'reservations']);
         });
     });
 
