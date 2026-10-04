@@ -96,7 +96,6 @@ class BranchService
 
                 $this->repo->createDocument($branch->branch_id, 'BIR', $birPath, [
                     'registered_at' => $payload['bir_registered_at'],
-                    'expired_at'    => $payload['bir_expired_at'],
                     'tin_number'    => $payload['tin_number'],
                     'vat'           => $payload['vat'],
                 ]);
@@ -224,7 +223,6 @@ class BranchService
                         if ($docType === 'BIR') {
                             $extraData = [];
                             if (isset($payload['bir_registered_at'])) $extraData['registered_at'] = $payload['bir_registered_at'];
-                            if (isset($payload['bir_expired_at'])) $extraData['expired_at'] = $payload['bir_expired_at'];
                             if (isset($payload['tin_number'])) $extraData['tin_number'] = $payload['tin_number'];
                             if (isset($payload['vat'])) $extraData['vat'] = $payload['vat'];
 

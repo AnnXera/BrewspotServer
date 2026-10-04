@@ -48,7 +48,6 @@ class StoreBranchRequest extends FormRequest
             'address'              => ['required', 'string'],
             'bir_file'             => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bir_registered_at'    => ['required', 'date'],
-            'bir_expired_at'       => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
             'tin_number'           => ['required', 'string', 'max:50'],
             'vat'                  => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
