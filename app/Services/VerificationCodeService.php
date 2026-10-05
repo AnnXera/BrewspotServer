@@ -162,8 +162,8 @@ class VerificationCodeService
             $secondsSinceSent = 0;
         }
 
-        if ($secondsSinceSent < 60) {
-            $remaining = (int) ceil(60 - $secondsSinceSent);
+        if ($secondsSinceSent < 30) {
+            $remaining = (int) ceil(30 - $secondsSinceSent);
 
             return [
                 'allowed'  => false,
