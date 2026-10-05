@@ -31,7 +31,7 @@ class PaymentResource extends JsonResource
             'description' => $description ?? 'Subscription Payment',
             'amount' => $this->amount / 100,
             'status' => $this->status,
-            'payment_gateway' => $this->payment_method_type ?? 'Unknown',
+            'payment_gateway' => $this->payment_instrument ?? $this->payment_method_type ?? 'Unknown',
             'owner_name' => $this->user ? trim("{$this->user->firstname} {$this->user->lastname}") : null,
             'owner_email' => $this->user ? $this->user->email : null,
         ];

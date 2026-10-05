@@ -151,7 +151,7 @@ class OwnerManagementService
                     'description'    => 'Subscription - ' . $subName,
                     'amount'         => number_format($payment->amount, 2),
                     'status'         => $payment->status,
-                    'payment_gateway' => $payment->payment_method_type ?? 'PayMongo',
+                    'payment_gateway' => $payment->payment_instrument ?? $payment->payment_method_type ?? 'PayMongo',
                 ];
             })->values(),
         ];

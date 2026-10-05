@@ -165,9 +165,27 @@ class PayMongoWebhookController extends Controller
             'gcash'    => 'GCash',
             'paymaya'  => 'Maya',
             'grab_pay' => 'GrabPay',
-            'card'     => trim(ucfirst((string) ($payment['source']['brand'] ?? 'Card'))),
+            'card'     => $this->formatCardLabel($payment['source'] ?? []),
             default    => 'PayMongo',
         };
+    }
+
+    /**
+     * "Visa - 4242" when the last four digits are available, otherwise just the brand.
+     */
+    private function formatCardLabel(array $source): string
+    {
+        $brand = strtolower(trim((string) ($source['brand'] ?? '')));
+
+        $label = match ($brand) {
+            ''      => 'Card',
+            'jcb'   => 'JCB',
+            default => ucwords(str_replace('_', ' ', $brand)),
+        };
+
+        $last4 = preg_replace('/\D/', '', (string) ($source['last4'] ?? ''));
+
+        return strlen($last4) === 4 ? "{$label} - {$last4}" : $label;
     }
 
     private function sendPaymentEmail(Subscription $subscription, string $status): void
