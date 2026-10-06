@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             OwnerSeeder::class,
+            ManagerSeeder::class,
             DocumentSeeder::class,
         ]);
     }

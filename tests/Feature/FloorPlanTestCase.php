@@ -84,7 +84,7 @@ abstract class FloorPlanTestCase extends TestCase
         parent::tearDown();
     }
 
-    // ── Floor plan fixtures ──────────────────────────────────────────────
+    // â”€â”€ Floor plan fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     protected function makePlan(CafeBranch $branch, string $name = 'Main Floor', bool $active = true): FloorPlan
     {
@@ -102,7 +102,7 @@ abstract class FloorPlanTestCase extends TestCase
         return $plan->tables()->create([
             'table_name' => $name,
             'capacity'   => $capacity,
-            'asset_key'  => 'table_round_4',
+            'asset_key'  => 'table_rec_4',
             'x_location' => 100,
             'y_location' => 100,
             'rotation'   => 0,
@@ -141,7 +141,7 @@ abstract class FloorPlanTestCase extends TestCase
         return "/api/{$role}/branches/" . ($branch ?? $this->mainBranch)->uuid;
     }
 
-    // ── Auth helpers ─────────────────────────────────────────────────────
+    // â”€â”€ Auth helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     protected function api(string $method, string $uri, string $token, array $data = []): TestResponse
     {
