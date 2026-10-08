@@ -96,8 +96,7 @@ class BranchService
 
                 $this->repo->createDocument($branch->branch_id, 'BIR', $birPath, [
                     'registered_at' => $payload['bir_registered_at'],
-                    'expired_at'    => $payload['bir_expired_at'],
-                    'tin_number'    => $payload['tin_number'],
+                    'expired_at'    => $payload['bir_expired_at'] ?? null,
                     'vat'           => $payload['vat'],
                 ]);
 

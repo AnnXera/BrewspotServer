@@ -190,6 +190,40 @@ class OwnerProfileService
             ];
         }
 
+        $topSelling = \Illuminate\Support\Facades\DB::table('transaction_items')
+            ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.transaction_id')
+            ->join('menu_items', 'transaction_items.men_item_id', '=', 'menu_items.men_item_id')
+            ->leftJoin('menu_categories', 'menu_items.men_category_id', '=', 'menu_categories.men_category_id')
+            ->whereIn('transactions.branch_id', $branchIds)
+            ->where('transactions.status', 'completed')
+            ->select(
+                'menu_items.menu_name as name',
+                'menu_categories.name as category',
+                \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity) as orders'),
+                \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity * transaction_items.unit_price) as revenue')
+            )
+            ->groupBy('menu_items.men_item_id', 'menu_items.menu_name', 'menu_categories.name')
+            ->orderByDesc('orders')
+            ->take(4)
+            ->get();
+            
+        $totalItemsSold = \Illuminate\Support\Facades\DB::table('transaction_items')
+            ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.transaction_id')
+            ->whereIn('transactions.branch_id', $branchIds)
+            ->where('transactions.status', 'completed')
+            ->sum('transaction_items.quantity');
+            
+        $topSellingItems = $topSelling->map(function ($item, $index) use ($totalItemsSold) {
+            return [
+                'rank' => $index + 1,
+                'name' => $item->name,
+                'category' => $item->category ?? 'Uncategorized',
+                'orders' => (int)$item->orders,
+                'percentage' => $totalItemsSold > 0 ? (int)round(($item->orders / $totalItemsSold) * 100) : 0,
+                'revenue' => (float)$item->revenue,
+            ];
+        });
+
         return [
             'success' => true,
             'total_earnings' => (float)$totalEarnings,
@@ -200,6 +234,7 @@ class OwnerProfileService
                 'active_customers' => $todayOrders, // approximate
             ],
             'chart_data' => $chartData,
+            'top_selling_items' => $topSellingItems,
         ];
     }
 }
