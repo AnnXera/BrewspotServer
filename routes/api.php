@@ -233,6 +233,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
             Route::post('/lock',                   [PosDeviceController::class, 'lock']);
+            Route::get('/menu',                    [PosDeviceController::class, 'menu']);
+            Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
+            Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.

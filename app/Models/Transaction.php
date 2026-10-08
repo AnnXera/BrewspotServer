@@ -22,8 +22,11 @@ class Transaction extends Model
         'branch_id',
         'staff_id',
         'total_amount',
+        'discount_type',
+        'discount_amount',
         'walk_in_note',
         'status',
+        'receipt_number',
     ];
 
     protected $casts = [
