@@ -98,6 +98,51 @@ class PosDeviceController extends Controller
     }
 
     /**
+     * GET /api/pos/device/menu
+     */
+    public function menu(Request $request): JsonResponse
+    {
+        return $this->respond($this->service->menu($request->user()));
+    }
+
+    /**
+     * POST /api/pos/device/checkout
+     */
+    public function checkout(Request $request): JsonResponse
+    {
+        $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.uuid' => 'required|string',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.sugar_level' => 'nullable|integer|min:0|max:100',
+            'items.*.addons' => 'nullable|array',
+            'payment_method' => 'required|string',
+            'amount_tendered' => 'required|numeric|min:0',
+            'reference_number' => 'nullable|string',
+            'discount_type' => 'nullable|string|in:none,PWD,Senior,VIP',
+            'discount_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        return $this->respond($this->service->checkout(
+            $request->user(),
+            $request->input('items'),
+            $request->input('payment_method'),
+            $request->input('amount_tendered'),
+            $request->input('reference_number'),
+            $request->input('discount_type'),
+            (float) $request->input('discount_amount', 0)
+        ));
+    }
+
+    /**
+     * GET /api/pos/device/transactions
+     */
+    public function transactions(Request $request): JsonResponse
+    {
+        return $this->respond($this->service->transactions($request->user()));
+    }
+
+    /**
      * POST /api/pos/device/staff/{userUuid}/change-pin — replace a temporary PIN, then unlock.
      */
     public function changePin(ChangePinOnDeviceRequest $request, string $userUuid): JsonResponse

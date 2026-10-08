@@ -10,12 +10,14 @@ class PosDeviceResource extends JsonResource
     public function toArray(Request $request): array
     {
         $activeUser = $this->activeStaff?->user;
+        $vatDoc = $this->branch?->documents()->whereNotNull('vat')->latest('branch_doc_id')->first();
 
         return [
             'uuid'          => $this->uuid,
             'name'          => $this->name,
             'branch_uuid'   => $this->branch?->uuid,
             'branch_name'   => $this->branch?->branch_name,
+            'vat_status'    => $vatDoc ? $vatDoc->vat : 'non-vat',
             'registered_by' => $this->registeredBy
                 ? trim("{$this->registeredBy->firstname} {$this->registeredBy->lastname}")
                 : null,
