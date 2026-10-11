@@ -114,8 +114,6 @@ class PosDeviceController extends Controller
             'items' => 'required|array|min:1',
             'items.*.uuid' => 'required|string',
             'items.*.quantity' => 'required|integer|min:1',
-            'items.*.sugar_level' => 'nullable|integer|min:0|max:100',
-            'items.*.addons' => 'nullable|array',
             'payment_method' => 'required|string',
             'amount_tendered' => 'required|numeric|min:0',
             'reference_number' => 'nullable|string',

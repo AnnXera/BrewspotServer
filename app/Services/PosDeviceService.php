@@ -320,22 +320,11 @@ class PosDeviceService
             }
             $price = $menuItem->base_price;
 
-            // Add 25 pesos for each addon, except ice
-            if (isset($itemData['addons']) && is_array($itemData['addons'])) {
-                foreach ($itemData['addons'] as $addon) {
-                    if (stripos($addon, 'ice') === false) {
-                        $price += 25;
-                    }
-                }
-            }
-
             $totalAmount += $price * $quantity;
             
             $transactionItemsData[] = [
                 'men_item_id' => $menuItem->men_item_id,
                 'quantity'    => $quantity,
-                'sugar_level' => isset($itemData['sugar_level']) ? (int)$itemData['sugar_level'] : null,
-                'addons'      => isset($itemData['addons']) ? $itemData['addons'] : null,
                 'unit_price'  => $price,
             ];
         }

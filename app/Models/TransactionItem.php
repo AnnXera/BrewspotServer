@@ -21,13 +21,10 @@ class TransactionItem extends Model
         'transaction_id',
         'men_item_id',
         'quantity',
-        'sugar_level',
-        'addons',
         'unit_price',
     ];
 
     protected $casts = [
-        'addons' => 'array',
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
     ];
