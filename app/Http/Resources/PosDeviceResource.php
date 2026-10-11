@@ -22,8 +22,9 @@ class PosDeviceResource extends JsonResource
                 ? trim("{$this->registeredBy->firstname} {$this->registeredBy->lastname}")
                 : null,
             'active_staff'  => $activeUser ? [
-                'uuid' => $activeUser->uuid,
-                'name' => trim("{$activeUser->firstname} {$activeUser->lastname}"),
+                'uuid'      => $activeUser->uuid,
+                'firstname' => $activeUser->firstname,
+                'name'      => trim("{$activeUser->firstname} {$activeUser->lastname}"),
             ] : null,
             'active_since'  => $this->active_since?->toISOString(),
             'last_used_at'  => $this->last_used_at?->toISOString(),
