@@ -241,12 +241,15 @@ class ServingsTest extends TestCase
 
         $this->api('GET', $this->url('/categories'), $token)
             ->assertOk()
-            ->assertJsonPath('categories.total', 3)
+            ->assertJsonPath('categories.total', 4)
             ->assertJsonPath('categories.data.0.name', 'Bakery')
             ->assertJsonPath('categories.data.0.expected_servings', 0)
             ->assertJsonPath('categories.data.0.status', 'sold_out')
             ->assertJsonPath('categories.data.1.name', 'Drinks')
-            ->assertJsonPath('categories.data.2.name', 'Shown here');
+            ->assertJsonPath('categories.data.2.name', 'Shown here')
+            // Croissant has no category and no serving row, but is visible at the branch.
+            ->assertJsonPath('categories.data.3.name', 'Uncategorized')
+            ->assertJsonPath('categories.data.3.uuid', null);
     }
 
     public function test_ingredients_used_sums_todays_completed_sales_only(): void
