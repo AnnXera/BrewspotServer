@@ -616,6 +616,66 @@ class StaffAndPosTest extends TestCase
         $this->api('GET', '/api/pos/device', $device)->assertUnauthorized();
     }
 
+    public function test_checkout_logs_ingredient_consumption_per_sold_line(): void
+    {
+        $cafeId = $this->mainBranch->cafe_id;
+        $item   = \App\Models\MenuItem::create(['cafe_id' => $cafeId, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        $milk   = \App\Models\Ingredient::create(['cafe_id' => $cafeId, 'name' => 'Milk', 'normalized_name' => 'milk', 'unit' => 'ml', 'is_active' => true]);
+        \App\Models\MenuRecipe::create(['men_item_id' => $item->men_item_id, 'ingredient_id' => $milk->ingredient_id, 'ingredient_name' => 'Milk', 'quantity' => 150, 'unit' => 'ml']);
+
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->toDateString(), 'expected_servings' => 10]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items'           => [['uuid' => $item->uuid, 'quantity' => 2]],
+            'payment_method'  => 'cash',
+            'amount_tendered' => 500,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $log = \App\Models\IngredientConsumptionLog::sole();
+        $this->assertSame($milk->ingredient_id, $log->ingredient_id);
+        $this->assertSame('Milk', $log->ingredient_name);
+        $this->assertSame('ml', $log->unit);
+        $this->assertEquals(300, $log->quantity_consumed); // 150 ml x 2 cups
+    }
+
+    public function test_pos_menu_and_checkout_respect_todays_servings(): void
+    {
+        $cafeId = $this->mainBranch->cafe_id;
+        $mk = fn (string $n) => \App\Models\MenuItem::create(['cafe_id' => $cafeId, 'menu_name' => $n, 'base_price' => 100, 'is_available' => true]);
+        $stocked = $mk('Latte');
+        $noRow   = $mk('Caramel Macchiato');
+        $usedUp  = $mk('Mocha');
+        $hidden  = $mk('Hidden');
+
+        $row = fn ($item, $sold = 0) => \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->toDateString(), 'expected_servings' => 3, 'servings_sold' => $sold]);
+        $row($stocked);
+        $row($usedUp, 3);
+        \App\Models\MenuBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_item_id' => $hidden->men_item_id, 'is_available' => false]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $items = collect($this->api('GET', '/api/pos/device/menu', $device)->assertOk()->json('items'))->keyBy('menu_name');
+        $this->assertFalse($items['Latte']['sold_out']);
+        $this->assertSame(3, $items['Latte']['available_stock']);
+        $this->assertTrue($items['Caramel Macchiato']['sold_out']);
+        $this->assertTrue($items['Mocha']['sold_out']);
+        $this->assertArrayNotHasKey('Hidden', $items->all());
+
+        $checkout = fn ($item, $qty) => $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => $qty]], 'payment_method' => 'cash', 'amount_tendered' => 1000,
+        ]);
+        $checkout($noRow, 1)->assertStatus(422);
+        $checkout($usedUp, 1)->assertStatus(422);
+        $checkout($hidden, 1)->assertStatus(400);
+        $checkout($stocked, 4)->assertStatus(422);
+        $checkout($stocked, 3)->assertOk();
+        $checkout($stocked, 1)->assertStatus(422);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private function api(string $method, string $uri, string $token, array $data = []): TestResponse

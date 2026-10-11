@@ -7,6 +7,7 @@ use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\PosDevice;
 use App\Models\User;
+use App\Repository\InventoryServingRepository;
 use App\Repository\PosDeviceRepository;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -29,7 +30,8 @@ class PosDeviceService
 {
     public function __construct(
         private readonly PosDeviceRepository $repo,
-        private readonly StaffPinService $pins
+        private readonly StaffPinService $pins,
+        private readonly InventoryServingRepository $servings
     ) {}
 
     // ── Setup (owner / manager token) ────────────────────────────────────
@@ -230,6 +232,26 @@ class PosDeviceService
         return ['success' => true, 'message' => 'This device is no longer a register.'];
     }
 
+    /**
+     * Remaining servings today for every item offered at the device's branch,
+     * keyed by men_item_id. Items without a serving row, or switched off, are 0.
+     *
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function todaysStock(PosDevice $device): \Illuminate\Support\Collection
+    {
+        $servings = $this->servings->listForDate($device->branch_id, \Illuminate\Support\Carbon::today())->keyBy('men_item_id');
+
+        return $this->servings->listAvailableItemsForBranch($device->branch)
+            ->mapWithKeys(function ($item) use ($servings) {
+                $s = $servings->get($item->men_item_id);
+
+                return [$item->men_item_id => ($s && ! $s->is_sold_out)
+                    ? max(0, $s->expected_servings - $s->servings_sold - $s->spoilage_qty)
+                    : 0];
+            });
+    }
+
     public function menu(PosDevice $device): array
     {
         $cafeId = $device->branch->cafe_id;
@@ -242,18 +264,20 @@ class PosDeviceService
                 'name' => $c->name,
             ]);
 
-        $items = \App\Models\MenuItem::with('category')
-            ->where('cafe_id', $cafeId)
-            ->where('is_available', true)
-            ->orderBy('menu_name')
-            ->get()
+        // Same rules as the servings page: only items visible at this device's
+        // branch, each with today's remaining stock. 0 stock = sold out.
+        $stock = $this->todaysStock($device);
+
+        $items = $this->servings->listAvailableItemsForBranch($device->branch)
             ->map(fn ($i) => [
-                'uuid'          => $i->uuid,
-                'category_uuid' => $i->category->uuid ?? null,
-                'menu_name'     => $i->menu_name,
-                'description'   => $i->description,
-                'base_price'    => (float) $i->base_price,
-                'picture'       => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+                'uuid'            => $i->uuid,
+                'category_uuid'   => $i->category->uuid ?? null,
+                'menu_name'       => $i->menu_name,
+                'description'     => $i->description,
+                'base_price'      => (float) $i->base_price,
+                'picture'         => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+                'available_stock' => $stock->get($i->men_item_id, 0),
+                'sold_out'        => $stock->get($i->men_item_id, 0) <= 0,
             ]);
 
         return [
@@ -278,13 +302,22 @@ class PosDeviceService
         $totalAmount = 0;
         $transactionItemsData = [];
 
+        // Only what this branch offers, within today's remaining servings.
+        $stock     = $this->todaysStock($device);
+        $requested = [];
+
         foreach ($items as $itemData) {
             $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])->where('cafe_id', $cafeId)->first();
-            if (!$menuItem) {
+            if (!$menuItem || !$stock->has($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
-            
+
             $quantity = (int)$itemData['quantity'];
+
+            $requested[$menuItem->men_item_id] = ($requested[$menuItem->men_item_id] ?? 0) + $quantity;
+            if ($requested[$menuItem->men_item_id] > $stock->get($menuItem->men_item_id)) {
+                return ['success' => false, 'http' => 422, 'message' => "{$menuItem->menu_name} is sold out or has too few servings left."];
+            }
             $price = $menuItem->base_price;
 
             // Add 25 pesos for each addon, except ice
@@ -344,20 +377,20 @@ class PosDeviceService
                 ]));
 
                 // 1. Update Inventory Serving Tracker
-                $serving = \App\Models\InventoryServing::firstOrCreate(
-                    [
-                        'men_item_id' => $itemData['men_item_id'], 
-                        'branch_id'   => $branchId, 
-                        'date'        => \Carbon\Carbon::today()->toDateString()
-                    ],
-                    [
-                        'expected_servings' => 0, 
-                        'servings_sold'     => 0, 
-                        'spoilage_qty'      => 0, 
-                        'is_sold_out'       => false
-                    ]
-                );
-                
+                $serving = \App\Models\InventoryServing::where('men_item_id', $itemData['men_item_id'])
+                    ->where('branch_id', $branchId)
+                    ->whereDate('date', \Carbon\Carbon::today())
+                    ->first()
+                    ?? \App\Models\InventoryServing::create([
+                        'men_item_id'       => $itemData['men_item_id'],
+                        'branch_id'         => $branchId,
+                        'date'              => \Carbon\Carbon::today()->toDateString(),
+                        'expected_servings' => 0,
+                        'servings_sold'     => 0,
+                        'spoilage_qty'      => 0,
+                        'is_sold_out'       => false,
+                    ]);
+
                 $serving->increment('servings_sold', $itemData['quantity']);
                 
                 if ($serving->expected_servings > 0 && $serving->servings_sold >= $serving->expected_servings) {
