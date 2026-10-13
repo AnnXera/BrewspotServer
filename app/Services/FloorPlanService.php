@@ -132,7 +132,19 @@ class FloorPlanService
         return ['success' => true, 'message' => "Floor plan \"{$plan->floorplan_name}\" deleted."];
     }
 
+    /** Show a floor on the register. Other active floors are left alone. */
     public function activate(User $actor, CafeBranch $branch, string $planUuid): array
+    {
+        return $this->setActive($actor, $branch, $planUuid, true);
+    }
+
+    /** Take a floor off the register. */
+    public function deactivate(User $actor, CafeBranch $branch, string $planUuid): array
+    {
+        return $this->setActive($actor, $branch, $planUuid, false);
+    }
+
+    private function setActive(User $actor, CafeBranch $branch, string $planUuid, bool $active): array
     {
         $plan = $this->repo->findForBranch($planUuid, $branch->branch_id);
 
@@ -140,11 +152,15 @@ class FloorPlanService
             return $this->notFound();
         }
 
-        $this->repo->activate($plan);
+        $this->repo->setActive($plan, $active);
 
-        Log::info('Floor plan activated.', ['plan_uuid' => $plan->uuid, 'branch_uuid' => $branch->uuid, 'by_uuid' => $actor->uuid]);
+        Log::info($active ? 'Floor plan activated.' : 'Floor plan deactivated.', ['plan_uuid' => $plan->uuid, 'branch_uuid' => $branch->uuid, 'by_uuid' => $actor->uuid]);
 
-        return ['success' => true, 'message' => "\"{$plan->floorplan_name}\" is now the active floor plan.", 'floor_plan' => $this->detail($plan)];
+        return [
+            'success'    => true,
+            'message'    => $active ? "\"{$plan->floorplan_name}\" is now shown on the register." : "\"{$plan->floorplan_name}\" is no longer shown on the register.",
+            'floor_plan' => $this->detail($plan),
+        ];
     }
 
     // ── Layout ───────────────────────────────────────────────────────────
@@ -294,27 +310,27 @@ class FloorPlanService
 
     // ── Register view ────────────────────────────────────────────────────
 
-    /** The active plan with each table's next booking, or null when none is active. */
+    /**
+     * Every active floor with each table's next booking. `floor_plans` is the list (a cafe with
+     * several floors shows several); `floor_plan` is the first of them, or null when none is active.
+     */
     public function activeForRegister(CafeBranch $branch): array
     {
-        $plan = $this->repo->findActiveForBranch($branch->branch_id);
+        $floors = $this->repo->activeForBranch($branch->branch_id)->map(function (FloorPlan $plan) {
+            $this->loadLayout($plan);
 
-        if (! $plan) {
-            return ['success' => true, 'floor_plan' => null];
-        }
+            $next = $this->repo->nextReservationsByTable($plan);
+            $held = $this->reservations->seatsHeldNow($plan->floor_plan_id);
 
-        $this->loadLayout($plan);
+            foreach ($plan->tables as $table) {
+                $table->setRelation('upcomingReservation', $next->get($table->table_id));
+                $table->setAttribute('seats_taken', $held->get($table->table_id, 0));
+            }
 
-        $next = $this->repo->nextReservationsByTable($plan);
+            return new FloorPlanResource($plan);
+        })->values();
 
-        $held = $this->reservations->seatsHeldNow($plan->floor_plan_id);
-
-        foreach ($plan->tables as $table) {
-            $table->setRelation('upcomingReservation', $next->get($table->table_id));
-            $table->setAttribute('seats_taken', $held->get($table->table_id, 0));
-        }
-
-        return ['success' => true, 'floor_plan' => new FloorPlanResource($plan)];
+        return ['success' => true, 'floor_plan' => $floors->first(), 'floor_plans' => $floors];
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

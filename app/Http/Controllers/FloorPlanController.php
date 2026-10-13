@@ -83,11 +83,23 @@ class FloorPlanController extends Controller
     }
 
     /**
-     * POST .../floor-plans/{planUuid}/activate
+     * POST .../floor-plans/{planUuid}/activate — shows the floor on the register; other active floors stay active.
      */
     public function activate(Request $request, string $branchUuid, string $planUuid): JsonResponse
     {
         return $this->respond($this->service->activate(
+            $request->user(),
+            $request->attributes->get('branch'),
+            $planUuid
+        ));
+    }
+
+    /**
+     * POST .../floor-plans/{planUuid}/deactivate
+     */
+    public function deactivate(Request $request, string $branchUuid, string $planUuid): JsonResponse
+    {
+        return $this->respond($this->service->deactivate(
             $request->user(),
             $request->attributes->get('branch'),
             $planUuid

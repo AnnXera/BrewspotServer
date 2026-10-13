@@ -74,7 +74,8 @@ $branchScopedRoutes = function () {
         Route::get('/floor-plans/{planUuid}',             [FloorPlanController::class, 'show']);
         Route::patch('/floor-plans/{planUuid}',           [FloorPlanController::class, 'update']);
         Route::delete('/floor-plans/{planUuid}',          [FloorPlanController::class, 'destroy']);
-        Route::post('/floor-plans/{planUuid}/activate',   [FloorPlanController::class, 'activate']);
+        Route::post('/floor-plans/{planUuid}/activate',   [FloorPlanController::class, 'activate']);   // show on the register
+        Route::post('/floor-plans/{planUuid}/deactivate', [FloorPlanController::class, 'deactivate']); // hide from the register
         Route::put('/floor-plans/{planUuid}/layout',      [FloorPlanController::class, 'saveLayout']);
         Route::patch('/tables/{tableUuid}/status',        [FloorPlanController::class, 'tableStatus']);
 
