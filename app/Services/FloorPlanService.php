@@ -8,6 +8,7 @@ use App\Models\CafeBranch;
 use App\Models\FloorPlan;
 use App\Models\User;
 use App\Repository\FloorPlanRepository;
+use App\Repository\ReservationRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -23,7 +24,8 @@ use Illuminate\Support\Facades\Log;
 class FloorPlanService
 {
     public function __construct(
-        private readonly FloorPlanRepository $repo
+        private readonly FloorPlanRepository $repo,
+        private readonly ReservationRepository $reservations
     ) {}
 
     // ── Catalog ──────────────────────────────────────────────────────────
@@ -305,8 +307,11 @@ class FloorPlanService
 
         $next = $this->repo->nextReservationsByTable($plan);
 
+        $held = $this->reservations->seatsHeldNow($plan->floor_plan_id);
+
         foreach ($plan->tables as $table) {
             $table->setRelation('upcomingReservation', $next->get($table->table_id));
+            $table->setAttribute('seats_taken', $held->get($table->table_id, 0));
         }
 
         return ['success' => true, 'floor_plan' => new FloorPlanResource($plan)];

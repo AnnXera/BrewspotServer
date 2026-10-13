@@ -61,6 +61,47 @@ class ReservationRepository
             ->first();
     }
 
+    /**
+     * Most seats held at the same moment by blocking bookings inside [start, end).
+     * Walks each moment a booking starts, so bookings that only touch the window
+     * at different times are not added together.
+     */
+    public function peakSeatsTaken(int $tableId, Carbon $start, Carbon $end, ?int $ignoreReservationId = null): int
+    {
+        $rows = Reservation::blocking()
+            ->where('table_id', $tableId)
+            ->overlapping($start, $end)
+            ->when($ignoreReservationId, fn (Builder $q, $id) => $q->where('reservation_id', '!=', $ignoreReservationId))
+            ->get(['reservation_date', 'reservation_end', 'party_size']);
+
+        return (int) $rows
+            ->pluck('reservation_date')
+            ->filter(fn (Carbon $d) => $d > $start)
+            ->push($start)
+            ->map(fn (Carbon $at) => $rows
+                ->filter(fn (Reservation $r) => $r->reservation_date <= $at && $r->reservation_end > $at)
+                ->sum('party_size'))
+            ->max();
+    }
+
+    /**
+     * Seats held right now (booked windows that include this moment), per shared table of a plan.
+     *
+     * @return Collection<int, int> keyed by table_id
+     */
+    public function seatsHeldNow(int $floorPlanId): Collection
+    {
+        $now = Carbon::now();
+
+        return Reservation::blocking()
+            ->whereHas('table', fn ($t) => $t->where('floorplan_id', $floorPlanId))
+            ->where('reservation_date', '<=', $now)
+            ->where('reservation_end', '>', $now)
+            ->get(['table_id', 'party_size'])
+            ->groupBy('table_id')
+            ->map(fn (Collection $rows) => (int) $rows->sum('party_size'));
+    }
+
     /** @return Collection<string, CafeOpeningHour> keyed by day name */
     public function openingHours(int $cafeId): Collection
     {

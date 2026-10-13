@@ -354,6 +354,88 @@ class ReservationTest extends FloorPlanTestCase
         $this->api('GET', $this->url('?date=06-10-2026'), $token)->assertStatus(422);
     }
 
+    // ── Counter seating (booked by seats) ────────────────────────────────
+
+    private function bar(int $capacity = 8): \App\Models\BranchTable
+    {
+        $bar = $this->table('Bar 1', $capacity);
+        $bar->update(['asset_key' => "table_bar_{$capacity}"]);
+
+        return $bar;
+    }
+
+    public function test_a_counter_seating_table_is_booked_by_seats(): void
+    {
+        $bar   = $this->bar(8);
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 2]))->assertCreated();
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 3]))->assertCreated(); // same window, 5 of 8
+
+        // Only 3 seats left: 4 is refused with the free count, 3 fits.
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 4]))
+            ->assertStatus(409)->assertJsonPath('message', 'Only 3 of 8 seats at Bar 1 are free during that time.');
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 3]))->assertCreated();
+
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 1]))
+            ->assertStatus(409)->assertJsonPath('message', 'Only 0 of 8 seats at Bar 1 are free during that time.');
+
+        // Another time window is untouched.
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 8, 'reservation_date' => '2026-10-06 12:00:00', 'reservation_end' => '2026-10-06 13:00:00']))->assertCreated();
+    }
+
+    public function test_counter_seating_counts_seats_at_the_busiest_moment_not_the_sum(): void
+    {
+        $bar   = $this->bar(8);
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 4, 'reservation_date' => '2026-10-06 10:00:00', 'reservation_end' => '2026-10-06 11:00:00']))->assertCreated();
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 4, 'reservation_date' => '2026-10-06 11:00:00', 'reservation_end' => '2026-10-06 12:00:00']))->assertCreated();
+
+        // The two never sit together, so 4 more across both hours still fits; 5 does not.
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 5, 'reservation_date' => '2026-10-06 10:00:00', 'reservation_end' => '2026-10-06 12:00:00']))->assertStatus(409);
+        $this->api('POST', $this->url(), $token, $this->booking($bar, ['party_size' => 4, 'reservation_date' => '2026-10-06 10:00:00', 'reservation_end' => '2026-10-06 12:00:00']))->assertCreated();
+    }
+
+    public function test_editing_a_counter_booking_ignores_its_own_seats(): void
+    {
+        $bar   = $this->bar(8);
+        $other = $this->makeReservation($bar, '2026-10-06 10:00:00', '2026-10-06 11:30:00'); // 2 seats
+        $mine  = $this->makeReservation($bar, '2026-10-06 10:00:00', '2026-10-06 11:30:00', 'pending'); // 2 seats
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('PATCH', $this->url("/{$mine->uuid}"), $token, ['party_size' => 6])->assertOk();
+        $this->api('PATCH', $this->url("/{$mine->uuid}"), $token, ['party_size' => 7])->assertStatus(409);
+    }
+
+    public function test_seating_at_a_counter_leaves_the_table_status_alone_and_allows_other_parties(): void
+    {
+        $bar   = $this->bar(8);
+        $a     = $this->makeReservation($bar, '2026-10-06 10:00:00', '2026-10-06 11:00:00');
+        $b     = $this->makeReservation($bar, '2026-10-06 10:00:00', '2026-10-06 11:00:00');
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('POST', $this->url("/{$a->uuid}/status"), $token, ['status' => 'seated'])->assertOk();
+        $this->api('POST', $this->url("/{$b->uuid}/status"), $token, ['status' => 'seated'])->assertOk(); // not "still occupied"
+        $this->assertSame('available', $bar->fresh()->status);
+
+        $this->api('POST', $this->url("/{$a->uuid}/status"), $token, ['status' => 'completed'])->assertOk();
+        $this->assertSame('available', $bar->fresh()->status); // not "cleaning" while others are seated
+    }
+
+    public function test_register_shows_seats_taken_on_counter_seating(): void
+    {
+        $bar = $this->bar(8);
+        $this->makeReservation($bar, '2026-10-05 07:30:00', '2026-10-05 09:00:00'); // in progress now (08:00), 2 seats
+        $this->makeReservation($bar, '2026-10-05 07:30:00', '2026-10-05 09:00:00');
+        $this->makeReservation($bar, '2026-10-05 10:00:00', '2026-10-05 11:00:00'); // later, not counted
+
+        $table = collect($this->api('GET', '/api/pos/device/floor-plan', $this->device())->assertOk()->json('floor_plan.tables'))->firstWhere('table_name', 'Bar 1');
+
+        $this->assertTrue($table['shared']);
+        $this->assertSame(4, $table['seats_taken']);
+    }
+
     // ── Register (POS device) ────────────────────────────────────────────
 
     public function test_register_lists_todays_reservations_read_only(): void
