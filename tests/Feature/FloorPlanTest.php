@@ -44,7 +44,7 @@ class FloorPlanTest extends FloorPlanTestCase
             ->assertOk()
             ->assertJsonPath('table_statuses', ['available', 'occupied', 'reserved', 'cleaning'])
             ->assertJsonPath('reservation_rules.default_duration_minutes', 90)
-            ->assertJsonFragment(['key' => 'table_rec_4', 'category' => 'table', 'capacity' => 4]);
+            ->assertJsonFragment(['key' => 'table_square', 'category' => 'table', 'capacity' => 4]);
     }
 
     public function test_every_catalog_asset_has_a_category_and_tables_have_a_capacity(): void
@@ -145,8 +145,8 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $response = $this->api('PUT', $url, $token, [
             'tables' => [
-                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_rec_4', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
-                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_sqr_2', 'x_location' => 400, 'y_location' => 300],
+                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_square', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
+                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_square', 'x_location' => 400, 'y_location' => 300],
             ],
             'elements' => [
                 ['category' => 'door', 'asset_key' => 'door_sgl', 'x_location' => 10, 'y_location' => 10, 'z_index' => 2],
@@ -192,7 +192,7 @@ class FloorPlanTest extends FloorPlanTestCase
                 ['table_name' => 'a', 'capacity' => 0, 'x_location' => -5001, 'y_location' => 1, 'rotation' => 400],             // duplicate name, bad numbers
             ],
             'elements' => [
-                ['category' => 'door', 'asset_key' => 'table_rec_4', 'x_location' => 1, 'y_location' => 1],                    // category mismatch (table asset on a door)
+                ['category' => 'door', 'asset_key' => 'table_square', 'x_location' => 1, 'y_location' => 1],                    // category mismatch (table asset on a door)
                 ['category' => 'door', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
             ],
         ])->assertStatus(422)->assertJsonValidationErrors([

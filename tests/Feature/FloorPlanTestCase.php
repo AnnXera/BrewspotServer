@@ -102,7 +102,7 @@ abstract class FloorPlanTestCase extends TestCase
         return $plan->tables()->create([
             'table_name' => $name,
             'capacity'   => $capacity,
-            'asset_key'  => 'table_rec_4',
+            'asset_key'  => 'table_square',
             'x_location' => 100,
             'y_location' => 100,
             'rotation'   => 0,

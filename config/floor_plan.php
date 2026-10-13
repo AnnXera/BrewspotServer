@@ -60,6 +60,10 @@ return [
         'table_sqr_4' => ['category' => 'table', 'capacity' => 4],
         'table_rec_2' => ['category' => 'table', 'capacity' => 2],
         'table_rec_4' => ['category' => 'table', 'capacity' => 4],
+        'table_rec_6' => ['category' => 'table', 'capacity' => 6],
+        'table_rec_8' => ['category' => 'table', 'capacity' => 8],
+        'table_rec_6_ends' => ['category' => 'table', 'capacity' => 6], // chairs at the short ends
+        'table_rec_8_ends' => ['category' => 'table', 'capacity' => 8],
 
         'door_sgl'    => ['category' => 'door'],
         'door_double' => ['category' => 'door'],
