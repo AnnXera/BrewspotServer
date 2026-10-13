@@ -329,10 +329,8 @@ class PosDeviceService
             ];
         }
 
-        // Add Tax (VAT 12%) if branch is VAT-registered
-        $vatDoc = \App\Models\BranchDocument::where('branch_id', $branchId)->whereNotNull('vat')->latest('branch_doc_id')->first();
-        $tax = ($vatDoc && $vatDoc->vat === 'vat-registered') ? $totalAmount * 0.12 : 0;
-        $grandTotal = $totalAmount + $tax - $discountAmount;
+        // No VAT: the POS is not BIR-accredited, so prices are charged as-is.
+        $grandTotal = $totalAmount - $discountAmount;
 
         if ($paymentMethod === 'cash' && $amountTendered < $grandTotal) {
             return ['success' => false, 'http' => 400, 'message' => 'Amount tendered is less than total amount.'];
