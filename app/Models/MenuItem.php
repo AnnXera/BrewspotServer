@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
@@ -58,6 +59,17 @@ class MenuItem extends Model
     public function recipes(): HasMany
     {
         return $this->hasMany(MenuRecipe::class, 'men_item_id', 'men_item_id');
+    }
+
+    public function sizes(): HasMany
+    {
+        return $this->hasMany(MenuItemSize::class, 'men_item_id', 'men_item_id')->orderBy('sort_order');
+    }
+
+    /** Add-ons offered on this item. */
+    public function addons(): BelongsToMany
+    {
+        return $this->belongsToMany(MenuAddon::class, 'menu_item_addons', 'men_item_id', 'addon_id')->withTimestamps();
     }
 
     public function transactionItems(): HasMany

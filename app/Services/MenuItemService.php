@@ -3,9 +3,8 @@
 namespace App\Services;
 
 use App\Http\Resources\MenuItemResource;
-use App\Models\Ingredient;
 use App\Models\User;
-use App\Repository\IngredientRepository;
+use App\Repository\MenuAddonRepository;
 use App\Repository\MenuItemRepository;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +15,8 @@ class MenuItemService
 {
     public function __construct(
         private readonly MenuItemRepository $repo,
-        private readonly IngredientRepository $ingredients
+        private readonly MenuAddonRepository $addons,
+        private readonly RecipeResolver $recipeResolver
     ) {}
 
     public function createItem(User $owner, array $payload): array
@@ -40,10 +40,18 @@ class MenuItemService
             }
         }
 
-        $recipes = $this->resolveRecipes($cafe->cafe_id, $payload['recipes']);
+        $sizes   = $payload['sizes'] ?? [];
+        $payload = $this->applySizePrice($payload, $sizes);
+        $recipes = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], count($sizes));
 
         if (isset($recipes['errors'])) {
             return $recipes;
+        }
+
+        $addonIds = $this->resolveAddonIds($cafe->cafe_id, $payload['addon_uuids'] ?? []);
+
+        if (isset($addonIds['errors'])) {
+            return $addonIds;
         }
 
         try {
@@ -52,7 +60,7 @@ class MenuItemService
                 $payload['picture'] = $payload['picture']->store($path, 'public');
             }
 
-            $item = $this->repo->create($cafe->cafe_id, $category?->men_category_id, $payload, $recipes);
+            $item = $this->repo->create($cafe->cafe_id, $category?->men_category_id, $payload, $sizes, $recipes, $addonIds['ids']);
         } catch (\Exception $e) {
             Log::channel('owner')->error('Failed to create menu item.', [
                 'owner_uuid' => $owner->uuid,
@@ -106,14 +114,31 @@ class MenuItemService
             }
         }
 
+        // Absent = unchanged; [] = the item no longer comes in sizes.
+        $sizes   = array_key_exists('sizes', $payload) ? ($payload['sizes'] ?? []) : null;
+        $payload = $this->applySizePrice($payload, $sizes);
         $recipes = null;
 
         if (isset($payload['recipes'])) {
-            $recipes = $this->resolveRecipes($cafe->cafe_id, $payload['recipes']);
+            // size_index points into the sizes being saved, or the current ones.
+            $sizeCount = $sizes !== null ? count($sizes) : $item->sizes->count();
+            $recipes   = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], $sizeCount);
 
             if (isset($recipes['errors'])) {
                 return $recipes;
             }
+        }
+
+        $addonIds = null;
+
+        if (array_key_exists('addon_uuids', $payload)) {
+            $addonIds = $this->resolveAddonIds($cafe->cafe_id, $payload['addon_uuids'] ?? []);
+
+            if (isset($addonIds['errors'])) {
+                return $addonIds;
+            }
+
+            $addonIds = $addonIds['ids'];
         }
 
         try {
@@ -125,7 +150,7 @@ class MenuItemService
                 $payload['picture'] = $payload['picture']->store($path, 'public');
             }
 
-            $item = $this->repo->update($item, $payload, $recipes);
+            $item = $this->repo->update($item, $payload, $sizes, $recipes, $addonIds);
         } catch (\Exception $e) {
             Log::channel('owner')->error('Failed to update menu item.', [
                 'owner_uuid' => $owner->uuid,
@@ -148,66 +173,33 @@ class MenuItemService
     }
 
     /**
-     * Matches each recipe row to one of the cafe's ingredients (by uuid, or by
-     * name ignoring case/spacing). Unmatched names become new ingredients when
-     * the item is saved. Rejects the same ingredient twice in one recipe, and a
-     * unit that differs from the ingredient's.
-     *
-     * @return array Resolved rows for MenuItemRepository, or a 422 result with 'errors'.
+     * Sizes replace the single price: base_price becomes the lowest size
+     * price, which menus show as the starting price.
      */
-    private function resolveRecipes(int $cafeId, array $recipes): array
+    private function applySizePrice(array $payload, ?array $sizes): array
     {
-        $byUuid = $this->ingredients->findByUuids(
-            $cafeId, array_values(array_filter(array_column($recipes, 'ingredient_uuid')))
-        )->keyBy('uuid');
-
-        $byName = $this->ingredients->findByNormalizedNames(
-            $cafeId, array_map(fn ($n) => Ingredient::normalize($n), array_filter(array_column($recipes, 'ingredient_name')))
-        )->keyBy('normalized_name');
-
-        $resolved = [];
-        $seen     = [];
-        $errors   = [];
-
-        foreach (array_values($recipes) as $i => $row) {
-            if (! empty($row['ingredient_uuid'])) {
-                $ingredient = $byUuid->get($row['ingredient_uuid']);
-
-                if (! $ingredient) {
-                    $errors["recipes.$i.ingredient_uuid"][] = 'That ingredient no longer exists. Pick it again.';
-                    continue;
-                }
-            } else {
-                $ingredient = $byName->get(Ingredient::normalize($row['ingredient_name']));
-            }
-
-            $name = $ingredient?->name ?? Ingredient::tidy($row['ingredient_name']);
-            $key  = $ingredient ? "id:{$ingredient->ingredient_id}" : 'new:' . Ingredient::normalize($name);
-
-            if (isset($seen[$key])) {
-                $errors["recipes.$i.ingredient_name"][] = "{$name} is already in this recipe.";
-                continue;
-            }
-            $seen[$key] = true;
-
-            if ($ingredient && $ingredient->unit !== $row['unit']) {
-                $errors["recipes.$i.unit"][] = "{$ingredient->name} is measured in {$ingredient->unit}.";
-                continue;
-            }
-
-            $resolved[] = [
-                'ingredient' => $ingredient,
-                'name'       => $name,
-                'quantity'   => $row['quantity'],
-                'unit'       => $row['unit'],
-            ];
+        if ($sizes) {
+            $payload['base_price'] = min(array_map('floatval', array_column($sizes, 'price')));
         }
 
-        if ($errors) {
-            return ['success' => false, 'http' => 422, 'message' => 'Validation failed.', 'errors' => $errors];
+        return $payload;
+    }
+
+    /**
+     * Ids of the cafe's add-ons with these uuids, or a 422 when one is unknown.
+     */
+    private function resolveAddonIds(int $cafeId, array $uuids): array
+    {
+        $uuids  = array_values(array_unique($uuids));
+        $addons = $this->addons->findByUuidsForCafe($cafeId, $uuids);
+
+        if ($addons->count() !== count($uuids)) {
+            return ['success' => false, 'http' => 422, 'message' => 'Validation failed.', 'errors' => [
+                'addon_uuids' => ['An add-on you picked no longer exists. Pick the add-ons again.'],
+            ]];
         }
 
-        return $resolved;
+        return ['ids' => $addons->pluck('addon_id')->all()];
     }
 
     public function listItems(User $owner, ?string $categoryUuid = null): array

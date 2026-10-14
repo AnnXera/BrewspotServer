@@ -215,7 +215,12 @@ class IngredientTest extends TestCase
 
     public function test_migration_moves_existing_recipe_names_into_the_ingredient_list(): void
     {
-        $this->artisan('migrate:rollback', ['--path' => 'database/migrations/2026_09_30_000001_create_ingredients_table.php'])->assertSuccessful();
+        // Later migrations that change menu_recipes' keys are rolled back with it.
+        $this->artisan('migrate:rollback', ['--path' => [
+            'database/migrations/2026_09_30_000001_create_ingredients_table.php',
+            'database/migrations/2026_10_14_000001_create_menu_item_sizes_table.php',
+            'database/migrations/2026_10_14_000003_add_sizes_and_addons_to_transaction_items.php',
+        ]])->assertSuccessful();
 
         $latte = MenuItem::create(['cafe_id' => $this->cafe->cafe_id, 'menu_name' => 'Latte', 'base_price' => 100]);
         $mocha = MenuItem::create(['cafe_id' => $this->cafe->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 120]);

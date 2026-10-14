@@ -78,4 +78,9 @@ class Ingredient extends Model
     {
         return $this->hasMany(MenuRecipe::class, 'ingredient_id', 'ingredient_id');
     }
+
+    public function addonRecipes(): HasMany
+    {
+        return $this->hasMany(MenuAddonRecipe::class, 'ingredient_id', 'ingredient_id');
+    }
 }

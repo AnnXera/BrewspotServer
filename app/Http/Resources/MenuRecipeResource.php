@@ -13,6 +13,8 @@ class MenuRecipeResource extends JsonResource
             'uuid'            => $this->uuid,
             'ingredient_uuid' => $this->whenLoaded('ingredient', fn () => $this->ingredient?->uuid),
             'ingredient_name' => $this->ingredient_name,
+            // Null = used by every size.
+            'size_uuid'       => $this->whenLoaded('size', fn () => $this->size?->uuid),
             'quantity'        => $this->quantity,
             'unit'            => $this->unit,
             'created_at'      => $this->created_at?->toISOString(),

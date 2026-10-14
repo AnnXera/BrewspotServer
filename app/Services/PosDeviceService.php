@@ -269,6 +269,7 @@ class PosDeviceService
         $stock = $this->todaysStock($device);
 
         $items = $this->servings->listAvailableItemsForBranch($device->branch)
+            ->load(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->orderBy('name')])
             ->map(fn ($i) => [
                 'uuid'            => $i->uuid,
                 'category_uuid'   => $i->category->uuid ?? null,
@@ -278,6 +279,18 @@ class PosDeviceService
                 'picture'         => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
                 'available_stock' => $stock->get($i->men_item_id, 0),
                 'sold_out'        => $stock->get($i->men_item_id, 0) <= 0,
+                // Empty = sold at base_price. All sizes share the item's servings.
+                'sizes'           => $i->sizes->map(fn ($s) => [
+                    'uuid'  => $s->uuid,
+                    'name'  => $s->name,
+                    'price' => (float) $s->price,
+                ])->values(),
+                'addons'          => $i->addons->map(fn ($a) => [
+                    'uuid'         => $a->uuid,
+                    'name'         => $a->name,
+                    'price'        => (float) $a->price,
+                    'max_quantity' => $a->max_quantity,
+                ])->values(),
             ]);
 
         return [
@@ -285,6 +298,55 @@ class PosDeviceService
             'categories' => $categories->values(),
             'items'      => $items->values(),
         ];
+    }
+
+    /**
+     * Price of one drink: the chosen size (or base price when the item has no
+     * sizes) plus each add-on x its quantity. Add-ons must be offered on the
+     * item, available, and within their per-drink limit.
+     *
+     * @param array<int, array{uuid: string, quantity: int}> $addons
+     * @return array{unit_price: float, size: ?\App\Models\MenuItemSize, addons: array}|array{message: string}
+     */
+    private function priceLine(\App\Models\MenuItem $menuItem, ?string $sizeUuid, array $addons): array
+    {
+        $size = null;
+
+        if ($menuItem->sizes->isNotEmpty()) {
+            $size = $menuItem->sizes->firstWhere('uuid', $sizeUuid);
+
+            if (! $size) {
+                return ['message' => "Pick a size for {$menuItem->menu_name}."];
+            }
+        } elseif ($sizeUuid) {
+            return ['message' => "{$menuItem->menu_name} does not come in sizes. Remove it and add it again."];
+        }
+
+        $unitPrice = (float) ($size?->price ?? $menuItem->base_price);
+        $lines     = [];
+
+        foreach ($addons as $row) {
+            $addon = $menuItem->addons->firstWhere('uuid', $row['uuid']);
+
+            if (! $addon) {
+                return ['message' => "An add-on on {$menuItem->menu_name} is no longer available. Remove it and add it again."];
+            }
+
+            if (isset($lines[$addon->addon_id])) {
+                return ['message' => "{$addon->name} is listed twice on {$menuItem->menu_name}."];
+            }
+
+            $quantity = (int) $row['quantity'];
+
+            if ($quantity > $addon->max_quantity) {
+                return ['message' => "{$menuItem->menu_name} can have at most {$addon->max_quantity} {$addon->name}."];
+            }
+
+            $lines[$addon->addon_id] = ['addon' => $addon, 'quantity' => $quantity];
+            $unitPrice += (float) $addon->price * $quantity;
+        }
+
+        return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'addons' => array_values($lines)];
     }
 
     public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0): array
@@ -307,25 +369,39 @@ class PosDeviceService
         $requested = [];
 
         foreach ($items as $itemData) {
-            $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])->where('cafe_id', $cafeId)->first();
+            $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])
+                ->where('cafe_id', $cafeId)
+                ->with(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->with('recipes')])
+                ->first();
             if (!$menuItem || !$stock->has($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
 
             $quantity = (int)$itemData['quantity'];
 
+            // Every size draws from the item's one servings count.
             $requested[$menuItem->men_item_id] = ($requested[$menuItem->men_item_id] ?? 0) + $quantity;
             if ($requested[$menuItem->men_item_id] > $stock->get($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 422, 'message' => "{$menuItem->menu_name} is sold out or has too few servings left."];
             }
-            $price = $menuItem->base_price;
 
-            $totalAmount += $price * $quantity;
-            
+            // Prices always come from the menu, never from the register.
+            $line = $this->priceLine($menuItem, $itemData['size_uuid'] ?? null, $itemData['addons'] ?? []);
+            if (isset($line['message'])) {
+                return ['success' => false, 'http' => 422, 'message' => $line['message']];
+            }
+
+            $totalAmount += $line['unit_price'] * $quantity;
+
             $transactionItemsData[] = [
-                'men_item_id' => $menuItem->men_item_id,
-                'quantity'    => $quantity,
-                'unit_price'  => $price,
+                'row' => [
+                    'men_item_id' => $menuItem->men_item_id,
+                    'men_size_id' => $line['size']?->men_size_id,
+                    'size_name'   => $line['size']?->name,
+                    'quantity'    => $quantity,
+                    'unit_price'  => $line['unit_price'],
+                ],
+                'addons' => $line['addons'],
             ];
         }
 
@@ -358,7 +434,7 @@ class PosDeviceService
                 'receipt_number'  => $nextReceiptNumber,
             ]);
 
-            foreach ($transactionItemsData as $itemData) {
+            foreach ($transactionItemsData as ['row' => $itemData, 'addons' => $addonLines]) {
                 $txItem = \App\Models\TransactionItem::create(array_merge($itemData, [
                     'transaction_id' => $transaction->transaction_id,
                 ]));
@@ -384,8 +460,10 @@ class PosDeviceService
                     $serving->update(['is_sold_out' => true]);
                 }
 
-                // 2. Ingredient Consumption Logs
-                $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])->get();
+                // 2. Ingredient Consumption Logs: rows for every size, plus the sold size's own rows
+                $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])
+                    ->where(fn ($q) => $q->whereNull('men_size_id')->orWhere('men_size_id', $itemData['men_size_id']))
+                    ->get();
                 foreach ($recipes as $recipe) {
                     \App\Models\IngredientConsumptionLog::create([
                         'transaction_item_id' => $txItem->transaction_item_id,
@@ -394,6 +472,26 @@ class PosDeviceService
                         'quantity_consumed'   => $recipe->quantity * $itemData['quantity'],
                         'unit'                => $recipe->unit,
                     ]);
+                }
+
+                // 3. Add-ons, and what they use (per drink x drinks on the line)
+                foreach ($addonLines as ['addon' => $addon, 'quantity' => $addonQty]) {
+                    $txItem->addons()->create([
+                        'addon_id'   => $addon->addon_id,
+                        'addon_name' => $addon->name,
+                        'price'      => $addon->price,
+                        'quantity'   => $addonQty,
+                    ]);
+
+                    foreach ($addon->recipes as $recipe) {
+                        \App\Models\IngredientConsumptionLog::create([
+                            'transaction_item_id' => $txItem->transaction_item_id,
+                            'ingredient_id'       => $recipe->ingredient_id,
+                            'ingredient_name'     => $recipe->ingredient_name,
+                            'quantity_consumed'   => $recipe->quantity * $addonQty * $itemData['quantity'],
+                            'unit'                => $recipe->unit,
+                        ]);
+                    }
                 }
             }
 

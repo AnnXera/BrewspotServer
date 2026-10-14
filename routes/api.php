@@ -18,6 +18,7 @@ use App\Http\Controllers\BranchController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\MenuCategoryController;
 use App\Http\Controllers\MenuItemController;
+use App\Http\Controllers\MenuAddonController;
 use App\Http\Controllers\IngredientController;
 use App\Http\Controllers\CategoryBranchController;
 use App\Http\Controllers\CafeStaffController;
@@ -198,6 +199,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/menu-items',                            [MenuItemController::class, 'store']);
             Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
             Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
+
+            Route::get('/menu-addons',                            [MenuAddonController::class, 'index']);
+            Route::post('/menu-addons',                           [MenuAddonController::class, 'store']);
+            Route::patch('/menu-addons/{uuid}',                   [MenuAddonController::class, 'update']);
+            Route::delete('/menu-addons/{uuid}',                  [MenuAddonController::class, 'destroy']);
 
             Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
             Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
