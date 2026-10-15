@@ -145,6 +145,14 @@ class PosDeviceController extends Controller
     }
 
     /**
+     * GET /api/pos/device/transactions/{transactionUuid} — one sale with its lines and payment.
+     */
+    public function transaction(Request $request, string $transactionUuid): JsonResponse
+    {
+        return $this->respond($this->service->transaction($request->user(), $transactionUuid));
+    }
+
+    /**
      * POST /api/pos/device/staff/{userUuid}/change-pin — replace a temporary PIN, then unlock.
      */
     public function changePin(ChangePinOnDeviceRequest $request, string $userUuid): JsonResponse

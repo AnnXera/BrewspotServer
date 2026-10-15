@@ -28,6 +28,9 @@ use Laravel\Sanctum\PersonalAccessToken;
  */
 class PosDeviceService
 {
+    /** Sale statuses that count toward totals. Anything else (voided, refunded) is reported separately. */
+    private const SETTLED_STATUSES = ['completed', 'paid'];
+
     public function __construct(
         private readonly PosDeviceRepository $repo,
         private readonly StaffPinService $pins,
@@ -517,37 +520,102 @@ class PosDeviceService
         ];
     }
 
+    /**
+     * Today's sales for this register's branch. Totals count settled sales only, so voided
+     * sales never inflate what the drawer should hold; voids are reported beside them.
+     */
     public function transactions(PosDevice $device): array
     {
         $branchId = $device->branch_id;
-        
+        $settled  = self::SETTLED_STATUSES;
+
         $todayTransactions = \App\Models\Transaction::where('branch_id', $branchId)
             ->whereDate('created_at', \Carbon\Carbon::today())
             ->with(['staff.user'])
+            ->withCount('items')
+            ->orderBy('created_at')
             ->get();
 
-        $monthTransactions = \App\Models\Transaction::where('branch_id', $branchId)
+        [$todaySettled, $todayVoided] = $todayTransactions->partition(fn ($t) => in_array($t->status, $settled, true));
+
+        $monthTotal = \App\Models\Transaction::where('branch_id', $branchId)
+            ->whereIn('status', $settled)
             ->whereMonth('created_at', \Carbon\Carbon::now()->month)
             ->whereYear('created_at', \Carbon\Carbon::now()->year)
-            ->get();
+            ->sum('total_amount');
 
-        $todayTotal = $todayTransactions->sum('total_amount');
-        $monthTotal = $monthTransactions->sum('total_amount');
+        $netTotal  = (float) $todaySettled->sum('total_amount');
+        $voidTotal = (float) $todayVoided->sum('total_amount');
 
         return [
             'success'      => true,
-            'today_total'  => (float) $todayTotal,
-            'today_count'  => $todayTransactions->count(),
-            'month_total'  => (float) $monthTotal,
-            'transactions' => $todayTransactions->map(fn($t) => [
-                'uuid' => $t->uuid,
+            'today_total'  => $netTotal,                // net: settled sales only
+            'today_count'  => $todaySettled->count(),
+            'gross_total'  => $netTotal + $voidTotal,   // everything rung up, voids included
+            'void_count'   => $todayVoided->count(),
+            'void_total'   => $voidTotal,
+            'month_total'  => (float) $monthTotal,      // net, settled sales only
+            'transactions' => $todayTransactions->map(fn ($t) => [
+                'uuid'           => $t->uuid,
                 'receipt_number' => $t->receipt_number ?: $t->uuid,
-                'created_at' => $t->created_at->toISOString(),
-                'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
-                'total_amount' => (float) $t->total_amount,
-                'status' => $t->status,
-                'items_count' => $t->items()->count(),
+                'created_at'     => $t->created_at->toISOString(),
+                'staff_name'     => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'total_amount'   => (float) $t->total_amount,
+                'status'         => $t->status,
+                'items_count'    => $t->items_count,
             ])->values(),
+        ];
+    }
+
+    /**
+     * One sale from this register's branch: lines with size and add-ons, discount, and payment.
+     */
+    public function transaction(PosDevice $device, string $transactionUuid): array
+    {
+        $t = \App\Models\Transaction::where('branch_id', $device->branch_id)
+            ->where('uuid', $transactionUuid)
+            ->with(['staff.user', 'items.menuItem', 'items.addons', 'payments'])
+            ->first();
+
+        if (! $t) {
+            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
+        }
+
+        $payment = $t->payments->sortByDesc('created_at')->first();
+        $subtotal = $t->items->sum(fn ($i) => (float) $i->unit_price * $i->quantity);
+
+        return [
+            'success'     => true,
+            'transaction' => [
+                'uuid'            => $t->uuid,
+                'receipt_number'  => $t->receipt_number ?: $t->uuid,
+                'created_at'      => $t->created_at->toISOString(),
+                'staff_name'      => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'status'          => $t->status,
+                'subtotal'        => round($subtotal, 2),
+                'discount_type'   => $t->discount_type,
+                'discount_amount' => (float) $t->discount_amount,
+                'total_amount'    => (float) $t->total_amount,
+                'payment'         => $payment ? [
+                    'method'           => $payment->payment_method_type,
+                    'reference_number' => $payment->payment_instrument,
+                    'amount_tendered'  => (float) $payment->amount_tendered,
+                    'change'           => (float) $payment->amount_change,
+                ] : null,
+                'items' => $t->items->map(fn ($i) => [
+                    'uuid'       => $i->uuid,
+                    'menu_name'  => $i->menuItem?->menu_name ?? 'Removed item',
+                    'size_name'  => $i->size_name,
+                    'quantity'   => $i->quantity,
+                    'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
+                    'line_total' => round((float) $i->unit_price * $i->quantity, 2),
+                    'addons'     => $i->addons->map(fn ($a) => [
+                        'name'     => $a->addon_name,
+                        'quantity' => $a->quantity,
+                        'price'    => (float) $a->price,
+                    ])->values(),
+                ])->values(),
+            ],
         ];
     }
 }

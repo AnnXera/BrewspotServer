@@ -243,6 +243,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/menu',                    [PosDeviceController::class, 'menu']);
             Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
             Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
+            Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.
