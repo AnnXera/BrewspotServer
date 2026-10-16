@@ -63,7 +63,7 @@ class OwnerDashboardRepository
     }
 
     /**
-     * Units and gross sales per menu item (discounts sit on the whole sale, not the line).
+     * Orders, units and gross sales per menu item (discounts sit on the whole sale, not the line).
      */
     public function itemSales(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
@@ -74,9 +74,32 @@ class OwnerDashboardRepository
             ->whereIn('transactions.branch_id', $branchIds)
             ->where('transactions.status', 'completed')
             ->whereBetween('transactions.created_at', [$from, $to])
-            ->groupBy('menu_items.men_item_id', 'menu_items.uuid', 'menu_items.menu_name', 'menu_items.picture', 'menu_categories.uuid', 'menu_categories.name')
-            ->selectRaw('menu_items.men_item_id, menu_items.uuid, menu_items.menu_name, menu_items.picture,
+            ->groupBy('menu_items.men_item_id', 'menu_items.uuid', 'menu_items.menu_name', 'menu_categories.uuid', 'menu_categories.name')
+            ->selectRaw('menu_items.men_item_id, menu_items.uuid, menu_items.menu_name,
                 menu_categories.uuid as category_uuid, menu_categories.name as category_name,
+                COUNT(DISTINCT transactions.transaction_id) as orders,
+                SUM(transaction_items.quantity) as quantity,
+                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+            ->get();
+    }
+
+    /**
+     * Per menu category: how many orders included it, plus its units and gross sales.
+     * One order with two drinks from the same category counts once.
+     */
+    public function categoryOrders(Collection $branchIds, Carbon $from, Carbon $to): Collection
+    {
+        return TransactionItem::query()
+            ->join('transactions', 'transactions.transaction_id', '=', 'transaction_items.transaction_id')
+            ->join('menu_items', 'menu_items.men_item_id', '=', 'transaction_items.men_item_id')
+            ->leftJoin('menu_categories', 'menu_categories.men_category_id', '=', 'menu_items.men_category_id')
+            ->whereIn('transactions.branch_id', $branchIds)
+            ->where('transactions.status', 'completed')
+            ->whereBetween('transactions.created_at', [$from, $to])
+            ->groupBy('menu_categories.uuid', 'menu_categories.name')
+            ->selectRaw('menu_categories.uuid as category_uuid, menu_categories.name as category_name,
+                COUNT(DISTINCT transactions.transaction_id) as orders,
+                COUNT(DISTINCT transaction_items.men_item_id) as items,
                 SUM(transaction_items.quantity) as quantity,
                 SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
             ->get();

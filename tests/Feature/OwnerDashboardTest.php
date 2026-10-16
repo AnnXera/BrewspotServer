@@ -61,36 +61,52 @@ class OwnerDashboardTest extends TestCase
         $this->sale($main, '2026-10-16 09:00', [[$latte, 3]]);           // today
         $this->sale($side, '2026-10-15 10:00', [[$latte, 1], [$bagel, 2]]); // yesterday
         $this->sale($side, '2026-10-16 11:00', [[$bagel, 1]], 'voided'); // ignored
-        $this->sale($main, '2026-09-20 10:00', [[$bagel, 1]]);           // previous daily window
+        $this->sale($main, '2026-10-08 10:00', [[$bagel, 1]]);           // last week, before Friday
+        // Two cheap bagel-only orders: Food is in more orders, Drinks still earns more.
+        $this->sale($main, '2026-10-15 12:00', [[$bagel, 1]]);
+        $this->sale($main, '2026-10-15 13:00', [[$bagel, 1]]);
 
         $this->api('GET', '/api/owner/dashboard-stats?range=daily')
             ->assertOk()
             ->assertJsonPath('totals.branches', 3)
             ->assertJsonPath('totals.active_branches', 2)
             ->assertJsonPath('totals.pending_branches', 1)
-            ->assertJsonPath('totals.orders', 3)
+            ->assertJsonPath('totals.orders', 5)
+            ->assertJsonPath('period.from', '2026-10-11') // Sunday
+            ->assertJsonPath('period.to', '2026-10-17')   // Saturday
             ->assertJsonPath('totals.today_orders', 1)
-            ->assertJsonCount(14, 'series')
-            ->assertJsonPath('series.13.start', '2026-10-16')
-            ->assertJsonPath('series.13.revenue', 360)
-            ->assertJsonPath('series.12.revenue', 280)
-            ->assertJsonPath('period.orders', 2)
+            ->assertJsonCount(7, 'series')
+            ->assertJsonPath('series.0.label', 'Sun')
+            ->assertJsonPath('series.5.start', '2026-10-16')
+            ->assertJsonPath('series.5.revenue', 360)
+            ->assertJsonPath('series.4.revenue', 440)
+            ->assertJsonPath('series.6.upcoming', true)
+            ->assertJsonPath('series.5.upcoming', false)
+            ->assertJsonPath('period.orders', 4)
             ->assertJsonPath('period.previous_revenue', 80)
-            ->assertJsonPath('trending_items.0.name', 'Latte')
-            ->assertJsonPath('trending_items.0.quantity', 4)
-            ->assertJsonPath('top_categories.0.name', 'Drinks')
+            ->assertJsonPath('trending_items.0.name', 'Bagel')
+            ->assertJsonPath('trending_items.0.orders', 3)
+            ->assertJsonPath('trending_items.0.share', 75)
+            ->assertJsonPath('trending_items.1.name', 'Latte')
+            ->assertJsonPath('trending_items.1.quantity', 4)
+            ->assertJsonPath('top_categories.0.name', 'Food')
+            ->assertJsonPath('top_categories.0.orders', 3)
+            ->assertJsonPath('top_categories.0.share', 75)
+            ->assertJsonPath('top_categories.1.name', 'Drinks')
+            ->assertJsonPath('top_categories.1.orders', 2)
             ->assertJsonPath('branches.0.name', 'Main');
 
         $this->api('GET', '/api/owner/dashboard-stats?range=monthly')
             ->assertOk()
             ->assertJsonCount(12, 'series')
             ->assertJsonPath('series.11.start', '2026-10-01')
-            ->assertJsonPath('series.11.orders', 2)
-            ->assertJsonPath('series.10.orders', 1);
+            ->assertJsonPath('series.11.orders', 5)
+            ->assertJsonPath('series.10.orders', 0);
 
         $this->api('GET', '/api/owner/dashboard-stats?range=weekly')
             ->assertOk()
-            ->assertJsonPath('series.11.start', '2026-10-12');
+            ->assertJsonPath('series.11.start', '2026-10-11')
+            ->assertJsonPath('series.11.end', '2026-10-17');
     }
 
     public function test_ignores_other_owners_sales(): void

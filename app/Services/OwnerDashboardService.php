@@ -6,19 +6,22 @@ use App\Models\User;
 use App\Repository\OwnerDashboardRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Owner dashboard: lifetime totals plus an income series for one range
  * (daily / weekly / monthly), all branches combined. Trending items, top
- * categories and the branch breakdown cover the same window as the series,
- * compared against the window right before it.
+ * categories and the branch breakdown cover the same window as the series.
+ *
+ * Daily is the current week, Sunday to Saturday; weekly buckets run Sunday to
+ * Saturday too. Income is compared with the same stretch of the window before
+ * (week to date vs. last week to the same day), so a half-done week is not
+ * measured against a full one.
  */
 class OwnerDashboardService
 {
     /** How many buckets each range shows. */
     private const BUCKETS = [
-        'daily'   => 14,
+        'daily'   => 7, // one Sunday-to-Saturday week
         'weekly'  => 12,
         'monthly' => 12,
     ];
@@ -34,7 +37,8 @@ class OwnerDashboardService
         $branches  = $this->repo->branchesByOwner($owner->user_id);
 
         [$from, $to]         = $this->window($range, $now);
-        [$prevFrom, $prevTo] = $this->window($range, $this->shift($range, $now, -self::BUCKETS[$range]));
+        [$prevFrom]          = $this->window($range, $this->shift($range, $now, -self::BUCKETS[$range]));
+        $prevTo              = $this->shift($range, $now, -self::BUCKETS[$range])->endOfDay();
 
         $series       = $this->series($range, $this->repo->dailyTotals($branchIds, $from, $to), $from);
         $previousDays = $this->repo->dailyTotals($branchIds, $prevFrom, $prevTo);
@@ -44,8 +48,7 @@ class OwnerDashboardService
         $prevRevenue = (float) $previousDays->sum('revenue');
         $prevOrders  = (int) $previousDays->sum('orders');
 
-        $items     = $this->repo->itemSales($branchIds, $from, $to);
-        $prevItems = $this->repo->itemSales($branchIds, $prevFrom, $prevTo)->keyBy('men_item_id');
+        $items = $this->repo->itemSales($branchIds, $from, $to);
 
         $today = $this->repo->dailyTotals($branchIds, $now->copy()->startOfDay(), $now->copy()->endOfDay())->first();
 
@@ -71,8 +74,8 @@ class OwnerDashboardService
                 'orders_change'    => $this->change($orders, $prevOrders),
             ],
             'series'          => $series->values(),
-            'trending_items'  => $this->trending($items, $prevItems),
-            'top_categories'  => $this->categories($items),
+            'trending_items'  => $this->trending($items, $orders),
+            'top_categories'  => $this->categories($this->repo->categoryOrders($branchIds, $from, $to), $orders),
             'branches'        => $this->branchBreakdown($branches, $this->repo->branchSales($branchIds, $from, $to)),
         ];
     }
@@ -95,21 +98,23 @@ class OwnerDashboardService
     private function window(string $range, Carbon $end): array
     {
         $last = match ($range) {
-            'daily'   => $end->copy()->endOfDay(),
-            'weekly'  => $end->copy()->endOfWeek(Carbon::SUNDAY),
-            'monthly' => $end->copy()->endOfMonth(),
+            'daily', 'weekly' => $end->copy()->endOfWeek(Carbon::SATURDAY),
+            'monthly'         => $end->copy()->endOfMonth(),
         };
 
-        $first = $this->shift($range, $end, -(self::BUCKETS[$range] - 1));
         $first = match ($range) {
-            'daily'   => $first->startOfDay(),
-            'weekly'  => $first->startOfWeek(Carbon::MONDAY),
-            'monthly' => $first->startOfMonth(),
+            'daily'   => $end->copy()->startOfWeek(Carbon::SUNDAY),
+            'weekly'  => $this->shift($range, $end, -(self::BUCKETS[$range] - 1))->startOfWeek(Carbon::SUNDAY),
+            'monthly' => $this->shift($range, $end, -(self::BUCKETS[$range] - 1))->startOfMonth(),
         };
 
         return [$first, $last];
     }
 
+    /**
+     * Moves $steps buckets; for daily that is days within the series, and a
+     * shift by BUCKETS (7) lands on the same weekday last week.
+     */
     private function shift(string $range, Carbon $date, int $steps): Carbon
     {
         return match ($range) {
@@ -125,12 +130,13 @@ class OwnerDashboardService
     private function series(string $range, Collection $days, Carbon $from): Collection
     {
         $buckets = collect();
+        $today   = Carbon::today();
 
         for ($i = 0; $i < self::BUCKETS[$range]; $i++) {
             $start = $this->shift($range, $from, $i);
             $end   = match ($range) {
                 'daily'   => $start->copy()->endOfDay(),
-                'weekly'  => $start->copy()->endOfWeek(Carbon::SUNDAY),
+                'weekly'  => $start->copy()->endOfWeek(Carbon::SATURDAY),
                 'monthly' => $start->copy()->endOfMonth(),
             };
 
@@ -148,62 +154,62 @@ class OwnerDashboardService
                 'start'   => $start->toDateString(),
                 'end'     => $end->toDateString(),
                 'label'   => match ($range) {
-                    'daily'   => $start->format('M j'),
+                    'daily'   => $start->format('D'),
                     'weekly'  => $start->format('M j'),
                     'monthly' => $start->format('M Y'),
                 },
                 'revenue' => round($revenue, 2),
                 'orders'  => $orders,
+                // Later this week: nothing to sell yet, drawn as an empty slot.
+                'upcoming' => $start->gt($today),
             ]);
         }
 
         return $buckets;
     }
 
-    private function trending(Collection $items, Collection $previous): array
+    /**
+     * Top sellers ranked by how many orders included the item. `share` is the percent
+     * of all orders in the window.
+     */
+    private function trending(Collection $items, int $totalOrders): array
     {
-        $totalQty = max(1, (int) $items->sum('quantity'));
-
         return $items
-            ->sortByDesc(fn ($row) => [(int) $row->quantity, (float) $row->sales])
+            ->sortByDesc(fn ($row) => [(int) $row->orders, (float) $row->sales])
             ->take(5)
             ->values()
-            ->map(function ($row, $i) use ($previous, $totalQty) {
-                $prevQty = (int) ($previous->get($row->men_item_id)->quantity ?? 0);
-
-                return [
-                    'rank'              => $i + 1,
-                    'uuid'              => $row->uuid,
-                    'name'              => $row->menu_name,
-                    'category'          => $row->category_name ?? 'Uncategorized',
-                    'picture'           => $row->picture ? Storage::disk('public')->url($row->picture) : null,
-                    'quantity'          => (int) $row->quantity,
-                    'sales'             => round((float) $row->sales, 2),
-                    'share'             => round((int) $row->quantity / $totalQty * 100, 1),
-                    'previous_quantity' => $prevQty,
-                    'change'            => $this->change((int) $row->quantity, $prevQty),
-                ];
-            })
+            ->map(fn ($row, $i) => [
+                'rank'     => $i + 1,
+                'uuid'     => $row->uuid,
+                'name'     => $row->menu_name,
+                'category' => $row->category_name ?? 'Uncategorized',
+                'orders'   => (int) $row->orders,
+                'quantity' => (int) $row->quantity,
+                'sales'    => round((float) $row->sales, 2),
+                'share'    => $totalOrders > 0 ? round((int) $row->orders / $totalOrders * 100, 1) : 0,
+            ])
             ->all();
     }
 
-    private function categories(Collection $items): array
+    /**
+     * Ranked by how many orders included the category. `share` is the percent of all
+     * orders in the window, so shares can add up past 100 (one order, several categories).
+     */
+    private function categories(Collection $rows, int $totalOrders): array
     {
-        $totalSales = (float) $items->sum('sales');
-
-        return $items
-            ->groupBy(fn ($row) => $row->category_uuid ?? 'uncategorized')
-            ->map(fn (Collection $rows) => [
-                'uuid'     => $rows->first()->category_uuid,
-                'name'     => $rows->first()->category_name ?? 'Uncategorized',
-                'quantity' => (int) $rows->sum('quantity'),
-                'sales'    => round((float) $rows->sum('sales'), 2),
-                'items'    => $rows->count(),
+        return $rows
+            ->map(fn ($row) => [
+                'uuid'     => $row->category_uuid,
+                'name'     => $row->category_name ?? 'Uncategorized',
+                'orders'   => (int) $row->orders,
+                'quantity' => (int) $row->quantity,
+                'sales'    => round((float) $row->sales, 2),
+                'items'    => (int) $row->items,
+                'share'    => $totalOrders > 0 ? round((int) $row->orders / $totalOrders * 100, 1) : 0,
             ])
-            ->sortByDesc('sales')
+            ->sortByDesc(fn (array $c) => [$c['orders'], $c['sales']])
             ->take(5)
             ->values()
-            ->map(fn (array $c) => [...$c, 'share' => $totalSales > 0 ? round($c['sales'] / $totalSales * 100, 1) : 0])
             ->all();
     }
 
