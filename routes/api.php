@@ -151,6 +151,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
         Route::get('/profile',         [OwnerProfileController::class, 'profile']);
+        Route::get('/dashboard-stats', [\App\Http\Controllers\OwnerDashboardController::class, 'stats']); // totals + income series, all branches
         Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
         Route::get('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
         Route::put('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
