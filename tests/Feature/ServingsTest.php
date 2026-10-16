@@ -229,6 +229,28 @@ class ServingsTest extends TestCase
         $this->api('GET', $this->url('/categories?sort=bogus'), $token)->assertStatus(422)->assertJsonValidationErrors('sort');
     }
 
+    public function test_categories_overview_ignores_deleted_menu_items(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $tea   = $this->makeItem('Tea', $this->category);
+
+        $this->makeServing($this->latte, ['expected_servings' => 10]);
+        $this->makeServing($tea, ['expected_servings' => 4]);
+        $this->makeServing($this->croissant, ['expected_servings' => 6]);
+
+        $this->latte->delete();
+        $this->croissant->delete();
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            // Croissant was the only uncategorized item, so that card goes away too.
+            ->assertJsonCount(1, 'categories.data')
+            ->assertJsonPath('categories.data.0.name', 'Drinks')
+            ->assertJsonPath('categories.data.0.items', 1)
+            ->assertJsonPath('categories.data.0.expected_servings', 4)
+            ->assertJsonPath('categories.data.0.remaining', 4);
+    }
+
     public function test_categories_overview_lists_visible_categories_without_servings(): void
     {
         $token = $this->tokenFor($this->manager);

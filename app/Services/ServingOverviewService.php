@@ -29,7 +29,9 @@ class ServingOverviewService
      */
     public function categories(CafeBranch $branch, ?string $search, string $sort, int $page, int $perPage): array
     {
-        $servings = $this->repo->listForDate($branch->branch_id, $this->today());
+        // Deleted menu items keep their serving row (soft delete), but no longer count.
+        $servings = $this->repo->listForDate($branch->branch_id, $this->today())
+            ->filter(fn (InventoryServing $s) => $s->menuItem && ! $s->menuItem->trashed());
         $byCategory = $servings->groupBy(fn (InventoryServing $s) => $s->menuItem?->category?->uuid ?? 'uncategorized');
 
         // Every category visible at the branch gets a card, even with nothing planned today.

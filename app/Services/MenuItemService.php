@@ -42,7 +42,7 @@ class MenuItemService
 
         $sizes   = $payload['sizes'] ?? [];
         $payload = $this->applySizePrice($payload, $sizes);
-        $recipes = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], count($sizes));
+        $recipes = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], array_column($sizes, 'name'));
 
         if (isset($recipes['errors'])) {
             return $recipes;
@@ -121,8 +121,8 @@ class MenuItemService
 
         if (isset($payload['recipes'])) {
             // size_index points into the sizes being saved, or the current ones.
-            $sizeCount = $sizes !== null ? count($sizes) : $item->sizes->count();
-            $recipes   = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], $sizeCount);
+            $sizeNames = $sizes !== null ? array_column($sizes, 'name') : $item->sizes->pluck('name')->all();
+            $recipes   = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], $sizeNames);
 
             if (isset($recipes['errors'])) {
                 return $recipes;

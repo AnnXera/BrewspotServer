@@ -131,6 +131,18 @@ class SizesAndAddonsTest extends TestCase
             ],
         ])->assertStatus(422)->assertJsonValidationErrors('recipes.1.ingredient_name');
 
+        // Set for one size only: every size needs it, or it goes on All sizes.
+        $this->api('POST', '/api/owner/menu-items', [
+            'menu_name' => 'Americano',
+            'sizes'     => [['name' => 'Small', 'price' => 90], ['name' => 'Large', 'price' => 110]],
+            'recipes'   => [
+                ['ingredient_name' => 'Hot Water', 'quantity' => 1, 'unit' => 'cups'],
+                ['ingredient_name' => 'Espresso', 'quantity' => 2, 'unit' => 'shots', 'size_index' => 0],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors([
+            'recipes.1.size_index' => 'Espresso is set for Small but not Large. Add it for Large, or use All sizes.',
+        ]);
+
         // Without sizes, a price is still required.
         $this->api('POST', '/api/owner/menu-items', [
             'menu_name' => 'Latte',

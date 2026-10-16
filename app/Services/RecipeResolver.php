@@ -20,15 +20,21 @@ class RecipeResolver
      * ignoring case/spacing). Unmatched names become new ingredients when the
      * recipe is saved. Rejects a unit that differs from the ingredient's, and
      * the same ingredient twice where it would be counted twice: twice for one
-     * size, or for one size and again for all sizes.
+     * size, or for one size and again for all sizes. An ingredient set per size
+     * must be set for every size (Espresso for Small needs Espresso for Large),
+     * or else for all sizes.
      *
-     * size_index points into the item's sizes (0-based); null means every size.
-     * With no sizes ($sizeCount = 0) it is ignored.
+     * size_index points into $sizeNames (the item's sizes, in order); null
+     * means every size. With no sizes it is ignored.
      *
+     * @param array<int, string> $sizeNames
      * @return array Resolved rows ({ingredient, name, quantity, unit, size_index}), or a 422 result with 'errors'.
      */
-    public function resolve(int $cafeId, array $recipes, int $sizeCount = 0): array
+    public function resolve(int $cafeId, array $recipes, array $sizeNames = []): array
     {
+        $sizeNames = array_values($sizeNames);
+        $sizeCount = count($sizeNames);
+
         $byUuid = $this->ingredients->findByUuids(
             $cafeId, array_values(array_filter(array_column($recipes, 'ingredient_uuid')))
         )->keyBy('uuid');
@@ -39,6 +45,7 @@ class RecipeResolver
 
         $resolved = [];
         $seen     = []; // ingredient key => [scope => true], scope 'all' or a size index
+        $firstRow = []; // ingredient key => [row index, name], where a missing size is reported
         $errors   = [];
 
         foreach (array_values($recipes) as $i => $row) {
@@ -74,6 +81,7 @@ class RecipeResolver
                 continue;
             }
             $seen[$key][$scope] = true;
+            $firstRow[$key] ??= [$i, $name];
 
             if ($ingredient && $ingredient->unit !== $row['unit']) {
                 $errors["recipes.$i.unit"][] = "{$ingredient->name} is measured in {$ingredient->unit}.";
@@ -89,10 +97,33 @@ class RecipeResolver
             ];
         }
 
+        foreach ($seen as $key => $scopes) {
+            if (isset($scopes['all'])) {
+                continue;
+            }
+
+            $missing = array_values(array_diff_key($sizeNames, $scopes));
+
+            if ($missing) {
+                [$i, $name] = $firstRow[$key];
+                $set  = self::listNames(array_values(array_intersect_key($sizeNames, $scopes)));
+                $need = self::listNames($missing);
+                $errors["recipes.$i.size_index"][] = "{$name} is set for {$set} but not {$need}. Add it for {$need}, or use All sizes.";
+            }
+        }
+
         if ($errors) {
             return ['success' => false, 'http' => 422, 'message' => 'Validation failed.', 'errors' => $errors];
         }
 
         return $resolved;
+    }
+
+    /** "Small", "Small and Large", "Small, Medium and Large". */
+    private static function listNames(array $names): string
+    {
+        $last = array_pop($names);
+
+        return $names ? implode(', ', $names) . " and {$last}" : (string) $last;
     }
 }
