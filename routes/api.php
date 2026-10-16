@@ -185,6 +185,14 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         // Branch-scoped employees + registers (same endpoints as the manager dashboard)
         Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
 
+        // Feature-Gated: Analytics (one call per tab; ?from=&to=&branch=)
+        Route::middleware('plan.feature:advanced_analytics')->prefix('analytics')->group(function () {
+            Route::get('/sales',      [\App\Http\Controllers\OwnerAnalyticsController::class, 'sales']);
+            Route::get('/menu',       [\App\Http\Controllers\OwnerAnalyticsController::class, 'menu']);
+            Route::get('/branches',   [\App\Http\Controllers\OwnerAnalyticsController::class, 'branches']);
+            Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);
+        });
+
         // Feature-Gated: Menu Management
         Route::middleware('plan.feature:menu_management')->group(function () {
             Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
