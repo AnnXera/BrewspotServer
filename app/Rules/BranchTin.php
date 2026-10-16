@@ -14,6 +14,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
  *  - Main branch: branch code must be 00000 (head office).
  *  - Side branch: same 9-digit TIN as the cafe's main branch, a branch code
  *    other than 00000, and not already used by another branch of the cafe.
+ *  - Either: no other active branch (of any cafe) may already hold the full TIN.
  */
 class BranchTin implements ValidationRule
 {
@@ -23,9 +24,9 @@ class BranchTin implements ValidationRule
         private readonly ?int $ignoreBranchId = null,
     ) {}
 
-    public static function forMainBranch(): self
+    public static function forMainBranch(?int $ignoreBranchId = null): self
     {
-        return new self(true);
+        return new self(true, null, $ignoreBranchId);
     }
 
     public static function forSideBranch(?int $cafeId, ?int $ignoreBranchId = null): self
@@ -44,7 +45,10 @@ class BranchTin implements ValidationRule
         if ($this->isMain) {
             if ($code !== Tin::HEAD_OFFICE_CODE) {
                 $fail('The main branch TIN must end in 00000 (head office branch code).');
+                return;
             }
+
+            $this->failIfRegisteredElsewhere($value, $fail);
             return;
         }
 
@@ -75,6 +79,21 @@ class BranchTin implements ValidationRule
 
         if ($taken) {
             $fail('Another one of your branches already uses this TIN branch code.');
+            return;
+        }
+
+        $this->failIfRegisteredElsewhere($value, $fail);
+    }
+
+    /** Mirrors the unique index on branch_documents.active_tin_number. */
+    private function failIfRegisteredElsewhere(string $value, Closure $fail): void
+    {
+        $exists = BranchDocument::where('tin_number', $value)
+            ->when($this->ignoreBranchId, fn ($q) => $q->where('branch_id', '!=', $this->ignoreBranchId))
+            ->exists();
+
+        if ($exists) {
+            $fail('This TIN is already registered to another cafe branch.');
         }
     }
 }

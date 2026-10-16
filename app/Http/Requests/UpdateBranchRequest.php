@@ -44,7 +44,7 @@ class UpdateBranchRequest extends FormRequest
         $branch = CafeBranch::where('uuid', $this->route('uuid'))->first(['branch_id', 'cafe_id', 'branch_type']);
 
         return $branch?->branch_type === 'main'
-            ? BranchTin::forMainBranch()
+            ? BranchTin::forMainBranch($branch->branch_id)
             : BranchTin::forSideBranch($branch?->cafe_id, $branch?->branch_id);
     }
 

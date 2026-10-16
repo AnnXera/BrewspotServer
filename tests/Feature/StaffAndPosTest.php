@@ -267,7 +267,35 @@ class StaffAndPosTest extends TestCase
 
         // Registration (main branch) must end in 00000.
         $this->assertTrue(Validator::make(['t' => '123-456-789-00001'], ['t' => [BranchTin::forMainBranch()]])->fails());
-        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch()]])->passes());
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch($this->mainBranch->branch_id)]])->passes());
+    }
+
+    public function test_tin_must_not_be_registered_to_another_cafes_branch(): void
+    {
+        $stranger       = $this->makeUser('Cafe Owner', ['email' => 'other@test.local']);
+        $strangerCafe   = Cafe::create(['user_id' => $stranger->user_id, 'cafe_name' => 'Other Cafe']);
+        $strangerBranch = $this->makeBranch($strangerCafe, 'Elsewhere');
+        $strangerDoc    = BranchDocument::create(['branch_id' => $strangerBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'z.pdf', 'tin_number' => '555-555-555-00000']);
+        BranchDocument::create(['branch_id' => $this->mainBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'x.pdf', 'tin_number' => '123-456-789-00000']);
+
+        $taken = 'This TIN is already registered to another cafe branch.';
+
+        // Registration and editing the main branch both reject another cafe's TIN...
+        $this->assertSame([$taken], Validator::make(['t' => '555-555-555-00000'], ['t' => [BranchTin::forMainBranch()]])->errors()->get('t'));
+        $this->api('PATCH', "/api/owner/branches/{$this->mainBranch->uuid}", $this->tokenFor($this->owner), ['tin_number' => '555-555-555-00000'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.tin_number.0', $taken);
+
+        // ...but a branch may keep its own TIN.
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch($this->mainBranch->branch_id)]])->passes());
+
+        // Once the other branch's document is archived, the TIN is free again.
+        $strangerDoc->delete();
+        $this->assertTrue(Validator::make(['t' => '555-555-555-00000'], ['t' => [BranchTin::forMainBranch()]])->passes());
+
+        // The database enforces it too.
+        $this->expectException(\Illuminate\Database\UniqueConstraintViolationException::class);
+        BranchDocument::create(['branch_id' => $strangerBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'w.pdf', 'tin_number' => '123-456-789-00000']);
     }
 
     public function test_email_and_phone_must_not_be_used_by_another_user_or_a_branch(): void

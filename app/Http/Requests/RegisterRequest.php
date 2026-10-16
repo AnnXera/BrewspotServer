@@ -9,6 +9,7 @@ use App\Support\Tin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
@@ -150,6 +151,26 @@ class RegisterRequest extends FormRequest
 
             if ($phoneRaw !== '' && $cafePhoneRaw !== '' && $phoneRaw === $cafePhoneRaw) {
                 $validator->errors()->add('cafe_phonenumber', 'The café phone number and personal contact number must be different.');
+            }
+
+            // Uploads arrive as paths from the temp-upload endpoint. Only accept files that are
+            // still in temp/: the daily cleanup deletes ones older than 24h, and any other path
+            // would let the request move arbitrary files off the local disk.
+            $uploads = [
+                'file'         => 'Government ID (front)',
+                'file_back'    => 'Government ID (back)',
+                'dti_sec_file' => 'DTI/SEC document',
+                'bir_file'     => 'BIR certificate',
+                'cafe_picture' => 'Café picture',
+            ];
+            foreach ($uploads as $field => $label) {
+                $path = $data[$field] ?? null;
+                if (! is_string($path) || $path === '' || $validator->errors()->has($field)) {
+                    continue;
+                }
+                if (! preg_match('#^temp/[A-Za-z0-9]+\.[A-Za-z0-9]+$#', $path) || ! Storage::disk('local')->exists($path)) {
+                    $validator->errors()->add($field, "{$label} upload has expired. Please upload it again.");
+                }
             }
         });
     }

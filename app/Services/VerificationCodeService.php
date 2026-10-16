@@ -34,7 +34,9 @@ class VerificationCodeService
             ]);
         }
 
-        if (! in_array($user->status, ['email_unverified'])) {
+        // filling_application: verified but not yet submitted (e.g. came back to the email
+        // step or lost the tab). They prove the email again and resume the same account.
+        if (! in_array($user->status, ['email_unverified', 'filling_application'])) {
             Log::channel('verification')->warning('Send code blocked — user not in email_unverified status.', [
                 'email'  => $email,
                 'status' => $user->status,
@@ -73,7 +75,7 @@ class VerificationCodeService
             return ['success' => false, 'message' => 'No account found with this email.'];
         }
 
-        if ($user->status !== 'email_unverified') {
+        if (! in_array($user->status, ['email_unverified', 'filling_application'])) {
             Log::channel('verification')->warning('Resend blocked — user not in email_unverified status.', [
                 'email'  => $email,
                 'status' => $user->status,
