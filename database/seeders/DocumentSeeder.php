@@ -83,7 +83,8 @@ class DocumentSeeder extends Seeder
             ];
 
             if ($docType === 'BIR') {
-                $extra['tin_number'] = '123-456-789-000';
+                // Main branch = head office, so the branch code is 00000
+                $extra['tin_number'] = '123-456-789-00000';
                 $extra['vat'] = 'vat-registered';
             }
 

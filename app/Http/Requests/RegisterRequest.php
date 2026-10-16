@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Models\User;
 use App\Models\UserDocument;
+use App\Rules\BranchTin;
+use App\Support\Tin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -50,6 +52,9 @@ class RegisterRequest extends FormRequest
                     $merge['cafe_phonenumber'] = '+63' . $digits;
                 }
             }
+        }
+        if (is_string($this->input('tin_number'))) {
+            $merge['tin_number'] = Tin::normalize($this->input('tin_number'));
         }
         if (!empty($merge)) {
             $this->merge($merge);
@@ -120,7 +125,7 @@ class RegisterRequest extends FormRequest
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'string'],
             'bir_registered_at'     => ['required', 'date'],
-            'tin_number'            => ['required', 'string', 'max:50'],
+            'tin_number'            => ['required', 'string', 'regex:' . Tin::FORMAT_REGEX, BranchTin::forMainBranch()],
             'vat'                   => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
     }
@@ -198,6 +203,7 @@ class RegisterRequest extends FormRequest
             'bir_file.max'                  => 'BIR file must not exceed 5MB.',
             'bir_registered_at.required'    => 'BIR registered date is required.',
             'tin_number.required'           => 'TIN number is required.',
+            'tin_number.regex'              => Tin::FORMAT_MESSAGE,
             'vat.required'                  => 'VAT type is required.',
             'vat.in'                        => 'VAT type must be either vat-registered or non-vat.',
         ];

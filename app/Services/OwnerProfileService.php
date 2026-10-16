@@ -11,6 +11,7 @@ use App\Http\Resources\SubscriptionResource;
 use App\Models\User;
 use App\Repository\OwnerProfileRepository;
 use App\Repository\SubscriptionRepository;
+use App\Support\Tin;
 use Illuminate\Support\Facades\Log;
 
 class OwnerProfileService
@@ -48,10 +49,14 @@ class OwnerProfileService
     public function getBranches(User $owner, int $perPage = 6, ?string $search = null, ?string $status = null): array
     {
         $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage, $search, $status);
+        $cafeId   = $owner->cafes()->value('cafe_id');
+        $prefix   = $cafeId ? Tin::prefix(Tin::mainBranchTin($cafeId)) : null;
 
         return [
             'success'   => true,
             'cafe_name' => $this->repo->findCafeNameByOwner($owner->user_id),
+            // New side branches must reuse this 9-digit TIN (XXX-XXX-XXX)
+            'main_tin_prefix' => $prefix ? Tin::formatPrefix($prefix) : null,
             'branches'  => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
         ];
     }

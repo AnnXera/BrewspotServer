@@ -170,6 +170,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/subscriptions/resume', [SubscriptionCheckoutController::class, 'resume']); // undo a cancellation
 
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
+        Route::post('/branches/check-contact', [BranchController::class, 'checkContact']); // email/phone availability for the add-branch form
         Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
         Route::delete('/branches/{uuid}', [BranchController::class, 'destroy']); // soft-delete branch
 

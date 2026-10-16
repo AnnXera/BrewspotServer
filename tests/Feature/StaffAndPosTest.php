@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\StaffAccountCreatedMail;
+use App\Models\BranchDocument;
 use App\Models\Cafe;
 use App\Models\CafeBranch;
 use App\Models\CafeStaff;
@@ -12,8 +13,11 @@ use App\Models\Role;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
+use App\Rules\BranchTin;
 use App\Services\StaffPinService;
+use App\Support\Tin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -198,6 +202,72 @@ class StaffAndPosTest extends TestCase
         // Pasted "09…" numbers are normalised before validation.
         $this->api('POST', $url, $token, [...$base, 'phone_number' => '0917 123 4567'])->assertCreated();
         $this->assertDatabaseHas('users', ['email' => 'phone@test.local', 'phone_number' => '+639171234567']);
+    }
+
+    public function test_add_branch_contact_check_rejects_a_phone_used_by_a_user_or_branch(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = '/api/owner/branches/check-contact';
+
+        $this->owner->update(['phone_number' => '09181234567']); // older 09… storage
+        $this->mainBranch->update(['cafe_phonenumber' => '+639191234567']);
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new1@test.local', 'cafe_phonenumber' => '+639181234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by another account.');
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new2@test.local', 'cafe_phonenumber' => '+639191234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by a cafe branch.');
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new3@test.local', 'cafe_phonenumber' => '+639201234567'])
+            ->assertOk();
+
+        // Editing a branch keeps its own number but cannot take another branch's.
+        $patch = "/api/owner/branches/{$this->mainBranch->uuid}";
+        $this->api('PATCH', $patch, $token, ['cafe_phonenumber' => '+639191234567'])->assertJsonMissingValidationErrors('cafe_phonenumber');
+
+        $this->otherBranch->update(['cafe_phonenumber' => '+639211234567']);
+        $this->api('PATCH', $patch, $token, ['cafe_phonenumber' => '+639211234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by a cafe branch.');
+    }
+
+    public function test_branch_tin_must_share_the_main_tin_and_use_its_own_branch_code(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = '/api/owner/branches';
+
+        $this->otherBranch->update(['branch_type' => 'side']); // makeBranch() creates every branch as main
+        BranchDocument::create(['branch_id' => $this->mainBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'x.pdf', 'tin_number' => '123-456-789-00000']);
+        BranchDocument::create(['branch_id' => $this->otherBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'y.pdf', 'tin_number' => '123-456-789-00002']);
+
+        $cases = [
+            ['123-456-789-000',   Tin::FORMAT_MESSAGE], // old 3-digit branch code
+            ['999-456-789-00001', 'TIN must start with your main branch TIN (123-456-789).'],
+            ['123-456-789-00000', 'Branch code 00000 is reserved for the main branch. Use this branch\'s own code (e.g. 00001).'],
+            ['123-456-789-00002', 'Another one of your branches already uses this TIN branch code.'],
+        ];
+        foreach ($cases as [$tin, $message]) {
+            $this->api('POST', $url, $token, ['tin_number' => $tin])
+                ->assertStatus(422)
+                ->assertJsonPath('errors.tin_number.0', $message);
+        }
+
+        // Spaces are fine; it is normalised to XXX-XXX-XXX-XXXXX.
+        $this->api('POST', $url, $token, ['tin_number' => '123 456 789 00003'])
+            ->assertStatus(422)->assertJsonMissingValidationErrors('tin_number');
+
+        // Editing: the main branch keeps 00000, a side branch may keep its own code.
+        $this->api('PATCH', "$url/{$this->mainBranch->uuid}", $token, ['tin_number' => '123-456-789-00001'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.tin_number.0', 'The main branch TIN must end in 00000 (head office branch code).');
+        $this->api('PATCH', "$url/{$this->otherBranch->uuid}", $token, ['tin_number' => '123-456-789-00002'])
+            ->assertJsonMissingValidationErrors('tin_number');
+
+        // Registration (main branch) must end in 00000.
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00001'], ['t' => [BranchTin::forMainBranch()]])->fails());
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch()]])->passes());
     }
 
     public function test_email_and_phone_must_not_be_used_by_another_user_or_a_branch(): void
