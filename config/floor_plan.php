@@ -37,8 +37,9 @@ return [
     ],
 
     // Categories the client draws itself (a plain rectangle) instead of loading an
-    // image: no asset_key, but a width and height are required. Walls are drawn.
-    'drawn_categories' => ['wall'],
+    // image: no asset_key, but a width and height are required. Walls and counters
+    // (the labeled "Counter" / "Cashier" bars) are drawn.
+    'drawn_categories' => ['wall', 'counter'],
 
     'reservations' => [
         // The end time is chosen per reservation; the default only pre-fills the form.
@@ -50,30 +51,17 @@ return [
         'past_grace_minutes'       => 5,
     ],
 
-    // asset_key => category (+ default capacity for tables).
+    // asset_key => category (+ default capacity for tables). Keys match the client's
+    // app/assets/floor-plan/<asset_key>.svg files; the number is the chair count.
     'assets' => [
-        'table_round_2'   => ['category' => 'table', 'capacity' => 2],
-        'table_round_4'   => ['category' => 'table', 'capacity' => 4],
-        'table_square_2'  => ['category' => 'table', 'capacity' => 2],
-        'table_square_4'  => ['category' => 'table', 'capacity' => 4],
-        'table_rect_6'    => ['category' => 'table', 'capacity' => 6],
-        'table_rect_8'    => ['category' => 'table', 'capacity' => 8],
-        'table_bar_high'  => ['category' => 'table', 'capacity' => 2],
+        'table_sqr_1' => ['category' => 'table', 'capacity' => 1],
+        'table_sqr_2' => ['category' => 'table', 'capacity' => 2],
+        'table_sqr_3' => ['category' => 'table', 'capacity' => 3],
+        'table_sqr_4' => ['category' => 'table', 'capacity' => 4],
+        'table_rec_2' => ['category' => 'table', 'capacity' => 2],
+        'table_rec_4' => ['category' => 'table', 'capacity' => 4],
 
-        'door_single'     => ['category' => 'door'],
-        'door_double'     => ['category' => 'door'],
-
-        'window_single'   => ['category' => 'window'],
-        'window_wide'     => ['category' => 'window'],
-
-        'counter_straight' => ['category' => 'counter'],
-        'counter_corner'   => ['category' => 'counter'],
-        'counter_pos'      => ['category' => 'counter'],
-
-        'plant_small'     => ['category' => 'plant'],
-        'plant_large'     => ['category' => 'plant'],
-
-        'rug_round'       => ['category' => 'decor'],
-        'rug_rect'        => ['category' => 'decor'],
+        'door_sgl'    => ['category' => 'door'],
+        'door_double' => ['category' => 'door'],
     ],
 ];

@@ -120,7 +120,6 @@ class RegisterRequest extends FormRequest
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'string'],
             'bir_registered_at'     => ['required', 'date'],
-            'bir_expired_at'        => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
             'tin_number'            => ['required', 'string', 'max:50'],
             'vat'                   => ['required', 'string', 'in:vat-registered,non-vat'],
         ];

@@ -34,20 +34,32 @@ class RegistrationController extends Controller
             $raw = trim($data['phone_number']);
             if (!preg_match('/[a-zA-Z]/', $raw)) {
                 $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '63')) {
-                    $digits = '0' . substr($digits, 2);
+                if (str_starts_with($digits, '082') && strlen($digits) === 10) {
+                    $data['phone_number'] = $digits;
+                } else {
+                    if (str_starts_with($digits, '09')) {
+                        $digits = substr($digits, 1);
+                    } elseif (str_starts_with($digits, '639')) {
+                        $digits = substr($digits, 2);
+                    }
+                    $data['phone_number'] = '+63' . $digits;
                 }
-                $data['phone_number'] = $digits;
             }
         }
         if (isset($data['cafe_phonenumber']) && is_string($data['cafe_phonenumber'])) {
             $raw = trim($data['cafe_phonenumber']);
             if (!preg_match('/[a-zA-Z]/', $raw)) {
                 $digits = preg_replace('/\D/', '', $raw);
-                if (str_starts_with($digits, '63')) {
-                    $digits = '0' . substr($digits, 2);
+                if (str_starts_with($digits, '082') && strlen($digits) === 10) {
+                    $data['cafe_phonenumber'] = $digits;
+                } else {
+                    if (str_starts_with($digits, '09')) {
+                        $digits = substr($digits, 1);
+                    } elseif (str_starts_with($digits, '639')) {
+                        $digits = substr($digits, 2);
+                    }
+                    $data['cafe_phonenumber'] = '+63' . $digits;
                 }
-                $data['cafe_phonenumber'] = $digits;
             }
         }
 
@@ -67,12 +79,13 @@ class RegistrationController extends Controller
                 $rules['phone_number'] = [
                     'required',
                     'string',
-                    'regex:/^09\d{9}$/',
+                    'max:20',
+                    'regex:/^(\+639\d{9}|082\d{7})$/',
                     Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
                     Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
                 ];
                 $messages['phone_number.required'] = 'Personal phone number is required.';
-                $messages['phone_number.regex'] = 'Personal phone number must start with 09 and be 11 digits long (e.g., 09123456789).';
+                $messages['phone_number.regex'] = 'Personal phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).';
                 $messages['phone_number.unique'] = 'This personal phone number is already registered or in use by a café.';
             }
         }
@@ -94,7 +107,8 @@ class RegistrationController extends Controller
                 $branchPhoneRules = [
                     'required',
                     'string',
-                    'regex:/^09\d{9}$/',
+                    'max:20',
+                    'regex:/^(\+639\d{9}|082\d{7})$/',
                     Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
                     Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
                 ];
@@ -104,7 +118,7 @@ class RegistrationController extends Controller
                 }
                 $rules['cafe_phonenumber'] = $branchPhoneRules;
                 $messages['cafe_phonenumber.required'] = 'Café phone number is required.';
-                $messages['cafe_phonenumber.regex'] = 'Café phone number must start with 09 and be 11 digits long (e.g., 09123456789).';
+                $messages['cafe_phonenumber.regex'] = 'Café phone number must be a valid mobile number (+639xxxxxxxxx) or landline (082xxxxxxx).';
                 $messages['cafe_phonenumber.unique'] = 'This café phone number is already registered or in use by another branch.';
             }
         }

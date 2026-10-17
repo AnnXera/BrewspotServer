@@ -10,7 +10,7 @@ use App\Models\Feature;
  */
 class FloorPlanTest extends FloorPlanTestCase
 {
-    // ── Gate + access ────────────────────────────────────────────────────
+    // â”€â”€ Gate + access â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public function test_floor_plans_need_the_reservations_feature(): void
     {
@@ -44,7 +44,7 @@ class FloorPlanTest extends FloorPlanTestCase
             ->assertOk()
             ->assertJsonPath('table_statuses', ['available', 'occupied', 'reserved', 'cleaning'])
             ->assertJsonPath('reservation_rules.default_duration_minutes', 90)
-            ->assertJsonFragment(['key' => 'table_round_4', 'category' => 'table', 'capacity' => 4]);
+            ->assertJsonFragment(['key' => 'table_rec_4', 'category' => 'table', 'capacity' => 4]);
     }
 
     public function test_every_catalog_asset_has_a_category_and_tables_have_a_capacity(): void
@@ -58,7 +58,7 @@ class FloorPlanTest extends FloorPlanTestCase
         }
     }
 
-    // ── Plans ────────────────────────────────────────────────────────────
+    // â”€â”€ Plans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public function test_first_plan_is_active_and_activating_another_deactivates_the_rest(): void
     {
@@ -133,7 +133,7 @@ class FloorPlanTest extends FloorPlanTestCase
         $this->assertSoftDeleted('floor_plans', ['floor_plan_id' => $plan->floor_plan_id]);
     }
 
-    // ── Layout save ──────────────────────────────────────────────────────
+    // â”€â”€ Layout save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public function test_layout_save_creates_updates_and_removes(): void
     {
@@ -145,11 +145,11 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $response = $this->api('PUT', $url, $token, [
             'tables' => [
-                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_rect_6', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
-                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_bar_high', 'x_location' => 400, 'y_location' => 300],
+                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_rec_4', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
+                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_sqr_2', 'x_location' => 400, 'y_location' => 300],
             ],
             'elements' => [
-                ['category' => 'plant', 'asset_key' => 'plant_small', 'x_location' => 10, 'y_location' => 10, 'z_index' => 2],
+                ['category' => 'door', 'asset_key' => 'door_sgl', 'x_location' => 10, 'y_location' => 10, 'z_index' => 2],
                 ['category' => 'wall', 'label' => 'North', 'x_location' => 500, 'y_location' => 5, 'width' => 1000, 'height' => 10],
             ],
         ])->assertOk()->assertJsonCount(2, 'floor_plan.tables')->assertJsonCount(2, 'floor_plan.elements');
@@ -188,12 +188,12 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $this->api('PUT', $url, $token, [
             'tables' => [
-                ['table_name' => 'A', 'capacity' => 2, 'asset_key' => 'plant_small', 'x_location' => 1, 'y_location' => 1],   // not a table asset
-                ['table_name' => 'a', 'capacity' => 0, 'x_location' => -5, 'y_location' => 1, 'rotation' => 400],             // duplicate name, bad numbers
+                ['table_name' => 'A', 'capacity' => 2, 'asset_key' => 'door_sgl', 'x_location' => 1, 'y_location' => 1],   // not a table asset
+                ['table_name' => 'a', 'capacity' => 0, 'x_location' => -5001, 'y_location' => 1, 'rotation' => 400],             // duplicate name, bad numbers
             ],
             'elements' => [
-                ['category' => 'plant', 'asset_key' => 'counter_pos', 'x_location' => 1, 'y_location' => 1],                    // category mismatch
-                ['category' => 'plant', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
+                ['category' => 'door', 'asset_key' => 'table_rec_4', 'x_location' => 1, 'y_location' => 1],                    // category mismatch (table asset on a door)
+                ['category' => 'door', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
             ],
         ])->assertStatus(422)->assertJsonValidationErrors([
             'tables.0.asset_key', 'tables.1.capacity', 'tables.1.x_location', 'tables.1.rotation',
@@ -206,7 +206,7 @@ class FloorPlanTest extends FloorPlanTestCase
                 ['table_name' => 'A', 'capacity' => 2, 'x_location' => 1, 'y_location' => 1],
                 ['table_name' => ' a ', 'capacity' => 2, 'x_location' => 2, 'y_location' => 2],
             ],
-            'elements' => [['category' => 'plant', 'asset_key' => 'counter_pos', 'x_location' => 1, 'y_location' => 1]],
+            'elements' => [['category' => 'door', 'x_location' => 1, 'y_location' => 1]],
         ])->assertStatus(422)->assertJsonValidationErrors(['tables.1.table_name', 'elements.0.asset_key']);
 
         $this->api('PUT', $url, $token, ['elements' => []])->assertStatus(422)->assertJsonValidationErrors('tables');
@@ -223,7 +223,7 @@ class FloorPlanTest extends FloorPlanTestCase
             'tables'   => [],
             'elements' => [
                 ['category' => 'wall', 'x_location' => 100, 'y_location' => 100],
-                ['category' => 'wall', 'asset_key' => 'plant_small', 'x_location' => 100, 'y_location' => 100, 'width' => 50, 'height' => 10],
+                ['category' => 'wall', 'asset_key' => 'door_sgl', 'x_location' => 100, 'y_location' => 100, 'width' => 50, 'height' => 10],
             ],
         ])->assertStatus(422)->assertJsonValidationErrors(['elements.0.width', 'elements.0.height', 'elements.1.asset_key']);
 
@@ -237,24 +237,24 @@ class FloorPlanTest extends FloorPlanTestCase
             'tables'   => [],
             'elements' => [
                 ['category' => 'wall', 'label' => 'Diagonal', 'x_location' => 300, 'y_location' => 200, 'width' => 400, 'height' => 12, 'rotation' => 45],
-                ['category' => 'counter', 'asset_key' => 'counter_straight', 'x_location' => 50, 'y_location' => 50, 'width' => 220, 'height' => 60],
-                ['category' => 'plant', 'asset_key' => 'plant_small', 'x_location' => 10, 'y_location' => 10],
+                ['category' => 'counter', 'label' => 'Cashier', 'x_location' => 50, 'y_location' => 50, 'width' => 220, 'height' => 60],
+                ['category' => 'door', 'asset_key' => 'door_sgl', 'x_location' => 10, 'y_location' => 10],
             ],
         ])->assertOk()
             ->assertJsonFragment(['category' => 'wall', 'asset_key' => null, 'width' => 400.0, 'height' => 12.0, 'rotation' => 45.0])
             ->assertJsonFragment(['category' => 'counter', 'width' => 220.0, 'height' => 60.0])
-            ->assertJsonFragment(['category' => 'plant', 'width' => null, 'height' => null]);
+            ->assertJsonFragment(['category' => 'door', 'width' => null, 'height' => null]);
 
         $this->api('PUT', $url, $token, [
             'tables'   => [],
-            'elements' => [['category' => 'plant', 'x_location' => 1, 'y_location' => 1]],
+            'elements' => [['category' => 'door', 'x_location' => 1, 'y_location' => 1]],
         ])->assertStatus(422)->assertJsonValidationErrors('elements.0.asset_key');
     }
 
     public function test_assets_endpoint_reports_drawn_categories_and_has_no_wall_images(): void
     {
         $response = $this->api('GET', $this->base('manager') . '/floor-plans/assets', $this->tokenFor($this->manager))
-            ->assertOk()->assertJsonPath('drawn_categories', ['wall']);
+            ->assertOk()->assertJsonPath('drawn_categories', ['wall', 'counter']);
 
         $this->assertNotContains('wall', collect($response->json('assets'))->pluck('category')->all());
     }
@@ -282,7 +282,7 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $this->api('PUT', $this->base('manager') . "/floor-plans/{$plan->uuid}/layout", $this->tokenFor($this->manager), [
             'tables'   => [['table_name' => 'T1', 'capacity' => 4, 'x_location' => 1500, 'y_location' => 10]],
-            'elements' => [['category' => 'plant', 'asset_key' => 'plant_small', 'x_location' => 10, 'y_location' => 900]],
+            'elements' => [['category' => 'door', 'asset_key' => 'door_sgl', 'x_location' => 10, 'y_location' => 900]],
         ])->assertStatus(422)->assertJsonValidationErrors(['tables.0.x_location', 'elements.0.y_location']);
 
         $this->assertSame(0, $plan->tables()->count());
@@ -332,7 +332,7 @@ class FloorPlanTest extends FloorPlanTestCase
             ->assertJsonPath('reservations.data.0.table.removed', true);
     }
 
-    // ── Table status ─────────────────────────────────────────────────────
+    // â”€â”€ Table status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public function test_table_status_can_be_changed_manually(): void
     {
@@ -348,7 +348,7 @@ class FloorPlanTest extends FloorPlanTestCase
         $this->api('PATCH', $this->base('manager') . "/tables/{$other->uuid}/status", $token, ['status' => 'occupied'])->assertNotFound();
     }
 
-    // ── Register (POS device) ────────────────────────────────────────────
+    // â”€â”€ Register (POS device) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public function test_register_floor_plan_needs_an_unlocked_register(): void
     {

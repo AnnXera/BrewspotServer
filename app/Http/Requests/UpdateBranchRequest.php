@@ -60,7 +60,6 @@ class UpdateBranchRequest extends FormRequest
             'status'               => ['nullable', 'string', 'in:active,inactive'],
             'bir_file'             => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bir_registered_at'    => ['nullable', 'date'],
-            'bir_expired_at'       => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
             'tin_number'           => ['nullable', 'string', 'max:50'],
             'vat'                  => ['nullable', 'string', 'in:vat-registered,non-vat'],
         ];

@@ -26,7 +26,7 @@ class PayMongoAdapter implements PaymentAdapterInterface
 
     public function createCheckoutSession(array $payload): array
     {
-        // PayMongo Checkout Session
+        // PayMongo Checkout Sessions
         $response = $this->client()->post("{$this->baseUrl}/v1/checkout_sessions", [
             'data' => [
                 'attributes' => [

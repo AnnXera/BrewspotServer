@@ -26,14 +26,19 @@ class SaveFloorPlanLayoutRequest extends FormRequest
         $tableKeys   = array_keys(array_filter($assets, fn ($a) => $a['category'] === 'table'));
         $elementKeys = array_keys(array_filter($assets, fn ($a) => $a['category'] !== 'table'));
 
+        // x/y is the top-left of the *unrotated* box, which the client rotates around its
+        // centre. A quarter-turned wall therefore sits at a negative x or y when it hugs the
+        // left/top edge, by at most half its length.
+        $minPos = -($limits['canvas_max'] / 2);
+
         return [
             'tables'                    => ['present', 'array', 'max:' . $limits['max_tables']],
             'tables.*.uuid'             => ['nullable', 'string', 'max:64', 'distinct'],
             'tables.*.table_name'       => ['required', 'string', 'max:60'],
             'tables.*.capacity'         => ['required', 'integer', 'min:1', 'max:' . $limits['max_table_capacity']],
             'tables.*.asset_key'        => ['nullable', 'string', Rule::in($tableKeys)],
-            'tables.*.x_location'       => ['required', 'numeric', 'min:0'],
-            'tables.*.y_location'       => ['required', 'numeric', 'min:0'],
+            'tables.*.x_location'       => ['required', 'numeric', "min:$minPos"],
+            'tables.*.y_location'       => ['required', 'numeric', "min:$minPos"],
             'tables.*.rotation'         => ['nullable', 'numeric', 'min:0', 'max:360'],
 
             'elements'                  => ['present', 'array', 'max:' . $limits['max_elements']],
@@ -41,8 +46,8 @@ class SaveFloorPlanLayoutRequest extends FormRequest
             'elements.*.category'       => ['required', 'string', Rule::in($this->elementCategories())],
             'elements.*.asset_key'      => ['nullable', 'string', Rule::in($elementKeys)],
             'elements.*.label'          => ['nullable', 'string', 'max:120'],
-            'elements.*.x_location'     => ['required', 'numeric', 'min:0'],
-            'elements.*.y_location'     => ['required', 'numeric', 'min:0'],
+            'elements.*.x_location'     => ['required', 'numeric', "min:$minPos"],
+            'elements.*.y_location'     => ['required', 'numeric', "min:$minPos"],
             'elements.*.width'          => ['nullable', 'numeric', 'min:' . $limits['element_min_size'], 'max:' . $limits['canvas_max']],
             'elements.*.height'         => ['nullable', 'numeric', 'min:' . $limits['element_min_size'], 'max:' . $limits['canvas_max']],
             'elements.*.rotation'       => ['nullable', 'numeric', 'min:0', 'max:360'],
