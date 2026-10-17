@@ -31,6 +31,7 @@ use App\Http\Controllers\FloorPlanController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\ServingController;
 use App\Http\Controllers\ServingOverviewController;
+use App\Http\Controllers\SpoilageController;
 
 use App\Http\Controllers\TempUploadController;
 
@@ -62,7 +63,9 @@ $branchScopedRoutes = function () {
         Route::put('/servings/categories/{categoryUuid}/items', [ServingController::class, 'saveCategoryItems']);
         Route::get('/servings/ingredients-used',   [ServingOverviewController::class, 'ingredientsUsed']);
         Route::get('/servings/log',                [ServingOverviewController::class, 'log']);
-        Route::post('/servings',                   [ServingController::class, 'store']);
+        Route::get('/servings/spoilage',           [SpoilageController::class, 'index']);
+        Route::post('/servings/spoilage/{logUuid}/void', [SpoilageController::class, 'void']);
+        Route::post('/servings',                 [ServingController::class, 'store']);
         Route::patch('/servings/{servingUuid}',    [ServingController::class, 'update']);
         Route::delete('/servings/{servingUuid}',   [ServingController::class, 'destroy']);
     });
@@ -252,6 +255,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/lock',                   [PosDeviceController::class, 'lock']);
             Route::get('/menu',                    [PosDeviceController::class, 'menu']);
             Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
+            Route::get('/spoilage',                [SpoilageController::class, 'deviceIndex']);
+            Route::post('/spoilage',               [SpoilageController::class, 'deviceStore']);
             Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
         });

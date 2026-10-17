@@ -107,7 +107,9 @@ class ServingService
     }
 
     /**
-     * @param  array{expected_servings?: int, spoilage_qty?: int, is_sold_out?: bool}  $payload
+     * Spoilage is not set here: it changes only through spoilage entries (SpoilageService).
+     *
+     * @param  array{expected_servings?: int, is_sold_out?: bool}  $payload
      */
     public function update(User $actor, CafeBranch $branch, string $servingUuid, array $payload): array
     {
@@ -118,7 +120,7 @@ class ServingService
         }
 
         $expected = $payload['expected_servings'] ?? $serving->expected_servings;
-        $spoilage = $payload['spoilage_qty'] ?? $serving->spoilage_qty;
+        $spoilage = $serving->spoilage_qty;
 
         if ($serving->servings_sold + $spoilage > $expected) {
             return [
@@ -257,11 +259,11 @@ class ServingService
             return $this->notFound();
         }
 
-        if ($serving->servings_sold > 0) {
+        if ($serving->servings_sold > 0 || $serving->spoilage_qty > 0) {
             return [
                 'success' => false,
                 'http'    => 422,
-                'message' => 'This item already has sales today and can\'t be removed. Mark it as sold out instead.',
+                'message' => 'This item already has sales or spoilage today and can\'t be removed. Mark it as sold out instead.',
             ];
         }
 

@@ -20,16 +20,17 @@ class UpdateServingRequest extends FormRequest
     {
         return [
             'expected_servings' => ['sometimes', 'integer', 'min:0', 'max:100000'],
-            'spoilage_qty'      => ['sometimes', 'integer', 'min:0', 'max:100000'],
             'is_sold_out'       => ['sometimes', 'boolean'],
+            // Spoilage is logged per entry on the register (POST /api/pos/device/spoilage).
+            'spoilage_qty'      => ['prohibited'],
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            if (! $this->hasAny(['expected_servings', 'spoilage_qty', 'is_sold_out'])) {
-                $validator->errors()->add('payload', 'Provide at least one of expected_servings, spoilage_qty or is_sold_out.');
+            if (! $this->hasAny(['expected_servings', 'is_sold_out'])) {
+                $validator->errors()->add('payload', 'Provide at least one of expected_servings or is_sold_out.');
             }
         });
     }

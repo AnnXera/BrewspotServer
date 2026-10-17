@@ -139,16 +139,19 @@ class ServingsTest extends TestCase
     public function test_update_validates_against_sold_and_spoilage(): void
     {
         $token   = $this->tokenFor($this->manager);
-        $serving = $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 8]);
+        $serving = $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 8, 'spoilage_qty' => 2]);
         $url     = $this->url("/{$serving->uuid}");
 
-        $this->api('PATCH', $url, $token, ['expected_servings' => 25, 'spoilage_qty' => 2])
+        $this->api('PATCH', $url, $token, ['expected_servings' => 25])
             ->assertOk()
             ->assertJsonPath('serving.expected_servings', 25)
             ->assertJsonPath('serving.remaining', 15);
 
         $this->api('PATCH', $url, $token, ['expected_servings' => 9])->assertStatus(422); // 8 sold + 2 spoiled
-        $this->api('PATCH', $url, $token, ['spoilage_qty' => 18])->assertStatus(422);
+
+        // Spoilage changes only through spoilage entries on the register.
+        $this->api('PATCH', $url, $token, ['spoilage_qty' => 0])->assertStatus(422)->assertJsonValidationErrors('spoilage_qty');
+        $this->assertSame(2, $serving->fresh()->spoilage_qty);
 
         $this->api('PATCH', $url, $token, ['is_sold_out' => true])->assertOk()->assertJsonPath('serving.is_sold_out', true);
 

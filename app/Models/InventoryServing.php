@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class InventoryServing extends Model
@@ -47,5 +48,10 @@ class InventoryServing extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(CafeBranch::class, 'branch_id', 'branch_id');
+    }
+
+    public function spoilageLogs(): HasMany
+    {
+        return $this->hasMany(ServingSpoilageLog::class, 'servings_id', 'servings_id');
     }
 }
