@@ -122,6 +122,38 @@ class SpoilageTest extends TestCase
         $this->assertSame(0, ServingSpoilageLog::count());
     }
 
+    public function test_items_in_sizes_need_the_size_and_keep_its_price(): void
+    {
+        $mocha = MenuItem::create(['cafe_id' => $this->cafe->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 130, 'is_available' => true]);
+        $mocha->sizes()->create(['name' => 'Small', 'price' => 130, 'sort_order' => 1]);
+        $large = $mocha->sizes()->create(['name' => 'Large', 'price' => 165, 'sort_order' => 2]);
+        InventoryServing::create(['men_item_id' => $mocha->men_item_id, 'branch_id' => $this->branch->branch_id, 'date' => today()->toDateString(), 'expected_servings' => 10]);
+        $this->makeServing(['expected_servings' => 10]);
+
+        $device = $this->unlockedDevice();
+        $log    = fn (array $data) => $this->api('POST', '/api/pos/device/spoilage', $device, $data);
+
+        $log(['menu_item_uuid' => $mocha->uuid, 'quantity' => 1])
+            ->assertStatus(422)->assertJsonPath('message', 'Pick the size of the spoiled Mocha.');
+        $log(['menu_item_uuid' => $this->latte->uuid, 'size_uuid' => $large->uuid, 'quantity' => 1])->assertStatus(422);
+
+        $log(['menu_item_uuid' => $mocha->uuid, 'size_uuid' => $large->uuid, 'quantity' => 2])
+            ->assertCreated()
+            ->assertJsonPath('message', 'Logged 2 spoiled Large Mocha.')
+            ->assertJsonPath('log.size_name', 'Large')
+            ->assertJsonPath('log.unit_value', 165);
+
+        // No sizes: the base price is kept.
+        $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1])
+            ->assertCreated()
+            ->assertJsonPath('log.size_name', null)
+            ->assertJsonPath('log.unit_value', 120);
+
+        // A later price change doesn't touch the entry.
+        $large->update(['price' => 200]);
+        $this->assertEquals(165, ServingSpoilageLog::where('size_name', 'Large')->value('unit_value'));
+    }
+
     public function test_manager_lists_and_voids_an_entry(): void
     {
         $serving = $this->makeServing(['expected_servings' => 10]);

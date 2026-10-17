@@ -36,6 +36,7 @@ class SpoilageController extends Controller
     {
         $data = $request->validate([
             'menu_item_uuid' => ['required', 'string'],
+            'size_uuid'      => ['nullable', 'string'], // required for items that come in sizes
             'quantity'       => ['required', 'integer', 'min:1', 'max:1000'],
             'reason'         => ['nullable', 'string', Rule::in(ServingSpoilageLog::REASONS)],
         ]);
@@ -43,6 +44,7 @@ class SpoilageController extends Controller
         return $this->respond($this->service->logOnDevice(
             $request->user(),
             $data['menu_item_uuid'],
+            $data['size_uuid'] ?? null,
             (int) $data['quantity'],
             $data['reason'] ?? null
         ), 201);

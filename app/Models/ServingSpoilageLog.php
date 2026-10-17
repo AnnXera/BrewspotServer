@@ -9,7 +9,8 @@ use Illuminate\Support\Str;
 
 /**
  * One spoilage entry on a day's serving. The serving's spoilage_qty is the sum
- * of its entries that are not voided.
+ * of its entries that are not voided. Size name and unit_value are copied when
+ * logged, like a sold line's, so later menu edits don't change past costs.
  */
 class ServingSpoilageLog extends Model
 {
@@ -25,17 +26,21 @@ class ServingSpoilageLog extends Model
     protected $fillable = [
         'uuid',
         'servings_id',
+        'men_size_id',
+        'size_name',
         'staff_id',
         'device_id',
         'quantity',
+        'unit_value',
         'reason',
         'voided_at',
         'voided_by',
     ];
 
     protected $casts = [
-        'quantity'  => 'integer',
-        'voided_at' => 'datetime',
+        'quantity'   => 'integer',
+        'unit_value' => 'decimal:2',
+        'voided_at'  => 'datetime',
     ];
 
     protected static function booted(): void

@@ -4,6 +4,7 @@ namespace App\Repository;
 
 use App\Models\Cafe;
 use App\Models\Ingredient;
+use App\Models\InventoryServing;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\MenuItemSize;
@@ -182,8 +183,21 @@ class MenuItemRepository
         }
     }
 
+    /**
+     * Soft-deletes the item. Its servings planned for today (or later) that
+     * nothing was sold or spoiled from go with it, so the plan doesn't linger
+     * in the branch's servings and analytics. Rows with activity stay as history.
+     */
     public function delete(MenuItem $item): void
     {
-        $item->delete();
+        DB::transaction(function () use ($item) {
+            InventoryServing::where('men_item_id', $item->men_item_id)
+                ->whereDate('date', '>=', today())
+                ->where('servings_sold', 0)
+                ->where('spoilage_qty', 0)
+                ->delete();
+
+            $item->delete();
+        });
     }
 }

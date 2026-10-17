@@ -14,6 +14,7 @@ use App\Models\MenuItem;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\Role;
+use App\Models\ServingSpoilageLog;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Transaction;
@@ -174,7 +175,13 @@ class OwnerAnalyticsTest extends TestCase
         $this->sale($this->main, '2026-10-15 10:00', [[$this->latte, 1]], 'cash', staff: $staff);
         $this->sale($this->main, '2026-10-15 11:00', [[$this->bagel, 1]], 'cash');
 
-        InventoryServing::create(['uuid' => (string) Str::uuid(), 'men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-15', 'expected_servings' => 20, 'servings_sold' => 15, 'spoilage_qty' => 3, 'is_sold_out' => false]);
+        $latteDay = InventoryServing::create(['uuid' => (string) Str::uuid(), 'men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-15', 'expected_servings' => 20, 'servings_sold' => 15, 'spoilage_qty' => 3, 'is_sold_out' => false]);
+        // 2 Large logged as dropped (kept at 150), 1 recorded without an entry (base price 120);
+        // the voided entry doesn't count.
+        ServingSpoilageLog::create(['servings_id' => $latteDay->servings_id, 'size_name' => 'Large', 'quantity' => 2, 'unit_value' => 150, 'reason' => 'dropped']);
+        ServingSpoilageLog::create(['servings_id' => $latteDay->servings_id, 'quantity' => 4, 'reason' => 'expired', 'voided_at' => '2026-10-15 12:00']);
+        // Previous period (Oct 3 to 9): 2 spoiled.
+        InventoryServing::create(['men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-08', 'expected_servings' => 10, 'spoilage_qty' => 2]);
         InventoryServing::create(['uuid' => (string) Str::uuid(), 'men_item_id' => $this->bagel->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-16', 'expected_servings' => 10, 'servings_sold' => 10, 'spoilage_qty' => 0, 'is_sold_out' => true]);
 
         $plan  = FloorPlan::create(['branch_id' => $this->main->branch_id, 'floorplan_name' => 'Floor', 'canvas_width' => 800, 'canvas_height' => 600, 'is_active' => true]);
@@ -196,13 +203,44 @@ class OwnerAnalyticsTest extends TestCase
             ->assertJsonPath('waste.summary.expected', 30)
             ->assertJsonPath('waste.summary.sell_through', 83.3)
             ->assertJsonPath('waste.summary.spoilage', 3)
+            ->assertJsonPath('waste.summary.spoilage_value', 420)
+            ->assertJsonPath('waste.summary.spoilage_change', 50)
             ->assertJsonPath('waste.summary.sold_out_days', 1)
+            ->assertJsonPath('waste.reasons', [
+                ['reason' => 'dropped', 'quantity' => 2, 'share' => 66.7],
+                ['reason' => 'unspecified', 'quantity' => 1, 'share' => 33.3],
+            ])
+            ->assertJsonPath('waste.voided', ['entries' => 1, 'quantity' => 4])
             ->assertJsonPath('waste.items.0.name', 'Latte')
+            ->assertJsonPath('waste.items.0.spoilage_value', 420)
             ->assertJsonPath('reservations.total', 4)
             ->assertJsonPath('reservations.guests', 6)
             ->assertJsonPath('reservations.no_show_rate', 33.3)
             ->assertJsonPath('reservations.cancel_rate', 25)
             ->assertJsonPath('reservations.by_weekday.3.count', 4);
+    }
+
+    public function test_waste_skips_idle_days_of_deleted_items_and_flags_the_rest(): void
+    {
+        $idle = $this->makeItem('Espresso Sunrise', null, 150); // planned, then deleted before any sale
+        $sold = $this->makeItem('Scone', null, 70);             // sold, then deleted
+
+        InventoryServing::create(['men_item_id' => $idle->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-15', 'expected_servings' => 10]);
+        InventoryServing::create(['men_item_id' => $sold->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-15', 'expected_servings' => 8, 'servings_sold' => 6, 'spoilage_qty' => 1]);
+        InventoryServing::create(['men_item_id' => $sold->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-16', 'expected_servings' => 8]);
+        InventoryServing::create(['men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->main->branch_id, 'date' => '2026-10-16', 'expected_servings' => 5]);
+        $idle->delete();
+        $sold->delete();
+
+        $this->api('/api/owner/analytics/operations?from=2026-10-10&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonCount(2, 'waste.items')
+            ->assertJsonPath('waste.items.0.name', 'Scone')
+            ->assertJsonPath('waste.items.0.removed', true)
+            ->assertJsonPath('waste.items.0.expected', 8) // its idle day after deletion is left out
+            ->assertJsonPath('waste.items.1.name', 'Latte')
+            ->assertJsonPath('waste.items.1.removed', false)
+            ->assertJsonPath('waste.summary.expected', 13);
     }
 
     public function test_rejects_bad_filters_and_other_owners_branches(): void

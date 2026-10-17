@@ -252,7 +252,12 @@ class OwnerAnalyticsService
             'success'      => true,
             'filters'      => $this->filtersOut($scope),
             'staff'        => $this->staff($this->repo->staffSales($ids, $from, $to)),
-            'waste'        => $this->waste($servings),
+            'waste'        => $this->waste(
+                $servings,
+                $this->repo->spoilageLogValues($ids, $from, $to),
+                $this->repo->spoilageByReason($ids, $from, $to),
+                $this->repo->spoilageTotal($ids, $scope['prev_from'], $scope['prev_to'])
+            ),
             'ingredients'  => $this->repo->ingredientUsage($ids, $from, $to)
                 ->map(fn ($row) => [
                     'name'     => $row->name,
@@ -291,30 +296,51 @@ class OwnerAnalyticsService
             ->all();
     }
 
-    private function waste(Collection $servings): array
+    /**
+     * Planned vs sold vs spoiled. Spoilage value is each entry's size price kept
+     * when it was logged; spoilage with no entry behind it (recorded before
+     * entries existed) is valued at the item's base price. Add-ons aren't counted.
+     */
+    private function waste(Collection $servings, Collection $logValues, Collection $byReason, int $previousSpoiled): array
     {
+        $servings = $servings->each(function ($row) use ($logValues) {
+            $logged = $logValues->get($row->uuid);
+            $loose  = max(0, (int) $row->spoilage - (int) ($logged->quantity ?? 0));
+
+            $row->spoilage_value = (float) ($logged->value ?? 0) + $loose * (float) $row->base_price;
+        });
+
         $expected = (int) $servings->sum('expected');
         $sold     = (int) $servings->sum('sold');
         $spoiled  = (int) $servings->sum('spoilage');
 
         return [
             'summary' => [
-                'expected'      => $expected,
-                'sold'          => $sold,
-                'spoilage'      => $spoiled,
+                'expected'        => $expected,
+                'sold'            => $sold,
+                'spoilage'        => $spoiled,
+                'spoilage_value'  => round((float) $servings->sum('spoilage_value'), 2),
+                'spoilage_change' => $spoiled === 0 && $previousSpoiled === 0 ? 0.0 : $this->change($spoiled, $previousSpoiled),
                 // How much of what was planned actually sold.
-                'sell_through'  => $expected > 0 ? round($sold / $expected * 100, 1) : null,
-                'spoilage_rate' => $expected > 0 ? round($spoiled / $expected * 100, 1) : null,
-                'sold_out_days' => (int) $servings->sum('sold_out_days'),
+                'sell_through'    => $expected > 0 ? round($sold / $expected * 100, 1) : null,
+                'spoilage_rate'   => $expected > 0 ? round($spoiled / $expected * 100, 1) : null,
+                'sold_out_days'   => (int) $servings->sum('sold_out_days'),
+            ],
+            'reasons' => $this->spoilageReasons($byReason, $spoiled),
+            'voided'  => [
+                'entries'  => (int) $byReason->where('voided', 1)->sum('entries'),
+                'quantity' => (int) $byReason->where('voided', 1)->sum('quantity'),
             ],
             'items' => $servings
                 ->map(fn ($row) => [
-                    'uuid'          => $row->uuid,
-                    'name'          => $row->menu_name,
-                    'expected'      => (int) $row->expected,
-                    'sold'          => (int) $row->sold,
-                    'spoilage'      => (int) $row->spoilage,
-                    'sold_out_days' => (int) $row->sold_out_days,
+                    'uuid'           => $row->uuid,
+                    'name'           => $row->menu_name,
+                    'removed'        => (bool) $row->removed, // deleted from the menu since
+                    'expected'       => (int) $row->expected,
+                    'sold'           => (int) $row->sold,
+                    'spoilage'       => (int) $row->spoilage,
+                    'spoilage_value' => round((float) $row->spoilage_value, 2),
+                    'sold_out_days'  => (int) $row->sold_out_days,
                     'days'          => (int) $row->days,
                     'sell_through'  => (int) $row->expected > 0 ? round((int) $row->sold / (int) $row->expected * 100, 1) : null,
                 ])
@@ -323,6 +349,31 @@ class OwnerAnalyticsService
                 ->take(12)
                 ->all(),
         ];
+    }
+
+    /**
+     * Spoiled servings per reason, most first. Whatever the counted entries
+     * don't explain (no reason picked, or spoilage recorded before entries
+     * existed) is reported as 'unspecified', so the rows add up to the total.
+     */
+    private function spoilageReasons(Collection $byReason, int $spoiled): array
+    {
+        $rows = $byReason
+            ->where('voided', 0)
+            ->whereNotNull('reason')
+            ->map(fn ($r) => ['reason' => $r->reason, 'quantity' => (int) $r->quantity]);
+
+        $unspecified = $spoiled - $rows->sum('quantity');
+
+        if ($unspecified > 0) {
+            $rows->push(['reason' => 'unspecified', 'quantity' => $unspecified]);
+        }
+
+        return $rows
+            ->map(fn (array $r) => $r + ['share' => $spoiled > 0 ? round($r['quantity'] / $spoiled * 100, 1) : 0])
+            ->sortByDesc('quantity')
+            ->values()
+            ->all();
     }
 
     private function reservationStats(Collection $rows): array

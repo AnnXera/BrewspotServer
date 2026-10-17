@@ -237,7 +237,9 @@ class OwnerAnalyticsRepository
     }
 
     /**
-     * Daily servings planned vs sold vs spoiled, per menu item.
+     * Daily servings planned vs sold vs spoiled, per menu item. Days of a
+     * deleted item where nothing was sold or spoiled are left out (a plan
+     * that never ran); days with activity stay, flagged `removed`.
      */
     public function servings(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
@@ -246,15 +248,78 @@ class OwnerAnalyticsRepository
             ->whereIn('inventory_servings.branch_id', $branchIds)
             ->whereDate('inventory_servings.date', '>=', $from->toDateString())
             ->whereDate('inventory_servings.date', '<=', $to->toDateString())
+            ->where(fn ($q) => $q
+                ->whereNull('menu_items.deleted_at')
+                ->orWhere('inventory_servings.servings_sold', '>', 0)
+                ->orWhere('inventory_servings.spoilage_qty', '>', 0))
             ->groupBy('menu_items.uuid', 'menu_items.menu_name')
             ->selectRaw('menu_items.uuid, menu_items.menu_name,
+                MAX(CASE WHEN menu_items.deleted_at IS NULL THEN 0 ELSE 1 END) as removed,
                 SUM(inventory_servings.expected_servings) as expected,
                 SUM(inventory_servings.servings_sold) as sold,
                 SUM(inventory_servings.spoilage_qty) as spoilage,
+                MAX(menu_items.base_price) as base_price,
                 SUM(CASE WHEN inventory_servings.is_sold_out THEN 1 ELSE 0 END) as sold_out_days,
                 COUNT(*) as days')
             ->toBase()
             ->get();
+    }
+
+    /**
+     * Spoiled servings in a window, for the comparison with the previous period.
+     */
+    public function spoilageTotal(Collection $branchIds, Carbon $from, Carbon $to): int
+    {
+        return (int) $this->servingsInWindow($branchIds, $from, $to)->sum('inventory_servings.spoilage_qty');
+    }
+
+    /**
+     * Spoilage entries logged on the registers, per reason. Voided entries are
+     * grouped apart (reason null) so they can be reported without counting.
+     *
+     * @return Collection<int, object{reason: ?string, voided: int, entries: int, quantity: int}>
+     */
+    public function spoilageByReason(Collection $branchIds, Carbon $from, Carbon $to): Collection
+    {
+        return $this->servingsInWindow($branchIds, $from, $to)
+            ->join('serving_spoilage_logs', 'serving_spoilage_logs.servings_id', '=', 'inventory_servings.servings_id')
+            ->groupByRaw('CASE WHEN serving_spoilage_logs.voided_at IS NULL THEN serving_spoilage_logs.reason END, CASE WHEN serving_spoilage_logs.voided_at IS NULL THEN 0 ELSE 1 END')
+            ->selectRaw('CASE WHEN serving_spoilage_logs.voided_at IS NULL THEN serving_spoilage_logs.reason END as reason,
+                CASE WHEN serving_spoilage_logs.voided_at IS NULL THEN 0 ELSE 1 END as voided,
+                COUNT(*) as entries,
+                SUM(serving_spoilage_logs.quantity) as quantity')
+            ->toBase()
+            ->get();
+    }
+
+    /**
+     * Counted (not voided) spoilage entries per menu item: servings and their
+     * value at the price kept on each entry. Entries from before prices were
+     * kept fall back to the item's base price.
+     *
+     * @return Collection<string, object{uuid: string, quantity: int, value: string}> keyed by item uuid
+     */
+    public function spoilageLogValues(Collection $branchIds, Carbon $from, Carbon $to): Collection
+    {
+        return $this->servingsInWindow($branchIds, $from, $to)
+            ->join('serving_spoilage_logs', 'serving_spoilage_logs.servings_id', '=', 'inventory_servings.servings_id')
+            ->join('menu_items', 'menu_items.men_item_id', '=', 'inventory_servings.men_item_id')
+            ->whereNull('serving_spoilage_logs.voided_at')
+            ->groupBy('menu_items.uuid')
+            ->selectRaw('menu_items.uuid,
+                SUM(serving_spoilage_logs.quantity) as quantity,
+                SUM(serving_spoilage_logs.quantity * COALESCE(serving_spoilage_logs.unit_value, menu_items.base_price)) as value')
+            ->toBase()
+            ->get()
+            ->keyBy('uuid');
+    }
+
+    private function servingsInWindow(Collection $branchIds, Carbon $from, Carbon $to): Builder
+    {
+        return InventoryServing::query()
+            ->whereIn('inventory_servings.branch_id', $branchIds)
+            ->whereDate('inventory_servings.date', '>=', $from->toDateString())
+            ->whereDate('inventory_servings.date', '<=', $to->toDateString());
     }
 
     /**

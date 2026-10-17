@@ -29,21 +29,41 @@ class SpoilageService
 {
     // ── On the register (device token) ───────────────────────────────────
 
-    public function logOnDevice(PosDevice $device, string $itemUuid, int $quantity, ?string $reason): array
+    /**
+     * Items in sizes need the size thrown away; its price (or the base price
+     * for items without sizes) is kept on the entry for the spoilage cost.
+     */
+    public function logOnDevice(PosDevice $device, string $itemUuid, ?string $sizeUuid, int $quantity, ?string $reason): array
     {
         if (! $device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
         }
 
-        $itemId = MenuItem::where('uuid', $itemUuid)
+        $item = MenuItem::where('uuid', $itemUuid)
             ->where('cafe_id', $device->branch->cafe_id)
-            ->value('men_item_id');
+            ->with('sizes')
+            ->first();
 
-        if (! $itemId) {
+        if (! $item) {
             return ['success' => false, 'http' => 404, 'message' => 'Menu item not found.'];
         }
 
-        $result = DB::transaction(function () use ($device, $itemId, $quantity, $reason) {
+        $size = null;
+
+        if ($item->sizes->isNotEmpty()) {
+            $size = $item->sizes->firstWhere('uuid', $sizeUuid);
+
+            if (! $size) {
+                return ['success' => false, 'http' => 422, 'message' => "Pick the size of the spoiled {$item->menu_name}."];
+            }
+        } elseif ($sizeUuid) {
+            return ['success' => false, 'http' => 422, 'message' => "{$item->menu_name} does not come in sizes."];
+        }
+
+        $itemId    = $item->men_item_id;
+        $unitValue = (float) ($size?->price ?? $item->base_price);
+
+        $result = DB::transaction(function () use ($device, $itemId, $size, $unitValue, $quantity, $reason) {
             $serving = InventoryServing::where('men_item_id', $itemId)
                 ->where('branch_id', $device->branch_id)
                 ->whereDate('date', $this->today())
@@ -68,9 +88,12 @@ class SpoilageService
 
             $log = ServingSpoilageLog::create([
                 'servings_id' => $serving->servings_id,
+                'men_size_id' => $size?->men_size_id,
+                'size_name'   => $size?->name,
                 'staff_id'    => $device->active_staff_id,
                 'device_id'   => $device->device_id,
                 'quantity'    => $quantity,
+                'unit_value'  => $unitValue,
                 'reason'      => $reason,
             ]);
 
@@ -89,14 +112,17 @@ class SpoilageService
             'device_uuid' => $device->uuid,
             'log_uuid'    => $log->uuid,
             'item_uuid'   => $itemUuid,
+            'size'        => $log->size_name,
             'quantity'    => $quantity,
             'reason'      => $reason,
         ]);
 
+        $name = trim("{$log->size_name} {$log->serving->menuItem?->menu_name}");
+
         return [
             'success' => true,
             'http'    => 201,
-            'message' => "Logged {$quantity} spoiled {$log->serving->menuItem?->menu_name}.",
+            'message' => "Logged {$quantity} spoiled {$name}.",
             'log'     => new ServingSpoilageLogResource($log),
         ];
     }

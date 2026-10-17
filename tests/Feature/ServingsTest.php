@@ -122,6 +122,21 @@ class ServingsTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('expected_servings');
     }
 
+    public function test_deleting_an_item_drops_its_untouched_servings_from_today(): void
+    {
+        $token     = $this->tokenFor($this->owner);
+        $today     = $this->makeServing($this->latte, ['expected_servings' => 10]);
+        $yesterday = InventoryServing::create(['men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->subDay()->toDateString(), 'expected_servings' => 10]);
+        $sold      = $this->makeServing($this->croissant, ['expected_servings' => 10, 'servings_sold' => 2]);
+
+        $this->api('DELETE', "/api/owner/menu-items/{$this->latte->uuid}", $token)->assertOk();
+        $this->api('DELETE', "/api/owner/menu-items/{$this->croissant->uuid}", $token)->assertOk();
+
+        $this->assertNull($today->fresh());     // planned, nothing happened: gone
+        $this->assertNotNull($yesterday->fresh()); // past days are history
+        $this->assertNotNull($sold->fresh());      // has sales: kept
+    }
+
     public function test_available_items_excludes_added_and_unavailable(): void
     {
         $token = $this->tokenFor($this->manager);
