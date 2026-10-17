@@ -58,13 +58,14 @@ class CafeStaffRepository
         ]);
     }
 
-    public function assignToBranch(int $userId, int $branchId, ?string $hiredAt = null): CafeStaff
+    public function assignToBranch(int $userId, int $branchId, ?string $hiredAt = null, ?int $hiredBy = null): CafeStaff
     {
         return CafeStaff::create([
             'user_id'           => $userId,
             'branch_id'         => $branchId,
             'employment_status' => CafeStaff::STATUS_ACTIVE,
             'hired_at'          => $hiredAt,
+            'hired_by'          => $hiredBy,
         ]);
     }
 
@@ -95,13 +96,14 @@ class CafeStaffRepository
             ->first();
     }
 
-    public function terminateAllAssignments(int $userId): void
+    public function terminateAllAssignments(int $userId, ?int $terminatedBy = null): void
     {
         CafeStaff::where('user_id', $userId)
             ->where('employment_status', '!=', CafeStaff::STATUS_TERMINATED)
             ->update([
                 'employment_status' => CafeStaff::STATUS_TERMINATED,
                 'terminated_at'     => Carbon::now(),
+                'terminated_by'     => $terminatedBy,
             ]);
     }
 
@@ -194,7 +196,7 @@ class CafeStaffRepository
     {
         return [
             'role',
-            'staffAssignments'              => fn ($q) => $q->where('branch_id', $branchId)->with(['branch', 'schedules']),
+            'staffAssignments'              => fn ($q) => $q->where('branch_id', $branchId)->with(['branch', 'schedules', 'hiredBy.role', 'terminatedBy.role']),
             'activeStaffAssignments.branch',
         ];
     }
@@ -213,11 +215,12 @@ class CafeStaffRepository
         return $assignment;
     }
 
-    public function terminateAssignment(CafeStaff $assignment): void
+    public function terminateAssignment(CafeStaff $assignment, ?int $terminatedBy = null): void
     {
         $assignment->forceFill([
             'employment_status' => CafeStaff::STATUS_TERMINATED,
             'terminated_at'     => Carbon::now(),
+            'terminated_by'     => $terminatedBy,
         ])->save();
     }
 

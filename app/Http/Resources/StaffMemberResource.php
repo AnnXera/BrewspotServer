@@ -47,6 +47,8 @@ class StaffMemberResource extends JsonResource
                 'employment_status' => $assignment->employment_status,
                 'hired_at'          => $assignment->hired_at?->toDateString() ?? $assignment->created_at?->toDateString(),
                 'terminated_at'     => $assignment->terminated_at?->toISOString(),
+                'hired_by'          => $this->actor($assignment, 'hiredBy'),
+                'terminated_by'     => $this->actor($assignment, 'terminatedBy'),
             ] : null,
             // Other branches this person is actively assigned to ("Also at: …").
             'other_branches' => $this->relationLoaded('activeStaffAssignments')
@@ -65,6 +67,24 @@ class StaffMemberResource extends JsonResource
                 ])->values()
                 : [],
             'created_at' => $this->created_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * Who hired / terminated this assignment, as { name, role }. Null when not loaded
+     * or not recorded (rows from before hired_by / terminated_by existed).
+     */
+    private function actor($assignment, string $relation): ?array
+    {
+        if (! $assignment->relationLoaded($relation) || ! $assignment->$relation) {
+            return null;
+        }
+
+        $user = $assignment->$relation;
+
+        return [
+            'name' => trim("{$user->firstname} {$user->lastname}"),
+            'role' => $user->relationLoaded('role') ? $user->role?->role_name : null,
         ];
     }
 }

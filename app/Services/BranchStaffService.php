@@ -83,7 +83,8 @@ class BranchStaffService
                 $assignment = $this->repo->assignToBranch(
                     $staffUser->user_id,
                     $branch->branch_id,
-                    $payload['hired_at'] ?? now()->toDateString()
+                    $payload['hired_at'] ?? now()->toDateString(),
+                    $actor->user_id
                 );
 
                 if (! empty($payload['schedule'])) {
@@ -253,8 +254,8 @@ class BranchStaffService
             return ['success' => false, 'http' => 422, 'message' => 'This employee is already terminated at this branch.'];
         }
 
-        DB::transaction(function () use ($target, $assignment) {
-            $this->repo->terminateAssignment($assignment);
+        DB::transaction(function () use ($actor, $target, $assignment) {
+            $this->repo->terminateAssignment($assignment, $actor->user_id);
             $this->repo->endPosSessions([$assignment->staff_id]);
 
             if (! $this->repo->hasActiveAssignments($target->user_id)) {
