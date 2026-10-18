@@ -31,6 +31,21 @@ class CafeOpeningHourController extends Controller
         ]);
     }
 
+    /**
+     * GET .../branches/{branchUuid}/opening-hours
+     * The branch's cafe hours, read-only, so managers can offer reservation slots inside them.
+     * `branch.access` has already authorised the branch and stored it on the request.
+     */
+    public function branch(Request $request): JsonResponse
+    {
+        $cafe = $request->attributes->get('branch')->cafe;
+
+        return response()->json([
+            'success' => true,
+            'data'    => $cafe ? $this->week($cafe) : [],
+        ]);
+    }
+
     public function update(UpdateCafeOpeningHoursRequest $request): JsonResponse
     {
         $cafe = $request->user()->cafes()->first();
