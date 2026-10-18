@@ -25,6 +25,7 @@ use App\Http\Controllers\CafeStaffController;
 use App\Http\Controllers\ItemBranchController;
 use App\Http\Controllers\BranchStaffController;
 use App\Http\Controllers\ManagerAccountController;
+use App\Http\Controllers\ManagerDashboardController;
 use App\Http\Controllers\PosDeviceController;
 use App\Http\Controllers\PosFloorPlanController;
 use App\Http\Controllers\FloorPlanController;
@@ -233,6 +234,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::get('/branches/{branchUuid}', [ManagerAccountController::class, 'branch'])->middleware('branch.access'); // Cafe Management
         Route::put('/pin',      [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
 
+        // Manager Dashboard stats & transactions
+        Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats'])->middleware('branch.access');
+        Route::get('/branches/{branchUuid}/transactions', [ManagerDashboardController::class, 'transactions'])->middleware('branch.access');
+        Route::get('/branches/{branchUuid}/transactions/{transactionUuid}', [ManagerDashboardController::class, 'transaction'])->middleware('branch.access');
+
         // Only branches with an active assignment (enforced by branch.access).
         // Managers can manage cashiers only (enforced in BranchStaffService).
         Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
@@ -260,9 +266,10 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/menu',                    [PosDeviceController::class, 'menu']);
             Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
             Route::get('/spoilage',                [SpoilageController::class, 'deviceIndex']);
-            Route::post('/spoilage',               [SpoilageController::class, 'deviceStore']);
             Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
+            Route::get('/approving-managers',             [PosDeviceController::class, 'approvingManagers']);
+            Route::post('/transactions/{transactionUuid}/refund', [PosDeviceController::class, 'refund'])->middleware('throttle:pos-unlock');
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.

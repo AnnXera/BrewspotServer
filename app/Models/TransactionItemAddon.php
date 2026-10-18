@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class TransactionItemAddon extends Model
 {
+    protected $table = 'transaction_item_addons';
     protected $primaryKey = 'transaction_item_addon_id';
 
     protected $fillable = [

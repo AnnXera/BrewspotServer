@@ -426,14 +426,13 @@ class PosDeviceService
         $transaction = null;
         \Illuminate\Support\Facades\DB::transaction(function () use (&$transaction, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
             $latestTransaction = \App\Models\Transaction::where('branch_id', $branchId)
-                ->whereNotNull('receipt_number')
                 ->lockForUpdate()
                 ->orderBy('transaction_id', 'desc')
                 ->first();
 
-            $nextReceiptNumber = $latestTransaction
+            $nextReceiptNumber = $latestTransaction && $latestTransaction->receipt_number && is_numeric($latestTransaction->receipt_number)
                 ? str_pad((int) $latestTransaction->receipt_number + 1, 6, '0', STR_PAD_LEFT)
-                : '000001';
+                : str_pad((int) ($latestTransaction?->transaction_id ?? 0) + 1, 6, '0', STR_PAD_LEFT);
 
             $transaction = \App\Models\Transaction::create([
                 'branch_id' => $branchId,
@@ -565,7 +564,7 @@ class PosDeviceService
             'month_total'  => (float) $monthTotal,      // net, settled sales only
             'transactions' => $todayTransactions->map(fn ($t) => [
                 'uuid'           => $t->uuid,
-                'receipt_number' => $t->receipt_number ?: $t->uuid,
+                'receipt_number' => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
                 'created_at'     => $t->created_at->toISOString(),
                 'staff_name'     => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
                 'total_amount'   => (float) $t->total_amount,
@@ -589,17 +588,19 @@ class PosDeviceService
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
         }
 
-        $payment = $t->payments->sortByDesc('created_at')->first();
-        $subtotal = $t->items->sum(fn ($i) => (float) $i->unit_price * $i->quantity);
+        $payment = $t->payments ? $t->payments->sortByDesc('created_at')->first() : null;
+        $items = $t->items ?? collect();
+        $subtotal = $items->sum(fn ($i) => (float) $i->unit_price * $i->quantity);
 
         return [
             'success'     => true,
             'transaction' => [
                 'uuid'            => $t->uuid,
-                'receipt_number'  => $t->receipt_number ?: $t->uuid,
+                'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
                 'created_at'      => $t->created_at->toISOString(),
                 'staff_name'      => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
                 'status'          => $t->status,
+                'walk_in_note'    => $t->walk_in_note,
                 'subtotal'        => round($subtotal, 2),
                 'discount_type'   => $t->discount_type,
                 'discount_amount' => (float) $t->discount_amount,
@@ -610,20 +611,171 @@ class PosDeviceService
                     'amount_tendered'  => (float) $payment->amount_tendered,
                     'change'           => (float) $payment->amount_change,
                 ] : null,
-                'items' => $t->items->map(fn ($i) => [
+                'items' => $items->map(fn ($i) => [
                     'uuid'       => $i->uuid,
-                    'menu_name'  => $i->menuItem?->menu_name ?? 'Removed item',
+                    'menu_name'  => $i->menuItem?->menu_name ?? ('Item #' . $i->men_item_id),
                     'size_name'  => $i->size_name,
                     'quantity'   => $i->quantity,
                     'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),
-                    'addons'     => $i->addons->map(fn ($a) => [
+                    'addons'     => ($i->addons ?? collect())->map(fn ($a) => [
                         'name'     => $a->addon_name,
-                        'quantity' => $a->quantity,
+                        'quantity' => (int) $a->quantity,
                         'price'    => (float) $a->price,
                     ])->values(),
                 ])->values(),
             ],
+        ];
+    }
+
+    /**
+     * List managers and owner who have authority to approve refunds and voids.
+     */
+    public function approvingManagers(PosDevice $device): array
+    {
+        $branchId = $device->branch_id;
+        $cafe = $device->branch?->cafe;
+
+        $staffManagers = CafeStaff::where('branch_id', $branchId)
+            ->active()
+            ->whereHas('user', fn ($q) => $q
+                ->where('status', '!=', 'inactive')
+                ->whereHas('role', fn ($r) => $r->where('role_name', 'Manager')))
+            ->with(['user.role'])
+            ->get()
+            ->map(fn ($s) => [
+                'uuid'      => $s->user->uuid,
+                'name'      => $s->user->firstname . ' ' . $s->user->lastname,
+                'role'      => 'Manager',
+                'has_pin'   => $s->user->hasPin(),
+                'is_locked' => $s->user->isPinLocked(),
+            ]);
+
+        $owner = $cafe?->owner;
+        $ownerList = collect();
+        if ($owner && $owner->status !== 'inactive') {
+            $ownerList->push([
+                'uuid'      => $owner->uuid,
+                'name'      => $owner->firstname . ' ' . $owner->lastname . ' (Owner)',
+                'role'      => 'Cafe Owner',
+                'has_pin'   => $owner->hasPin(),
+                'is_locked' => $owner->isPinLocked(),
+            ]);
+        }
+
+        $all = $staffManagers->concat($ownerList)->unique('uuid')->values();
+
+        return [
+            'success'  => true,
+            'managers' => $all,
+        ];
+    }
+
+    /**
+     * Process a refund for a completed transaction, requiring manager PIN authorization.
+     */
+    public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
+    {
+        if (! $device->active_staff_id) {
+            return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
+        }
+
+        $transaction = Transaction::where('branch_id', $device->branch_id)
+            ->where('uuid', $transactionUuid)
+            ->with(['items', 'payments'])
+            ->first();
+
+        if (! $transaction) {
+            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
+        }
+
+        if (in_array($transaction->status, ['refunded', 'voided'], true)) {
+            return ['success' => false, 'http' => 422, 'message' => "This transaction has already been {$transaction->status}."];
+        }
+
+        $managerUser = User::where('uuid', $managerUuid)
+            ->where('status', '!=', 'inactive')
+            ->with('role')
+            ->first();
+
+        if (! $managerUser) {
+            return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
+        }
+
+        // Authorizing user must be an active manager at this branch or the cafe owner
+        $isBranchManager = CafeStaff::where('branch_id', $device->branch_id)
+            ->where('user_id', $managerUser->user_id)
+            ->active()
+            ->whereHas('user.role', fn ($r) => $r->where('role_name', 'Manager'))
+            ->exists();
+
+        $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
+
+        if (! $isBranchManager && ! $isCafeOwner) {
+            return ['success' => false, 'http' => 403, 'message' => 'Only an authorized Manager or Cafe Owner can approve refunds.'];
+        }
+
+        if ($managerUser->mustChangePin()) {
+            return ['success' => false, 'http' => 409, 'message' => 'Manager must change their temporary PIN before approving refunds.'];
+        }
+
+        $check = $this->pins->verify($managerUser, $pin);
+        if (! $check['success']) {
+            return [
+                'success'       => false,
+                'http'          => ! empty($check['locked']) ? 423 : 422,
+                'message'       => $check['message'] ?? 'Incorrect manager PIN.',
+                'attempts_left' => $check['attempts_left'] ?? null,
+            ];
+        }
+
+        DB::transaction(function () use ($transaction, $device, $managerUser, $reason) {
+            $actorRole = $managerUser->roleName() ?: 'Manager';
+            $refundNote = "Refunded by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
+            if (! empty($reason)) {
+                $refundNote .= ': ' . trim($reason);
+            }
+            if ($transaction->walk_in_note) {
+                $refundNote = $transaction->walk_in_note . ' | ' . $refundNote;
+            }
+
+            $transaction->update([
+                'status'       => 'refunded',
+                'walk_in_note' => $refundNote,
+            ]);
+
+            // Update associated payments to refunded
+            $transaction->payments()->update(['status' => 'refunded']);
+
+            // Restore daily inventory servings sold
+            foreach ($transaction->items as $item) {
+                $serving = \App\Models\InventoryServing::where('men_item_id', $item->men_item_id)
+                    ->where('branch_id', $device->branch_id)
+                    ->where('date', $transaction->created_at->toDateString())
+                    ->first();
+
+                if ($serving) {
+                    $serving->decrement('servings_sold', min($serving->servings_sold, (int) $item->quantity));
+                    if ($serving->is_sold_out && $serving->servings_sold < $serving->expected_servings) {
+                        $serving->update(['is_sold_out' => false]);
+                    }
+                }
+            }
+        });
+
+        Log::channel('auth')->info('POS transaction refunded.', [
+            'transaction_uuid' => $transaction->uuid,
+            'receipt_number'   => $transaction->receipt_number,
+            'amount'           => $transaction->total_amount,
+            'manager_uuid'     => $managerUser->uuid,
+            'manager_name'     => "{$managerUser->firstname} {$managerUser->lastname}",
+            'reason'           => $reason,
+        ]);
+
+        return [
+            'success'     => true,
+            'message'     => 'Transaction successfully refunded.',
+            'transaction' => $this->transaction($device, $transaction->uuid)['transaction'] ?? null,
         ];
     }
 }
