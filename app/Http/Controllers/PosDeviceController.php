@@ -83,38 +83,6 @@ class PosDeviceController extends Controller
     }
 
     /**
-     * GET /api/pos/device/menu — categories and items for the branch.
-     */
-    public function menu(Request $request): JsonResponse
-    {
-        return $this->respond($this->service->menu($request->user()));
-    }
-
-    /**
-     * GET /api/pos/device/transactions — today's transactions and stats
-     */
-    public function transactions(Request $request): JsonResponse
-    {
-        return $this->respond($this->service->transactions($request->user()));
-    }
-
-    /**
-     * POST /api/pos/device/checkout
-     */
-    public function checkout(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.uuid' => 'required|uuid',
-            'items.*.quantity' => 'required|integer|min:1',
-            'payment_method' => 'required|string|in:cash,card,ewallet',
-            'amount_tendered' => 'required|numeric|min:0',
-        ]);
-        
-        return $this->respond($this->service->checkout($request->user(), $validated));
-    }
-
-    /**
      * POST /api/pos/device/staff/{userUuid}/unlock
      */
     public function unlock(UnlockPosRequest $request, string $userUuid): JsonResponse

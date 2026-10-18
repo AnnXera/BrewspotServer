@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('transactions', function (Blueprint $table) {
-            $table->string('receipt_number')->nullable()->after('uuid');
-        });
+        if (!Schema::hasColumn('transactions', 'receipt_number')) {
+            Schema::table('transactions', function (Blueprint $table) {
+                $table->string('receipt_number')->nullable()->after('uuid');
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('transactions', function (Blueprint $table) {
-            $table->dropColumn('receipt_number');
-        });
+        if (Schema::hasColumn('transactions', 'receipt_number')) {
+            Schema::table('transactions', function (Blueprint $table) {
+                $table->dropColumn('receipt_number');
+            });
+        }
     }
 };

@@ -39,18 +39,19 @@ class PosDeviceService
     public function __construct(
         private readonly PosDeviceRepository $repo,
         private readonly StaffPinService $pins
-    ) {}
+    ) {
+    }
 
     // ── Setup (owner / manager token) ────────────────────────────────────
 
     public function registerableBranches(User $user): array
     {
         return [
-            'success'  => true,
-            'branches' => $this->repo->findRegisterableBranches($user)->map(fn (CafeBranch $b) => [
-                'uuid'        => $b->uuid,
+            'success' => true,
+            'branches' => $this->repo->findRegisterableBranches($user)->map(fn(CafeBranch $b) => [
+                'uuid' => $b->uuid,
                 'branch_name' => $b->branch_name,
-                'address'     => $b->address,
+                'address' => $b->address,
             ])->values(),
         ];
     }
@@ -59,12 +60,12 @@ class PosDeviceService
     {
         $branch = $this->repo->findRegisterableBranches($user)->firstWhere('uuid', $branchUuid);
 
-        if (! $branch) {
+        if (!$branch) {
             return ['success' => false, 'http' => 403, 'message' => 'You can\'t set up a register for this branch.'];
         }
 
         $device = $this->repo->create($branch->branch_id, $name, $user->user_id);
-        $token  = $device->createToken('pos-device')->plainTextToken;
+        $token = $device->createToken('pos-device')->plainTextToken;
 
         // The setup login on this device is no longer needed — drop it so the
         // manager/owner isn't left signed in on a shared counter device.
@@ -77,17 +78,17 @@ class PosDeviceService
         Log::channel('auth')->info('POS device registered.', [
             'device_uuid' => $device->uuid,
             'branch_uuid' => $branch->uuid,
-            'by_uuid'     => $user->uuid,
-            'by_role'     => $user->roleName(),
+            'by_uuid' => $user->uuid,
+            'by_role' => $user->roleName(),
         ]);
 
         return [
-            'success'      => true,
-            'http'         => 201,
-            'message'      => "Register \"{$name}\" is set up for {$branch->branch_name}.",
+            'success' => true,
+            'http' => 201,
+            'message' => "Register \"{$name}\" is set up for {$branch->branch_name}.",
             'device_token' => $token,
-            'token_type'   => 'Bearer',
-            'device'       => new PosDeviceResource($device->load(['branch', 'registeredBy'])),
+            'token_type' => 'Bearer',
+            'device' => new PosDeviceResource($device->load(['branch', 'registeredBy'])),
         ];
     }
 
@@ -105,7 +106,7 @@ class PosDeviceService
     {
         $device = $this->repo->findForBranch($deviceUuid, $branch->branch_id);
 
-        if (! $device) {
+        if (!$device) {
             return ['success' => false, 'http' => 404, 'message' => 'Register not found.'];
         }
 
@@ -114,7 +115,7 @@ class PosDeviceService
         Log::channel('auth')->info('POS device removed from dashboard.', [
             'device_uuid' => $device->uuid,
             'branch_uuid' => $branch->uuid,
-            'by_uuid'     => $actor->uuid,
+            'by_uuid' => $actor->uuid,
         ]);
 
         return ['success' => true, 'message' => "Register \"{$device->name}\" removed. It will need to be set up again."];
@@ -126,7 +127,7 @@ class PosDeviceService
     {
         return [
             'success' => true,
-            'device'  => new PosDeviceResource($device->load(['branch.cafe', 'registeredBy', 'activeStaff.user'])),
+            'device' => new PosDeviceResource($device->load(['branch.cafe', 'registeredBy', 'activeStaff.user'])),
         ];
     }
 
@@ -134,157 +135,29 @@ class PosDeviceService
     {
         return [
             'success' => true,
-            'staff'   => $this->repo->findUnlockableStaff($device->branch_id)->map(fn (CafeStaff $a) => [
-                'uuid'       => $a->user->uuid,
-                'firstname'  => $a->user->firstname,
-                'lastname'   => $a->user->lastname,
-                'role'       => $a->user->roleName(),
-                'pin_set'    => $a->user->hasPin(),
+            'staff' => $this->repo->findUnlockableStaff($device->branch_id)->map(fn(CafeStaff $a) => [
+                'uuid' => $a->user->uuid,
+                'firstname' => $a->user->firstname,
+                'lastname' => $a->user->lastname,
+                'role' => $a->user->roleName(),
+                'pin_set' => $a->user->hasPin(),
                 'pin_locked' => $a->user->isPinLocked(),
                 'pin_must_change' => $a->user->mustChangePin(),
             ])->values(),
         ];
     }
 
-    public function menu(PosDevice $device): array
-    {
-        $cafeId = $device->branch->cafe_id;
-        
-        $categories = MenuCategory::where('cafe_id', $cafeId)->orderBy('name')->get();
-        
-        $items = MenuItem::where('cafe_id', $cafeId)
-            ->where('is_available', true)
-            ->with('category')
-            ->orderBy('menu_name')
-            ->get();
-            
-        return [
-            'success' => true,
-            'categories' => MenuCategoryResource::collection($categories)->resolve(),
-            'items' => MenuItemResource::collection($items)->resolve(),
-        ];
-    }
-
-    public function transactions(PosDevice $device): array
-    {
-        $today = Carbon::today();
-        $thisMonth = Carbon::now()->startOfMonth();
-
-        $todayTotal = Transaction::where('branch_id', $device->branch_id)
-            ->whereDate('created_at', $today)
-            ->where('status', 'completed')
-            ->sum('total_amount');
-
-        $todayCount = Transaction::where('branch_id', $device->branch_id)
-            ->whereDate('created_at', $today)
-            ->where('status', 'completed')
-            ->count();
-
-        $monthTotal = Transaction::where('branch_id', $device->branch_id)
-            ->where('created_at', '>=', $thisMonth)
-            ->where('status', 'completed')
-            ->sum('total_amount');
-
-        $transactions = Transaction::where('branch_id', $device->branch_id)
-            ->with(['staff.user', 'items.menuItem'])
-            ->orderBy('created_at', 'desc')
-            ->limit(50)
-            ->get();
-
-        return [
-            'success' => true,
-            'today_total' => $todayTotal,
-            'today_count' => $todayCount,
-            'month_total' => $monthTotal,
-            'transactions' => $transactions->map(fn($t) => [
-                'uuid' => $t->uuid,
-                'receipt_number' => $t->receipt_number,
-                'staff_name' => $t->staff ? trim($t->staff->user->firstname . ' ' . $t->staff->user->lastname) : 'Unknown',
-                'total_amount' => $t->total_amount,
-                'status' => $t->status,
-                'created_at' => $t->created_at->toISOString(),
-                'items_count' => $t->items->sum('quantity'),
-            ])->values(),
-        ];
-    }
-
-    public function checkout(PosDevice $device, array $data): array
-    {
-        if (!$device->active_staff_id) {
-            abort(403, 'No active staff assigned to this register');
-        }
-
-        return DB::transaction(function () use ($device, $data) {
-            $totalAmount = 0;
-            $itemsToInsert = [];
-            
-            foreach ($data['items'] as $reqItem) {
-                $menuItem = MenuItem::where('uuid', $reqItem['uuid'])->firstOrFail();
-                $totalAmount += $menuItem->base_price * $reqItem['quantity'];
-                
-                $itemsToInsert[] = [
-                    'menuItem' => $menuItem,
-                    'quantity' => $reqItem['quantity'],
-                    'unit_price' => $menuItem->base_price,
-                ];
-            }
-            
-            $subtotal = $totalAmount;
-            $tax = $subtotal * 0.12;
-            $finalTotal = $subtotal + $tax;
-
-            $latestTransactionId = Transaction::max('transaction_id') ?? 0;
-            $nextNumber = $latestTransactionId + 1;
-            $receiptNumber = 'CF' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
-
-            $transaction = Transaction::create([
-                'branch_id' => $device->branch_id,
-                'staff_id' => $device->active_staff_id,
-                'total_amount' => $finalTotal,
-                'receipt_number' => $receiptNumber,
-                'status' => 'completed',
-            ]);
-
-            foreach ($itemsToInsert as $insertData) {
-                TransactionItem::create([
-                    'transaction_id' => $transaction->transaction_id,
-                    'men_item_id' => $insertData['menuItem']->men_item_id,
-                    'quantity' => $insertData['quantity'],
-                    'unit_price' => $insertData['unit_price'],
-                ]);
-            }
-            
-            Payment::create([
-                'user_id' => $device->activeStaff->user_id,
-                'payable_type' => Transaction::class,
-                'payable_id' => $transaction->transaction_id,
-                'amount' => $finalTotal,
-                'amount_tendered' => $data['amount_tendered'],
-                'amount_change' => max(0, $data['amount_tendered'] - $finalTotal),
-                'payment_method_type' => $data['payment_method'],
-                'status' => 'completed',
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Order completed successfully',
-                'transaction_uuid' => $transaction->uuid,
-                'receipt_number' => $transaction->receipt_number,
-            ];
-        });
-    }
-
     public function unlock(PosDevice $device, string $userUuid, string $pin): array
     {
         $assignment = $this->repo->findUnlockableAssignment($userUuid, $device->branch_id);
 
-        if (! $assignment) {
+        if (!$assignment) {
             return ['success' => false, 'http' => 404, 'message' => 'This person is not active at this branch.'];
         }
 
         $check = $this->pins->verify($assignment->user, $pin);
 
-        if (! $check['success']) {
+        if (!$check['success']) {
             return $this->pinFailure($check);
         }
 
@@ -292,10 +165,10 @@ class PosDeviceService
         // (POST .../change-pin) before letting them in.
         if ($assignment->user->mustChangePin()) {
             return [
-                'success'         => false,
-                'http'            => 409,
+                'success' => false,
+                'http' => 409,
                 'must_change_pin' => true,
-                'message'         => 'This is a temporary PIN. Please choose a new PIN to continue.',
+                'message' => 'This is a temporary PIN. Please choose a new PIN to continue.',
             ];
         }
 
@@ -309,13 +182,13 @@ class PosDeviceService
     {
         $assignment = $this->repo->findUnlockableAssignment($userUuid, $device->branch_id);
 
-        if (! $assignment) {
+        if (!$assignment) {
             return ['success' => false, 'http' => 404, 'message' => 'This person is not active at this branch.'];
         }
 
         $result = $this->pins->changeWithCurrentPin($assignment->user, $currentPin, $newPin);
 
-        if (! $result['success']) {
+        if (!$result['success']) {
             return $this->pinFailure($result);
         }
 
@@ -326,7 +199,7 @@ class PosDeviceService
     {
         return [
             ...$check,
-            'http' => ! empty($check['locked']) ? 423 : 422,
+            'http' => !empty($check['locked']) ? 423 : 422,
         ];
     }
 
@@ -336,17 +209,17 @@ class PosDeviceService
 
         Log::channel('auth')->info('POS unlocked.', [
             'device_uuid' => $device->uuid,
-            'staff_uuid'  => $assignment->user->uuid,
+            'staff_uuid' => $assignment->user->uuid,
         ]);
 
         return [
             'success' => true,
             'message' => "Welcome, {$assignment->user->firstname}.",
-            'staff'   => [
-                'uuid'      => $assignment->user->uuid,
+            'staff' => [
+                'uuid' => $assignment->user->uuid,
                 'firstname' => $assignment->user->firstname,
-                'lastname'  => $assignment->user->lastname,
-                'role'      => $assignment->user->roleName(),
+                'lastname' => $assignment->user->lastname,
+                'role' => $assignment->user->roleName(),
             ],
         ];
     }
@@ -374,7 +247,7 @@ class PosDeviceService
         $categories = \App\Models\MenuCategory::where('cafe_id', $cafeId)
             ->orderBy('name')
             ->get()
-            ->map(fn ($c) => [
+            ->map(fn($c) => [
                 'uuid' => $c->uuid,
                 'name' => $c->name,
             ]);
@@ -384,19 +257,19 @@ class PosDeviceService
             ->where('is_available', true)
             ->orderBy('menu_name')
             ->get()
-            ->map(fn ($i) => [
-                'uuid'          => $i->uuid,
+            ->map(fn($i) => [
+                'uuid' => $i->uuid,
                 'category_uuid' => $i->category->uuid ?? null,
-                'menu_name'     => $i->menu_name,
-                'description'   => $i->description,
-                'base_price'    => (float) $i->base_price,
-                'picture'       => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+                'menu_name' => $i->menu_name,
+                'description' => $i->description,
+                'base_price' => (float) $i->base_price,
+                'picture' => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
             ]);
 
         return [
-            'success'    => true,
+            'success' => true,
             'categories' => $categories->values(),
-            'items'      => $items->values(),
+            'items' => $items->values(),
         ];
     }
 
@@ -411,7 +284,7 @@ class PosDeviceService
 
         $branchId = $device->branch_id;
         $cafeId = $device->branch->cafe_id;
-        
+
         $totalAmount = 0;
         $transactionItemsData = [];
 
@@ -420,8 +293,8 @@ class PosDeviceService
             if (!$menuItem) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
-            
-            $quantity = (int)$itemData['quantity'];
+
+            $quantity = (int) $itemData['quantity'];
             $price = $menuItem->base_price;
 
             // Add 25 pesos for each addon, except ice
@@ -434,13 +307,13 @@ class PosDeviceService
             }
 
             $totalAmount += $price * $quantity;
-            
+
             $transactionItemsData[] = [
                 'men_item_id' => $menuItem->men_item_id,
-                'quantity'    => $quantity,
-                'sugar_level' => isset($itemData['sugar_level']) ? (int)$itemData['sugar_level'] : null,
-                'addons'      => isset($itemData['addons']) ? $itemData['addons'] : null,
-                'unit_price'  => $price,
+                'quantity' => $quantity,
+                'sugar_level' => isset($itemData['sugar_level']) ? (int) $itemData['sugar_level'] : null,
+                'addons' => isset($itemData['addons']) ? $itemData['addons'] : null,
+                'unit_price' => $price,
             ];
         }
 
@@ -461,18 +334,18 @@ class PosDeviceService
                 ->orderBy('transaction_id', 'desc')
                 ->first();
 
-            $nextReceiptNumber = $latestTransaction 
-                ? str_pad((int)$latestTransaction->receipt_number + 1, 6, '0', STR_PAD_LEFT) 
+            $nextReceiptNumber = $latestTransaction
+                ? str_pad((int) $latestTransaction->receipt_number + 1, 6, '0', STR_PAD_LEFT)
                 : '000001';
 
             $transaction = \App\Models\Transaction::create([
-                'branch_id'       => $branchId,
-                'staff_id'        => $device->active_staff_id,
-                'total_amount'    => $grandTotal,
-                'discount_type'   => $discountType,
+                'branch_id' => $branchId,
+                'staff_id' => $device->active_staff_id,
+                'total_amount' => $grandTotal,
+                'discount_type' => $discountType,
                 'discount_amount' => $discountAmount,
-                'status'          => 'completed',
-                'receipt_number'  => $nextReceiptNumber,
+                'status' => 'completed',
+                'receipt_number' => $nextReceiptNumber,
             ]);
 
             foreach ($transactionItemsData as $itemData) {
@@ -483,20 +356,20 @@ class PosDeviceService
                 // 1. Update Inventory Serving Tracker
                 $serving = \App\Models\InventoryServing::firstOrCreate(
                     [
-                        'men_item_id' => $itemData['men_item_id'], 
-                        'branch_id'   => $branchId, 
-                        'date'        => \Carbon\Carbon::today()->toDateString()
+                        'men_item_id' => $itemData['men_item_id'],
+                        'branch_id' => $branchId,
+                        'date' => \Carbon\Carbon::today()->toDateString()
                     ],
                     [
-                        'expected_servings' => 0, 
-                        'servings_sold'     => 0, 
-                        'spoilage_qty'      => 0, 
-                        'is_sold_out'       => false
+                        'expected_servings' => 0,
+                        'servings_sold' => 0,
+                        'spoilage_qty' => 0,
+                        'is_sold_out' => false
                     ]
                 );
-                
+
                 $serving->increment('servings_sold', $itemData['quantity']);
-                
+
                 if ($serving->expected_servings > 0 && $serving->servings_sold >= $serving->expected_servings) {
                     $serving->update(['is_sold_out' => true]);
                 }
@@ -506,25 +379,25 @@ class PosDeviceService
                 foreach ($recipes as $recipe) {
                     \App\Models\IngredientConsumptionLog::create([
                         'transaction_item_id' => $txItem->transaction_item_id,
-                        'ingredient_id'       => $recipe->ingredient_id,
-                        'ingredient_name'     => $recipe->ingredient_name,
-                        'quantity_consumed'   => $recipe->quantity * $itemData['quantity'],
-                        'unit'                => $recipe->unit,
+                        'ingredient_id' => $recipe->ingredient_id,
+                        'ingredient_name' => $recipe->ingredient_name,
+                        'quantity_consumed' => $recipe->quantity * $itemData['quantity'],
+                        'unit' => $recipe->unit,
                     ]);
                 }
             }
 
             // Record payment
             \App\Models\Payment::create([
-                'user_id'             => $userId,
-                'payable_type'        => \App\Models\Transaction::class,
-                'payable_id'          => $transaction->transaction_id,
+                'user_id' => $userId,
+                'payable_type' => \App\Models\Transaction::class,
+                'payable_id' => $transaction->transaction_id,
                 'payment_method_type' => $paymentMethod,
-                'payment_instrument'  => $referenceNumber,
-                'amount'              => $grandTotal,
-                'amount_tendered'     => $amountTendered,
-                'amount_change'       => $amountTendered - $grandTotal,
-                'status'              => 'paid',
+                'payment_instrument' => $referenceNumber,
+                'amount' => $grandTotal,
+                'amount_tendered' => $amountTendered,
+                'amount_change' => $amountTendered - $grandTotal,
+                'status' => 'paid',
             ]);
         });
 
@@ -539,7 +412,7 @@ class PosDeviceService
     public function transactions(PosDevice $device): array
     {
         $branchId = $device->branch_id;
-        
+
         $todayTransactions = \App\Models\Transaction::where('branch_id', $branchId)
             ->whereDate('created_at', \Carbon\Carbon::today())
             ->with(['staff.user'])
@@ -554,10 +427,10 @@ class PosDeviceService
         $monthTotal = $monthTransactions->sum('total_amount');
 
         return [
-            'success'      => true,
-            'today_total'  => (float) $todayTotal,
-            'today_count'  => $todayTransactions->count(),
-            'month_total'  => (float) $monthTotal,
+            'success' => true,
+            'today_total' => (float) $todayTotal,
+            'today_count' => $todayTransactions->count(),
+            'month_total' => (float) $monthTotal,
             'transactions' => $todayTransactions->map(fn($t) => [
                 'uuid' => $t->uuid,
                 'receipt_number' => $t->receipt_number ?: $t->uuid,

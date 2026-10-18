@@ -21,7 +21,8 @@ class OwnerProfileController extends Controller
 
     public function dashboardStats(Request $request): JsonResponse
     {
-        $result = $this->service->getDashboardStats($request->user());
+        $range = (string) $request->query('range', 'daily');
+        $result = $this->service->getDashboardStats($request->user(), $range);
 
         return response()->json($result);
     }

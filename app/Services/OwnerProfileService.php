@@ -154,87 +154,277 @@ class OwnerProfileService
         return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
     }
 
-    public function getDashboardStats(User $owner): array
+    public function getDashboardStats(User $owner, string $range = 'daily'): array
     {
-        $branchIds = \App\Models\CafeBranch::whereHas('cafe', fn ($q) => $q->where('user_id', $owner->user_id))
-            ->pluck('branch_id')
-            ->toArray();
+        $branches = \App\Models\CafeBranch::whereHas('cafe', fn ($q) => $q->where('user_id', $owner->user_id))
+            ->get();
 
-        // Total earnings
-        $totalEarnings = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+        $branchIds = $branches->pluck('branch_id')->toArray();
+
+        // Branch counts
+        $branchesCount = $branches->count();
+        $activeBranchesCount = $branches->where('status', 'active')->count();
+        $pendingBranchesCount = $branches->where('status', 'pending_approval')->count();
+
+        // Total lifetime earnings and orders
+        $totalEarnings = (float) \App\Models\Transaction::whereIn('branch_id', $branchIds)
             ->where('status', 'completed')
             ->sum('total_amount');
+
+        $totalOrders = (int) \App\Models\Transaction::whereIn('branch_id', $branchIds)
+            ->where('status', 'completed')
+            ->count();
 
         // Today's revenue and orders
         $todayTransactions = \App\Models\Transaction::whereIn('branch_id', $branchIds)
             ->where('status', 'completed')
-            ->whereDate('created_at', today())
+            ->whereDate('created_at', \Carbon\Carbon::today())
             ->get();
-            
-        $todayRevenue = $todayTransactions->sum('total_amount');
-        $todayOrders = $todayTransactions->count();
-        $avgOrderValue = $todayOrders > 0 ? $todayRevenue / $todayOrders : 0;
-        
-        // Chart Data (Last 6 months revenue)
-        $chartData = [];
-        for ($i = 5; $i >= 0; $i--) {
-            $month = today()->subMonths($i);
-            $revenue = \App\Models\Transaction::whereIn('branch_id', $branchIds)
-                ->where('status', 'completed')
-                ->whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->sum('total_amount');
-            $chartData[] = [
-                'month' => $month->format('M Y'),
-                'revenue' => (float)$revenue,
-            ];
+
+        $todayRevenue = (float) $todayTransactions->sum('total_amount');
+        $todayOrders = (int) $todayTransactions->count();
+
+        // Range window calculation: daily | weekly | monthly
+        $now = \Carbon\Carbon::now();
+        $series = [];
+
+        if ($range === 'weekly') {
+            // 12 weeks: from 11 weeks ago to this week
+            $periodFrom = $now->copy()->subWeeks(11)->startOfWeek();
+            $periodTo = $now->copy()->endOfWeek();
+            $prevFrom = $periodFrom->copy()->subWeeks(12);
+            $prevTo = $periodFrom->copy()->subSecond();
+
+            for ($w = 11; $w >= 0; $w--) {
+                $wStart = $now->copy()->subWeeks($w)->startOfWeek();
+                $wEnd = $now->copy()->subWeeks($w)->endOfWeek();
+
+                $txs = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+                    ->where('status', 'completed')
+                    ->whereBetween('created_at', [$wStart->toDateTimeString(), $wEnd->toDateTimeString()])
+                    ->get();
+
+                $series[] = [
+                    'start' => $wStart->toDateString(),
+                    'end' => $wEnd->toDateString(),
+                    'label' => 'Wk ' . $wStart->format('W'),
+                    'revenue' => (float) $txs->sum('total_amount'),
+                    'orders' => (int) $txs->count(),
+                    'upcoming' => false,
+                ];
+            }
+        } elseif ($range === 'monthly') {
+            // 12 months: from 11 months ago to this month
+            $periodFrom = $now->copy()->subMonths(11)->startOfMonth();
+            $periodTo = $now->copy()->endOfMonth();
+            $prevFrom = $periodFrom->copy()->subMonths(12);
+            $prevTo = $periodFrom->copy()->subSecond();
+
+            for ($m = 11; $m >= 0; $m--) {
+                $mStart = $now->copy()->subMonths($m)->startOfMonth();
+                $mEnd = $now->copy()->subMonths($m)->endOfMonth();
+
+                $txs = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+                    ->where('status', 'completed')
+                    ->whereBetween('created_at', [$mStart->toDateTimeString(), $mEnd->toDateTimeString()])
+                    ->get();
+
+                $series[] = [
+                    'start' => $mStart->toDateString(),
+                    'end' => $mEnd->toDateString(),
+                    'label' => $mStart->format('M Y'),
+                    'revenue' => (float) $txs->sum('total_amount'),
+                    'orders' => (int) $txs->count(),
+                    'upcoming' => false,
+                ];
+            }
+        } else {
+            // Default: 'daily' -> 7 days of the current week (Monday to Sunday)
+            $range = 'daily';
+            $periodFrom = $now->copy()->startOfWeek();
+            $periodTo = $now->copy()->endOfWeek();
+            $prevFrom = $periodFrom->copy()->subWeek();
+            $prevTo = $periodTo->copy()->subWeek();
+
+            for ($d = 0; $d < 7; $d++) {
+                $day = $periodFrom->copy()->addDays($d);
+                $isUpcoming = $day->isAfter($now->copy()->endOfDay());
+
+                $txs = $isUpcoming
+                    ? collect()
+                    : \App\Models\Transaction::whereIn('branch_id', $branchIds)
+                        ->where('status', 'completed')
+                        ->whereDate('created_at', $day->toDateString())
+                        ->get();
+
+                $series[] = [
+                    'start' => $day->toDateString(),
+                    'end' => $day->toDateString(),
+                    'label' => $day->format('D j'),
+                    'revenue' => (float) $txs->sum('total_amount'),
+                    'orders' => (int) $txs->count(),
+                    'upcoming' => $isUpcoming,
+                ];
+            }
         }
 
-        $topSelling = \Illuminate\Support\Facades\DB::table('transaction_items')
-            ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.transaction_id')
-            ->join('menu_items', 'transaction_items.men_item_id', '=', 'menu_items.men_item_id')
-            ->leftJoin('menu_categories', 'menu_items.men_category_id', '=', 'menu_categories.men_category_id')
-            ->whereIn('transactions.branch_id', $branchIds)
-            ->where('transactions.status', 'completed')
-            ->select(
-                'menu_items.menu_name as name',
-                'menu_categories.name as category',
-                \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity) as orders'),
-                \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity * transaction_items.unit_price) as revenue')
-            )
-            ->groupBy('menu_items.men_item_id', 'menu_items.menu_name', 'menu_categories.name')
-            ->orderByDesc('orders')
-            ->take(4)
+        // Period transactions and totals
+        $periodTransactions = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+            ->where('status', 'completed')
+            ->whereBetween('created_at', [$periodFrom->toDateTimeString(), $periodTo->toDateTimeString()])
             ->get();
-            
-        $totalItemsSold = \Illuminate\Support\Facades\DB::table('transaction_items')
-            ->join('transactions', 'transaction_items.transaction_id', '=', 'transactions.transaction_id')
-            ->whereIn('transactions.branch_id', $branchIds)
-            ->where('transactions.status', 'completed')
-            ->sum('transaction_items.quantity');
-            
-        $topSellingItems = $topSelling->map(function ($item, $index) use ($totalItemsSold) {
+
+        $periodRevenue = (float) $periodTransactions->sum('total_amount');
+        $periodOrders = (int) $periodTransactions->count();
+        $avgOrderValue = $periodOrders > 0 ? (float) ($periodRevenue / $periodOrders) : 0.0;
+
+        // Previous period totals for comparison
+        $prevTransactions = \App\Models\Transaction::whereIn('branch_id', $branchIds)
+            ->where('status', 'completed')
+            ->whereBetween('created_at', [$prevFrom->toDateTimeString(), $prevTo->toDateTimeString()])
+            ->get();
+
+        $prevRevenue = (float) $prevTransactions->sum('total_amount');
+        $prevOrders = (int) $prevTransactions->count();
+
+        $revenueChange = $prevRevenue > 0
+            ? (float) round((($periodRevenue - $prevRevenue) / $prevRevenue) * 100, 1)
+            : null;
+
+        $ordersChange = $prevOrders > 0
+            ? (float) round((($periodOrders - $prevOrders) / $prevOrders) * 100, 1)
+            : null;
+
+        // Branch Breakdown for the period
+        $branchBreakdown = $branches->map(function ($b) use ($periodTransactions, $periodRevenue) {
+            $branchTxs = $periodTransactions->where('branch_id', $b->branch_id);
+            $rev = (float) $branchTxs->sum('total_amount');
+            $ord = (int) $branchTxs->count();
+            $share = $periodRevenue > 0 ? (float) round(($rev / $periodRevenue) * 100, 1) : 0.0;
+
             return [
-                'rank' => $index + 1,
-                'name' => $item->name,
-                'category' => $item->category ?? 'Uncategorized',
-                'orders' => (int)$item->orders,
-                'percentage' => $totalItemsSold > 0 ? (int)round(($item->orders / $totalItemsSold) * 100) : 0,
-                'revenue' => (float)$item->revenue,
+                'uuid' => $b->uuid,
+                'name' => $b->branch_name,
+                'branch_type' => $b->branch_type ?? 'main',
+                'status' => $b->status,
+                'revenue' => $rev,
+                'orders' => $ord,
+                'share' => $share,
             ];
-        });
+        })->sortByDesc('revenue')->values()->toArray();
+
+        // Trending Items in the period
+        $periodTxIds = $periodTransactions->pluck('transaction_id')->toArray();
+
+        $trendingItems = [];
+        if (!empty($periodTxIds)) {
+            $topItemsQuery = \Illuminate\Support\Facades\DB::table('transaction_items')
+                ->join('menu_items', 'transaction_items.men_item_id', '=', 'menu_items.men_item_id')
+                ->leftJoin('menu_categories', 'menu_items.men_category_id', '=', 'menu_categories.men_category_id')
+                ->whereIn('transaction_items.transaction_id', $periodTxIds)
+                ->select(
+                    'menu_items.uuid as uuid',
+                    'menu_items.menu_name as name',
+                    'menu_categories.name as category',
+                    \Illuminate\Support\Facades\DB::raw('COUNT(DISTINCT transaction_items.transaction_id) as orders'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity) as quantity'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                )
+                ->groupBy('menu_items.men_item_id', 'menu_items.uuid', 'menu_items.menu_name', 'menu_categories.name')
+                ->orderByDesc('orders')
+                ->take(5)
+                ->get();
+
+            $trendingItems = $topItemsQuery->map(function ($item, $idx) use ($periodOrders) {
+                $ordersCount = (int) $item->orders;
+                $share = $periodOrders > 0 ? (float) round(($ordersCount / $periodOrders) * 100, 1) : 0.0;
+
+                return [
+                    'rank' => $idx + 1,
+                    'uuid' => (string) $item->uuid,
+                    'name' => (string) $item->name,
+                    'category' => (string) ($item->category ?? 'Uncategorized'),
+                    'orders' => $ordersCount,
+                    'quantity' => (int) $item->quantity,
+                    'sales' => (float) $item->sales,
+                    'share' => $share,
+                ];
+            })->toArray();
+        }
+
+        // Top Categories in the period
+        $topCategories = [];
+        if (!empty($periodTxIds)) {
+            $catQuery = \Illuminate\Support\Facades\DB::table('transaction_items')
+                ->join('menu_items', 'transaction_items.men_item_id', '=', 'menu_items.men_item_id')
+                ->leftJoin('menu_categories', 'menu_items.men_category_id', '=', 'menu_categories.men_category_id')
+                ->whereIn('transaction_items.transaction_id', $periodTxIds)
+                ->select(
+                    'menu_categories.uuid as uuid',
+                    \Illuminate\Support\Facades\DB::raw("COALESCE(menu_categories.name, 'Uncategorized') as name"),
+                    \Illuminate\Support\Facades\DB::raw('COUNT(DISTINCT transaction_items.transaction_id) as orders'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity) as quantity'),
+                    \Illuminate\Support\Facades\DB::raw('SUM(transaction_items.quantity * transaction_items.unit_price) as sales'),
+                    \Illuminate\Support\Facades\DB::raw('COUNT(DISTINCT menu_items.men_item_id) as items')
+                )
+                ->groupBy('menu_categories.men_category_id', 'menu_categories.uuid', 'menu_categories.name')
+                ->orderByDesc('orders')
+                ->take(5)
+                ->get();
+
+            $topCategories = $catQuery->map(function ($cat) use ($periodOrders) {
+                $ordersCount = (int) $cat->orders;
+                $share = $periodOrders > 0 ? (float) round(($ordersCount / $periodOrders) * 100, 1) : 0.0;
+
+                return [
+                    'uuid' => $cat->uuid ? (string) $cat->uuid : null,
+                    'name' => (string) $cat->name,
+                    'orders' => $ordersCount,
+                    'quantity' => (int) $cat->quantity,
+                    'sales' => (float) $cat->sales,
+                    'items' => (int) $cat->items,
+                    'share' => $share,
+                ];
+            })->toArray();
+        }
 
         return [
             'success' => true,
-            'total_earnings' => (float)$totalEarnings,
-            'detailed_stats' => [
-                'today_revenue' => (float)$todayRevenue,
+            'generated_at' => $now->toISOString(),
+            'totals' => [
+                'branches' => $branchesCount,
+                'active_branches' => $activeBranchesCount,
+                'pending_branches' => $pendingBranchesCount,
+                'orders' => $totalOrders,
+                'revenue' => $totalEarnings,
+                'today_revenue' => $todayRevenue,
                 'today_orders' => $todayOrders,
-                'avg_order_value' => (float)$avgOrderValue,
-                'active_customers' => $todayOrders, // approximate
             ],
-            'chart_data' => $chartData,
-            'top_selling_items' => $topSellingItems,
+            'period' => [
+                'range' => $range,
+                'from' => $periodFrom->toDateString(),
+                'to' => $periodTo->toDateString(),
+                'revenue' => $periodRevenue,
+                'orders' => $periodOrders,
+                'avg_order_value' => $avgOrderValue,
+                'previous_revenue' => $prevRevenue,
+                'previous_orders' => $prevOrders,
+                'revenue_change' => $revenueChange,
+                'orders_change' => $ordersChange,
+            ],
+            'series' => $series,
+            'branches' => $branchBreakdown,
+            'trending_items' => $trendingItems,
+            'top_categories' => $topCategories,
+
+            // Keep legacy fields as well for backward compatibility
+            'total_earnings' => $totalEarnings,
+            'detailed_stats' => [
+                'today_revenue' => $todayRevenue,
+                'today_orders' => $todayOrders,
+                'avg_order_value' => $avgOrderValue,
+                'active_customers' => $todayOrders,
+            ],
         ];
     }
 }
