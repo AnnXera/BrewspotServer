@@ -84,6 +84,7 @@ $branchScopedRoutes = function () {
         Route::put('/floor-plans/{planUuid}/layout',      [FloorPlanController::class, 'saveLayout']);
         Route::patch('/tables/{tableUuid}/status',        [FloorPlanController::class, 'tableStatus']);
 
+        Route::get('/opening-hours',                      [\App\Http\Controllers\CafeOpeningHourController::class, 'branch']); // read-only, for reservation time slots
         Route::get('/reservations',                       [ReservationController::class, 'index']);
         Route::post('/reservations',                      [ReservationController::class, 'store']);
         Route::get('/reservations/{reservationUuid}',     [ReservationController::class, 'show']);

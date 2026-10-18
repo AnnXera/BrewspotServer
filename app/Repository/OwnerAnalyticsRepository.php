@@ -350,6 +350,26 @@ class OwnerAnalyticsRepository
             ->get(['reservations.status', 'reservations.party_size', 'reservations.reservation_date']);
     }
 
+    /**
+     * Bookings still ahead (pending or confirmed) from $from to $to, soonest first.
+     * Independent of the analytics period, which always ends today.
+     */
+    public function upcomingReservations(Collection $branchIds, Carbon $from, Carbon $to): Collection
+    {
+        return Reservation::query()
+            ->join('branch_tables', 'branch_tables.table_id', '=', 'reservations.table_id')
+            ->join('floor_plans', 'floor_plans.floor_plan_id', '=', 'branch_tables.floorplan_id')
+            ->join('cafe_branches', 'cafe_branches.branch_id', '=', 'floor_plans.branch_id')
+            ->whereIn('floor_plans.branch_id', $branchIds)
+            ->whereIn('reservations.status', ['pending', 'confirmed'])
+            ->whereBetween('reservations.reservation_date', [$from, $to])
+            ->orderBy('reservations.reservation_date')
+            ->get([
+                'reservations.uuid', 'reservations.status', 'reservations.party_size', 'reservations.reservation_date',
+                'branch_tables.table_name', 'cafe_branches.branch_name',
+            ]);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private function settled(Collection $branchIds, Carbon $from, Carbon $to): Builder
