@@ -269,7 +269,31 @@ class OwnerAnalyticsService
                 ->values()
                 ->take(12)
                 ->all(),
-            'reservations' => $this->reservationStats($reservations),
+            'reservations' => $this->reservationStats($reservations) + [
+                'upcoming' => $this->upcomingReservations($ids),
+            ],
+        ];
+    }
+
+    /** Pending and confirmed bookings from now through the next 14 days. */
+    private function upcomingReservations(Collection $ids): array
+    {
+        $days = 14;
+        $rows = $this->repo->upcomingReservations($ids, Carbon::now(), Carbon::today()->addDays($days - 1)->endOfDay());
+
+        return [
+            'days'    => $days,
+            'total'   => $rows->count(),
+            'guests'  => (int) $rows->sum('party_size'),
+            'pending' => $rows->where('status', 'pending')->count(),
+            'next'    => $rows->take(5)->map(fn ($r) => [
+                'uuid'       => $r->uuid,
+                'date'       => Carbon::parse($r->reservation_date)->toIso8601String(),
+                'party_size' => (int) $r->party_size,
+                'status'     => $r->status,
+                'table'      => $r->table_name,
+                'branch'     => $r->branch_name,
+            ])->values()->all(),
         ];
     }
 
