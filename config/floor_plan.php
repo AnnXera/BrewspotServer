@@ -60,6 +60,24 @@ return [
         'table_sqr_4' => ['category' => 'table', 'capacity' => 4],
         'table_rec_2' => ['category' => 'table', 'capacity' => 2],
         'table_rec_4' => ['category' => 'table', 'capacity' => 4],
+        'table_rec_6' => ['category' => 'table', 'capacity' => 6],
+        'table_rec_8' => ['category' => 'table', 'capacity' => 8],
+        'table_rec_6_ends' => ['category' => 'table', 'capacity' => 6], // chairs at the short ends
+        'table_rec_8_ends' => ['category' => 'table', 'capacity' => 8],
+
+        'table_round_2' => ['category' => 'table', 'capacity' => 2],
+        'table_round_3' => ['category' => 'table', 'capacity' => 3],
+        'table_round_4' => ['category' => 'table', 'capacity' => 4],
+
+        // Counter seating: stools along a bar. `shared` tables are booked by seats, not as a
+        // whole: several parties can hold the same window while their seats add up to the capacity.
+        'table_bar_2' => ['category' => 'table', 'capacity' => 2, 'shared' => true],
+        'table_bar_3' => ['category' => 'table', 'capacity' => 3, 'shared' => true],
+        'table_bar_4' => ['category' => 'table', 'capacity' => 4, 'shared' => true],
+        'table_bar_5' => ['category' => 'table', 'capacity' => 5, 'shared' => true],
+        'table_bar_6' => ['category' => 'table', 'capacity' => 6, 'shared' => true],
+        'table_bar_7' => ['category' => 'table', 'capacity' => 7, 'shared' => true],
+        'table_bar_8' => ['category' => 'table', 'capacity' => 8, 'shared' => true],
 
         'door_sgl'    => ['category' => 'door'],
         'door_double' => ['category' => 'door'],

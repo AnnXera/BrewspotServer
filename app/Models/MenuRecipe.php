@@ -18,6 +18,7 @@ class MenuRecipe extends Model
     protected $fillable = [
         'uuid',
         'men_item_id',
+        'men_size_id', // null = used by every size
         'ingredient_id',
         'ingredient_name', // mirrors ingredients.name
         'quantity',
@@ -36,6 +37,11 @@ class MenuRecipe extends Model
     public function ingredient(): BelongsTo
     {
         return $this->belongsTo(Ingredient::class, 'ingredient_id', 'ingredient_id');
+    }
+
+    public function size(): BelongsTo
+    {
+        return $this->belongsTo(MenuItemSize::class, 'men_size_id', 'men_size_id');
     }
 
     public function item(): BelongsTo

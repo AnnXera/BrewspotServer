@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\DB;
  *
  * - The end time is chosen per booking.
  * - A booking holds its table for [start, end); back-to-back bookings are fine.
+ *   Counter seating (shared tables) holds seats instead: parties can overlap as long as
+ *   the seats taken at any moment stay within the capacity.
  * - Table status stays manual, except: seating a reservation marks the table
  *   occupied, and completing it marks the table cleaning.
  *
@@ -181,13 +183,18 @@ class ReservationService
                 return ['success' => false, 'http' => 409, 'message' => 'This table was removed. Move the reservation to another table first.'];
             }
 
-            if ($table->status === 'occupied') {
+            // A shared table is never "occupied" as a whole: other parties can sit at the same time.
+            if (! $table->isShared() && $table->status === 'occupied') {
                 return ['success' => false, 'http' => 409, 'message' => "{$table->table_name} is still occupied."];
             }
         }
 
         DB::transaction(function () use ($reservation, $table, $status) {
             $reservation->update(['status' => $status]);
+
+            if ($table->isShared()) {
+                return; // the register shows seats in use instead of a whole-table status
+            }
 
             if ($status === 'seated') {
                 $table->update(['status' => 'occupied']);
@@ -248,6 +255,23 @@ class ReservationService
 
         if (! $this->withinOpeningHours($this->repo->openingHours($branch->cafe_id), $start, $end)) {
             return $this->invalid('reservation_date', 'The reservation must be within the cafe\'s opening hours.');
+        }
+
+        // Counter seating is booked by seats: the parties in any one moment must fit the capacity.
+        if ($table->isShared()) {
+            $taken = $this->repo->peakSeatsTaken($table->table_id, $start, $end, $ignoreId);
+
+            if ($taken + $partySize > $table->capacity) {
+                $free = max(0, $table->capacity - $taken);
+
+                return [
+                    'success' => false,
+                    'http'    => 409,
+                    'message' => "Only {$free} of {$table->capacity} seats at {$table->table_name} are free during that time.",
+                ];
+            }
+
+            return null;
         }
 
         $clash = $this->repo->findOverlap($table->table_id, $start, $end, $ignoreId);

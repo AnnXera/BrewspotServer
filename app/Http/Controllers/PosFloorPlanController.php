@@ -24,7 +24,8 @@ class PosFloorPlanController extends Controller
     ) {}
 
     /**
-     * GET /api/pos/device/floor-plan — the active plan with live table status.
+     * GET /api/pos/device/floor-plan — every active floor (`floor_plans`) with live table status;
+     * `floor_plan` is the first one, kept for older callers.
      */
     public function floorPlan(Request $request): JsonResponse
     {

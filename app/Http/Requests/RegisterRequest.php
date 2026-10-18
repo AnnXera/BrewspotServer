@@ -4,9 +4,12 @@ namespace App\Http\Requests;
 
 use App\Models\User;
 use App\Models\UserDocument;
+use App\Rules\BranchTin;
+use App\Support\Tin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
@@ -50,6 +53,9 @@ class RegisterRequest extends FormRequest
                     $merge['cafe_phonenumber'] = '+63' . $digits;
                 }
             }
+        }
+        if (is_string($this->input('tin_number'))) {
+            $merge['tin_number'] = Tin::normalize($this->input('tin_number'));
         }
         if (!empty($merge)) {
             $this->merge($merge);
@@ -120,7 +126,7 @@ class RegisterRequest extends FormRequest
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'string'],
             'bir_registered_at'     => ['required', 'date'],
-            'tin_number'            => ['required', 'string', 'max:50'],
+            'tin_number'            => ['required', 'string', 'regex:' . Tin::FORMAT_REGEX, BranchTin::forMainBranch()],
             'vat'                   => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
     }
@@ -145,6 +151,26 @@ class RegisterRequest extends FormRequest
 
             if ($phoneRaw !== '' && $cafePhoneRaw !== '' && $phoneRaw === $cafePhoneRaw) {
                 $validator->errors()->add('cafe_phonenumber', 'The café phone number and personal contact number must be different.');
+            }
+
+            // Uploads arrive as paths from the temp-upload endpoint. Only accept files that are
+            // still in temp/: the daily cleanup deletes ones older than 24h, and any other path
+            // would let the request move arbitrary files off the local disk.
+            $uploads = [
+                'file'         => 'Government ID (front)',
+                'file_back'    => 'Government ID (back)',
+                'dti_sec_file' => 'DTI/SEC document',
+                'bir_file'     => 'BIR certificate',
+                'cafe_picture' => 'Café picture',
+            ];
+            foreach ($uploads as $field => $label) {
+                $path = $data[$field] ?? null;
+                if (! is_string($path) || $path === '' || $validator->errors()->has($field)) {
+                    continue;
+                }
+                if (! preg_match('#^temp/[A-Za-z0-9]+\.[A-Za-z0-9]+$#', $path) || ! Storage::disk('local')->exists($path)) {
+                    $validator->errors()->add($field, "{$label} upload has expired. Please upload it again.");
+                }
             }
         });
     }
@@ -198,6 +224,7 @@ class RegisterRequest extends FormRequest
             'bir_file.max'                  => 'BIR file must not exceed 5MB.',
             'bir_registered_at.required'    => 'BIR registered date is required.',
             'tin_number.required'           => 'TIN number is required.',
+            'tin_number.regex'              => Tin::FORMAT_MESSAGE,
             'vat.required'                  => 'VAT type is required.',
             'vat.in'                        => 'VAT type must be either vat-registered or non-vat.',
         ];

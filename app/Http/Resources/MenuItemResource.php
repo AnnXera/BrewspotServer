@@ -13,7 +13,8 @@ class MenuItemResource extends JsonResource
         $remainingCount = 0;
 
         if ($this->relationLoaded('recipes')) {
-            $recipes = $this->recipes;
+            // Size-specific rows repeat an ingredient once per size; list it once.
+            $recipes = $this->recipes->unique('ingredient_id');
             $recipesCount = $recipes->count();
             if ($recipesCount > 0) {
                 $previewRecipes = $recipes->take(4);
@@ -34,6 +35,18 @@ class MenuItemResource extends JsonResource
             'recipes_preview'         => $recipesPreview,
             'recipes_remaining_count' => $remainingCount,
             'recipes'                 => MenuRecipeResource::collection($this->whenLoaded('recipes')),
+            // In display order; empty = one price (base_price).
+            'sizes'                   => $this->whenLoaded('sizes', fn () => $this->sizes->map(fn ($size) => [
+                'uuid'  => $size->uuid,
+                'name'  => $size->name,
+                'price' => $size->price,
+            ])->values()),
+            'addons'                  => $this->whenLoaded('addons', fn () => $this->addons->map(fn ($addon) => [
+                'uuid'         => $addon->uuid,
+                'name'         => $addon->name,
+                'price'        => $addon->price,
+                'is_available' => $addon->is_available,
+            ])->values()),
             'created_at'              => $this->created_at?->toISOString(),
             'updated_at'              => $this->updated_at?->toISOString(),
         ];

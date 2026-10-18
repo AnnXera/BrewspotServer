@@ -64,7 +64,8 @@ class CafeStaffService
                     $this->repo->assignToBranch(
                         $staffUser->user_id,
                         $branch->branch_id,
-                        $payload['hired_at'] ?? null
+                        $payload['hired_at'] ?? null,
+                        $owner->user_id
                     );
                 }
 
@@ -145,8 +146,8 @@ class CafeStaffService
             return ['success' => false, 'message' => 'Staff member not found.'];
         }
 
-        DB::transaction(function () use ($staffUser) {
-            $this->repo->terminateAllAssignments($staffUser->user_id);
+        DB::transaction(function () use ($owner, $staffUser) {
+            $this->repo->terminateAllAssignments($staffUser->user_id, $owner->user_id);
             $this->repo->revokeAccess($staffUser);
         });
 

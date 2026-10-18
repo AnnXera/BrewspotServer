@@ -99,7 +99,7 @@ class AuthService
     }
 
     /**
-     * Resend the login 2FA code, enforcing a 60s cooldown.
+     * Resend the login 2FA code, enforcing a 30s cooldown.
      */
     public function resendLoginCode(string $email): array
     {
@@ -153,8 +153,8 @@ class AuthService
             $secondsSinceSent = 0;
         }
 
-        if ($secondsSinceSent < 60) {
-            $remaining = (int) ceil(60 - $secondsSinceSent);
+        if ($secondsSinceSent < 30) {
+            $remaining = (int) ceil(30 - $secondsSinceSent);
 
             return [
                 'allowed'  => false,

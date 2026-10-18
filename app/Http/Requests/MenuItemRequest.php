@@ -10,6 +10,8 @@ use Illuminate\Validation\Rule;
 
 class MenuItemRequest extends FormRequest
 {
+    public const MAX_SIZES = 6;
+
     public function authorize(): bool
     {
         return true;
@@ -17,10 +19,11 @@ class MenuItemRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if (is_string($this->recipes)) {
-            $this->merge([
-                'recipes' => json_decode($this->recipes, true)
-            ]);
+        // Sent as JSON strings alongside the picture in multipart form data.
+        foreach (['recipes', 'sizes', 'addon_uuids'] as $field) {
+            if (is_string($this->input($field))) {
+                $this->merge([$field => json_decode($this->input($field), true)]);
+            }
         }
     }
 
@@ -32,7 +35,8 @@ class MenuItemRequest extends FormRequest
             'category_uuid' => ['nullable', 'string'],
             'menu_name'     => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150'],
             'description'   => ['nullable', 'string'],
-            'base_price'    => [$isUpdate ? 'sometimes' : 'required', 'numeric', 'min:0'],
+            // With sizes, the price comes from the sizes (lowest one).
+            'base_price'    => [$isUpdate ? 'sometimes' : 'required_without:sizes', 'nullable', 'numeric', 'min:0'],
             'is_available'  => ['sometimes', 'boolean'],
             'picture'       => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
             
@@ -44,6 +48,21 @@ class MenuItemRequest extends FormRequest
             'recipes.*.ingredient_name'   => ['required_without:recipes.*.ingredient_uuid', 'nullable', 'string', 'max:100'],
             'recipes.*.quantity'          => ['required', 'numeric', 'min:0'],
             'recipes.*.unit'              => ['required', 'string', Rule::in(Ingredient::UNITS)],
+            // Index into `sizes` (or the item's current sizes); null = every size.
+            'recipes.*.size_index'        => ['nullable', 'integer', 'min:0'],
+
+            // [] = no sizes. A size sent back with its uuid is updated, not replaced.
+            'sizes'         => ['sometimes', 'nullable', 'array', 'max:' . self::MAX_SIZES, function ($attribute, $value, $fail) {
+                if (is_array($value) && count($value) === 1) {
+                    $fail('Add at least two sizes, or turn sizes off and use one price.');
+                }
+            }],
+            'sizes.*.uuid'  => ['nullable', 'string'],
+            'sizes.*.name'  => ['required', 'string', 'max:50', 'distinct:ignore_case'],
+            'sizes.*.price' => ['required', 'numeric', 'min:0'],
+
+            'addon_uuids'   => ['sometimes', 'nullable', 'array'],
+            'addon_uuids.*' => ['string', 'distinct'],
         ];
     }
 
@@ -56,6 +75,11 @@ class MenuItemRequest extends FormRequest
             'recipes.*.unit.in'                  => 'Choose a unit from the list.',
             'recipes.*.quantity.required'        => 'Quantity is required.',
             'recipes.*.unit.required'            => 'Unit is required.',
+            'base_price.required_without'        => 'Price is required.',
+            'sizes.max'                          => 'An item can have at most ' . self::MAX_SIZES . ' sizes.',
+            'sizes.*.name.required'              => 'Size name is required.',
+            'sizes.*.name.distinct'              => 'Two sizes have the same name.',
+            'sizes.*.price.required'             => 'Size price is required.',
         ];
     }
 

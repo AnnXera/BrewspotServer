@@ -6,7 +6,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-use Illuminate\Validation\Rule;
+use App\Rules\BranchTin;
+use App\Rules\UniquePhoneNumber;
+use App\Support\Tin;
 
 class StoreBranchRequest extends FormRequest
 {
@@ -33,6 +35,10 @@ class StoreBranchRequest extends FormRequest
                 }
             }
         }
+
+        if (is_string($this->input('tin_number'))) {
+            $this->merge(['tin_number' => Tin::normalize($this->input('tin_number'))]);
+        }
     }
 
     public function rules(): array
@@ -45,14 +51,19 @@ class StoreBranchRequest extends FormRequest
                 'required',
                 'string',
                 'max:20',
-                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
-                Rule::unique('users', 'phone_number'),
+                'regex:/^\+639\d{9}$/',
+                new UniquePhoneNumber(),
             ],
             'address'              => ['required', 'string'],
             'bir_file'             => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bir_registered_at'    => ['required', 'date'],
             'bir_expired_at'       => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
-            'tin_number'           => ['required', 'string', 'max:50'],
+            'tin_number'           => [
+                'required',
+                'string',
+                'regex:' . Tin::FORMAT_REGEX,
+                BranchTin::forSideBranch($this->user()?->cafes()->value('cafe_id')),
+            ],
             'vat'                  => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
     }
@@ -66,12 +77,14 @@ class StoreBranchRequest extends FormRequest
             'cafe_email.required'           => 'Branch email is required.',
             'cafe_email.unique'             => 'This branch email is already in use.',
             'cafe_phonenumber.required'     => 'Branch phone number is required.',
-            'cafe_phonenumber.unique'       => 'This branch phone number is already in use.',
+            'cafe_phonenumber.regex'        => 'Branch phone number must be 10 digits (e.g., 9123456789).',
             'address.required'              => 'Branch address is required.',
             'bir_file.required'             => 'BIR file is required.',
             'bir_file.mimes'                => 'BIR file must be jpg, jpeg, png, or pdf.',
             'bir_file.max'                  => 'BIR file must not exceed 5MB.',
             'bir_registered_at.required'    => 'BIR registered date is required.',
+            'tin_number.required'           => 'TIN number is required.',
+            'tin_number.regex'              => Tin::FORMAT_MESSAGE,
             'vat.required'                  => 'VAT type is required.',
             'vat.in'                        => 'VAT type must be either vat-registered or non-vat.',
         ];

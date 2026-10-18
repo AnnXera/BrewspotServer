@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CheckBranchContactRequest;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Services\BranchService;
@@ -22,6 +23,15 @@ class BranchController extends Controller
         $result = $this->service->createBranch($request->user(), $request->validated());
 
         return response()->json($result, $result['success'] ? 201 : 422);
+    }
+
+    /**
+     * POST /api/owner/branches/check-contact
+     * Validation runs in the form request; reaching here means both are free.
+     */
+    public function checkContact(CheckBranchContactRequest $request): JsonResponse
+    {
+        return response()->json(['success' => true]);
     }
 
     /**

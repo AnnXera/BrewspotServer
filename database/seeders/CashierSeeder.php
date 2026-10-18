@@ -36,7 +36,7 @@ class CashierSeeder extends Seeder
                 'firstname'         => 'Juan',
                 'middlename'        => null,
                 'lastname'          => 'Dela Cruz',
-                'username'          => 'juandelacruz',
+                'username'          => 'seedcashier',
                 'password_hash'     => Hash::make('Password123!'),
                 'phone_number'      => '+639171234569',
                 'address'           => '456 Roxas Ave, Davao City',

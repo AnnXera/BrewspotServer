@@ -122,6 +122,21 @@ class ServingsTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('expected_servings');
     }
 
+    public function test_deleting_an_item_drops_its_untouched_servings_from_today(): void
+    {
+        $token     = $this->tokenFor($this->owner);
+        $today     = $this->makeServing($this->latte, ['expected_servings' => 10]);
+        $yesterday = InventoryServing::create(['men_item_id' => $this->latte->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->subDay()->toDateString(), 'expected_servings' => 10]);
+        $sold      = $this->makeServing($this->croissant, ['expected_servings' => 10, 'servings_sold' => 2]);
+
+        $this->api('DELETE', "/api/owner/menu-items/{$this->latte->uuid}", $token)->assertOk();
+        $this->api('DELETE', "/api/owner/menu-items/{$this->croissant->uuid}", $token)->assertOk();
+
+        $this->assertNull($today->fresh());     // planned, nothing happened: gone
+        $this->assertNotNull($yesterday->fresh()); // past days are history
+        $this->assertNotNull($sold->fresh());      // has sales: kept
+    }
+
     public function test_available_items_excludes_added_and_unavailable(): void
     {
         $token = $this->tokenFor($this->manager);
@@ -139,16 +154,19 @@ class ServingsTest extends TestCase
     public function test_update_validates_against_sold_and_spoilage(): void
     {
         $token   = $this->tokenFor($this->manager);
-        $serving = $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 8]);
+        $serving = $this->makeServing($this->latte, ['expected_servings' => 20, 'servings_sold' => 8, 'spoilage_qty' => 2]);
         $url     = $this->url("/{$serving->uuid}");
 
-        $this->api('PATCH', $url, $token, ['expected_servings' => 25, 'spoilage_qty' => 2])
+        $this->api('PATCH', $url, $token, ['expected_servings' => 25])
             ->assertOk()
             ->assertJsonPath('serving.expected_servings', 25)
             ->assertJsonPath('serving.remaining', 15);
 
         $this->api('PATCH', $url, $token, ['expected_servings' => 9])->assertStatus(422); // 8 sold + 2 spoiled
-        $this->api('PATCH', $url, $token, ['spoilage_qty' => 18])->assertStatus(422);
+
+        // Spoilage changes only through spoilage entries on the register.
+        $this->api('PATCH', $url, $token, ['spoilage_qty' => 0])->assertStatus(422)->assertJsonValidationErrors('spoilage_qty');
+        $this->assertSame(2, $serving->fresh()->spoilage_qty);
 
         $this->api('PATCH', $url, $token, ['is_sold_out' => true])->assertOk()->assertJsonPath('serving.is_sold_out', true);
 
@@ -229,6 +247,28 @@ class ServingsTest extends TestCase
         $this->api('GET', $this->url('/categories?sort=bogus'), $token)->assertStatus(422)->assertJsonValidationErrors('sort');
     }
 
+    public function test_categories_overview_ignores_deleted_menu_items(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $tea   = $this->makeItem('Tea', $this->category);
+
+        $this->makeServing($this->latte, ['expected_servings' => 10]);
+        $this->makeServing($tea, ['expected_servings' => 4]);
+        $this->makeServing($this->croissant, ['expected_servings' => 6]);
+
+        $this->latte->delete();
+        $this->croissant->delete();
+
+        $this->api('GET', $this->url('/categories'), $token)
+            ->assertOk()
+            // Croissant was the only uncategorized item, so that card goes away too.
+            ->assertJsonCount(1, 'categories.data')
+            ->assertJsonPath('categories.data.0.name', 'Drinks')
+            ->assertJsonPath('categories.data.0.items', 1)
+            ->assertJsonPath('categories.data.0.expected_servings', 4)
+            ->assertJsonPath('categories.data.0.remaining', 4);
+    }
+
     public function test_categories_overview_lists_visible_categories_without_servings(): void
     {
         $token = $this->tokenFor($this->manager);
@@ -241,12 +281,15 @@ class ServingsTest extends TestCase
 
         $this->api('GET', $this->url('/categories'), $token)
             ->assertOk()
-            ->assertJsonPath('categories.total', 3)
+            ->assertJsonPath('categories.total', 4)
             ->assertJsonPath('categories.data.0.name', 'Bakery')
             ->assertJsonPath('categories.data.0.expected_servings', 0)
             ->assertJsonPath('categories.data.0.status', 'sold_out')
             ->assertJsonPath('categories.data.1.name', 'Drinks')
-            ->assertJsonPath('categories.data.2.name', 'Shown here');
+            ->assertJsonPath('categories.data.2.name', 'Shown here')
+            // Croissant has no category and no serving row, but is visible at the branch.
+            ->assertJsonPath('categories.data.3.name', 'Uncategorized')
+            ->assertJsonPath('categories.data.3.uuid', null);
     }
 
     public function test_ingredients_used_sums_todays_completed_sales_only(): void

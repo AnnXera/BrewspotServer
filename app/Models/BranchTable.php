@@ -44,6 +44,12 @@ class BranchTable extends Model
         static::creating(fn ($table) => $table->uuid = (string) Str::uuid());
     }
 
+    /** Counter seating: reservations hold seats, so several can share one time window. */
+    public function isShared(): bool
+    {
+        return (bool) (config('floor_plan.assets')[$this->asset_key]['shared'] ?? false);
+    }
+
     public function floorPlan(): BelongsTo
     {
         return $this->belongsTo(FloorPlan::class, 'floorplan_id', 'floor_plan_id');

@@ -8,6 +8,7 @@ use App\Repository\IngredientRepository;
 use App\Repository\MenuItemRepository;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class IngredientService
 {
@@ -82,8 +83,13 @@ class IngredientService
             return $this->nameTaken($clash->name, $clash->is_active);
         }
 
-        if (isset($data['unit']) && $data['unit'] !== $ingredient->unit && $ingredient->recipes_count > 0) {
-            $items = $ingredient->recipes_count === 1 ? '1 menu item' : "{$ingredient->recipes_count} menu items";
+        $usedBy = array_filter([
+            $ingredient->recipes_count       ? $ingredient->recipes_count . ' ' . Str::plural('menu item', $ingredient->recipes_count) : null,
+            $ingredient->addon_recipes_count ? $ingredient->addon_recipes_count . ' ' . Str::plural('add-on', $ingredient->addon_recipes_count) : null,
+        ]);
+
+        if (isset($data['unit']) && $data['unit'] !== $ingredient->unit && $usedBy) {
+            $items = implode(' and ', $usedBy);
 
             return [
                 'success' => false,

@@ -111,8 +111,10 @@ class PosDeviceController extends Controller
             'items' => 'required|array|min:1',
             'items.*.uuid' => 'required|string',
             'items.*.quantity' => 'required|integer|min:1',
-            'items.*.sugar_level' => 'nullable|integer|min:0|max:100',
+            'items.*.size_uuid' => 'nullable|string',
             'items.*.addons' => 'nullable|array',
+            'items.*.addons.*.uuid' => 'required|string',
+            'items.*.addons.*.quantity' => 'required|integer|min:1',
             'payment_method' => 'required|string',
             'amount_tendered' => 'required|numeric|min:0',
             'reference_number' => 'nullable|string',
@@ -137,6 +139,14 @@ class PosDeviceController extends Controller
     public function transactions(Request $request): JsonResponse
     {
         return $this->respond($this->service->transactions($request->user()));
+    }
+
+    /**
+     * GET /api/pos/device/transactions/{transactionUuid} — one sale with its lines and payment.
+     */
+    public function transaction(Request $request, string $transactionUuid): JsonResponse
+    {
+        return $this->respond($this->service->transaction($request->user(), $transactionUuid));
     }
 
     /**

@@ -44,7 +44,7 @@ class FloorPlanTest extends FloorPlanTestCase
             ->assertOk()
             ->assertJsonPath('table_statuses', ['available', 'occupied', 'reserved', 'cleaning'])
             ->assertJsonPath('reservation_rules.default_duration_minutes', 90)
-            ->assertJsonFragment(['key' => 'table_rec_4', 'category' => 'table', 'capacity' => 4]);
+            ->assertJsonFragment(['key' => 'table_square', 'category' => 'table', 'capacity' => 4]);
     }
 
     public function test_every_catalog_asset_has_a_category_and_tables_have_a_capacity(): void
@@ -60,7 +60,7 @@ class FloorPlanTest extends FloorPlanTestCase
 
     // â”€â”€ Plans â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    public function test_first_plan_is_active_and_activating_another_deactivates_the_rest(): void
+    public function test_several_floors_can_be_active_at_once_and_each_can_be_switched_off(): void
     {
         $token = $this->tokenFor($this->manager);
         $url   = $this->base('manager') . '/floor-plans';
@@ -71,13 +71,26 @@ class FloorPlanTest extends FloorPlanTestCase
         $second = $this->api('POST', $url, $token, ['floorplan_name' => 'Patio', 'canvas_width' => 600, 'canvas_height' => 400])
             ->assertCreated()->assertJsonPath('floor_plan.is_active', false)->json('floor_plan.uuid');
 
+        // Activating a second floor leaves the first one active (a cafe with two floors shows both).
         $this->api('POST', "$url/$second/activate", $token)->assertOk()->assertJsonPath('floor_plan.is_active', true);
 
         $this->api('GET', $url, $token)->assertOk()
-            ->assertJsonPath('floor_plans.0.uuid', $second)
+            ->assertJsonPath('floor_plans.0.uuid', $first)
             ->assertJsonPath('floor_plans.0.is_active', true)
-            ->assertJsonPath('floor_plans.1.uuid', $first)
+            ->assertJsonPath('floor_plans.1.uuid', $second)
+            ->assertJsonPath('floor_plans.1.is_active', true);
+
+        // Either can be switched off on its own; doing it twice is harmless.
+        $this->api('POST', "$url/$first/deactivate", $token)->assertOk()->assertJsonPath('floor_plan.is_active', false);
+        $this->api('POST', "$url/$first/deactivate", $token)->assertOk()->assertJsonPath('floor_plan.is_active', false);
+
+        $this->api('GET', $url, $token)->assertOk()
+            ->assertJsonPath('floor_plans.0.uuid', $second)
             ->assertJsonPath('floor_plans.1.is_active', false);
+
+        // Another branch's plan can't be reached through this one.
+        $other = $this->makePlan($this->otherBranch, 'Elsewhere', true);
+        $this->api('POST', "$url/{$other->uuid}/deactivate", $token)->assertNotFound();
     }
 
     public function test_plan_names_are_unique_per_branch_ignoring_case(): void
@@ -145,8 +158,8 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $response = $this->api('PUT', $url, $token, [
             'tables' => [
-                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_rec_4', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
-                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_sqr_2', 'x_location' => 400, 'y_location' => 300],
+                ['uuid' => $keep->uuid, 'table_name' => 'Window 1', 'capacity' => 6, 'asset_key' => 'table_square', 'x_location' => 200, 'y_location' => 150, 'rotation' => 90],
+                ['table_name' => 'Bar 1', 'capacity' => 2, 'asset_key' => 'table_square', 'x_location' => 400, 'y_location' => 300],
             ],
             'elements' => [
                 ['category' => 'door', 'asset_key' => 'door_sgl', 'x_location' => 10, 'y_location' => 10, 'z_index' => 2],
@@ -192,7 +205,7 @@ class FloorPlanTest extends FloorPlanTestCase
                 ['table_name' => 'a', 'capacity' => 0, 'x_location' => -5001, 'y_location' => 1, 'rotation' => 400],             // duplicate name, bad numbers
             ],
             'elements' => [
-                ['category' => 'door', 'asset_key' => 'table_rec_4', 'x_location' => 1, 'y_location' => 1],                    // category mismatch (table asset on a door)
+                ['category' => 'door', 'asset_key' => 'table_square', 'x_location' => 1, 'y_location' => 1],                    // category mismatch (table asset on a door)
                 ['category' => 'door', 'asset_key' => 'nope', 'x_location' => 1, 'y_location' => 1],                            // unknown asset
             ],
         ])->assertStatus(422)->assertJsonValidationErrors([
@@ -378,6 +391,27 @@ class FloorPlanTest extends FloorPlanTestCase
             ->assertOk()->assertJsonPath('table.status', 'cleaning');
     }
 
+    public function test_register_gets_every_active_floor(): void
+    {
+        $ground = $this->makePlan($this->mainBranch, 'Ground floor', true);
+        $upper  = $this->makePlan($this->mainBranch, 'Second floor', true);
+        $this->makePlan($this->mainBranch, 'Roof (closed)', false);
+        $this->makeTable($ground, 'G1');
+        $this->makeTable($upper, 'U1');
+        $this->makeTable($upper, 'U2');
+        $this->makeTable($this->makePlan($this->otherBranch, 'Other branch', true), 'X1');
+
+        $response = $this->api('GET', '/api/pos/device/floor-plan', $this->device())->assertOk()
+            ->assertJsonCount(2, 'floor_plans')
+            ->assertJsonPath('floor_plans.0.floorplan_name', 'Ground floor')
+            ->assertJsonCount(1, 'floor_plans.0.tables')
+            ->assertJsonPath('floor_plans.1.floorplan_name', 'Second floor')
+            ->assertJsonCount(2, 'floor_plans.1.tables')
+            ->assertJsonPath('floor_plan.floorplan_name', 'Ground floor'); // first one, for older callers
+
+        $this->assertNotContains('Roof (closed)', collect($response->json('floor_plans'))->pluck('floorplan_name')->all());
+    }
+
     public function test_register_cannot_set_status_on_another_branchs_table(): void
     {
         $foreign = $this->makeTable($this->makePlan($this->otherBranch), 'X1');
@@ -389,7 +423,8 @@ class FloorPlanTest extends FloorPlanTestCase
     {
         $this->makePlan($this->mainBranch, 'Indoor', false);
 
-        $this->api('GET', '/api/pos/device/floor-plan', $this->device())->assertOk()->assertJsonPath('floor_plan', null);
+        $this->api('GET', '/api/pos/device/floor-plan', $this->device())->assertOk()
+            ->assertJsonPath('floor_plan', null)->assertJsonCount(0, 'floor_plans');
     }
 
     public function test_register_cannot_use_dashboard_routes_and_needs_the_feature(): void

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\StaffAccountCreatedMail;
+use App\Models\BranchDocument;
 use App\Models\Cafe;
 use App\Models\CafeBranch;
 use App\Models\CafeStaff;
@@ -12,8 +13,11 @@ use App\Models\Role;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
+use App\Rules\BranchTin;
 use App\Services\StaffPinService;
+use App\Support\Tin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -198,6 +202,100 @@ class StaffAndPosTest extends TestCase
         // Pasted "09…" numbers are normalised before validation.
         $this->api('POST', $url, $token, [...$base, 'phone_number' => '0917 123 4567'])->assertCreated();
         $this->assertDatabaseHas('users', ['email' => 'phone@test.local', 'phone_number' => '+639171234567']);
+    }
+
+    public function test_add_branch_contact_check_rejects_a_phone_used_by_a_user_or_branch(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = '/api/owner/branches/check-contact';
+
+        $this->owner->update(['phone_number' => '09181234567']); // older 09… storage
+        $this->mainBranch->update(['cafe_phonenumber' => '+639191234567']);
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new1@test.local', 'cafe_phonenumber' => '+639181234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by another account.');
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new2@test.local', 'cafe_phonenumber' => '+639191234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by a cafe branch.');
+
+        $this->api('POST', $url, $token, ['cafe_email' => 'new3@test.local', 'cafe_phonenumber' => '+639201234567'])
+            ->assertOk();
+
+        // Editing a branch keeps its own number but cannot take another branch's.
+        $patch = "/api/owner/branches/{$this->mainBranch->uuid}";
+        $this->api('PATCH', $patch, $token, ['cafe_phonenumber' => '+639191234567'])->assertJsonMissingValidationErrors('cafe_phonenumber');
+
+        $this->otherBranch->update(['cafe_phonenumber' => '+639211234567']);
+        $this->api('PATCH', $patch, $token, ['cafe_phonenumber' => '+639211234567'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.cafe_phonenumber.0', 'This phone number is already used by a cafe branch.');
+    }
+
+    public function test_branch_tin_must_share_the_main_tin_and_use_its_own_branch_code(): void
+    {
+        $token = $this->tokenFor($this->owner);
+        $url   = '/api/owner/branches';
+
+        $this->otherBranch->update(['branch_type' => 'side']); // makeBranch() creates every branch as main
+        BranchDocument::create(['branch_id' => $this->mainBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'x.pdf', 'tin_number' => '123-456-789-00000']);
+        BranchDocument::create(['branch_id' => $this->otherBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'y.pdf', 'tin_number' => '123-456-789-00002']);
+
+        $cases = [
+            ['123-456-789-000',   Tin::FORMAT_MESSAGE], // old 3-digit branch code
+            ['999-456-789-00001', 'TIN must start with your main branch TIN (123-456-789).'],
+            ['123-456-789-00000', 'Branch code 00000 is reserved for the main branch. Use this branch\'s own code (e.g. 00001).'],
+            ['123-456-789-00002', 'Another one of your branches already uses this TIN branch code.'],
+        ];
+        foreach ($cases as [$tin, $message]) {
+            $this->api('POST', $url, $token, ['tin_number' => $tin])
+                ->assertStatus(422)
+                ->assertJsonPath('errors.tin_number.0', $message);
+        }
+
+        // Spaces are fine; it is normalised to XXX-XXX-XXX-XXXXX.
+        $this->api('POST', $url, $token, ['tin_number' => '123 456 789 00003'])
+            ->assertStatus(422)->assertJsonMissingValidationErrors('tin_number');
+
+        // Editing: the main branch keeps 00000, a side branch may keep its own code.
+        $this->api('PATCH', "$url/{$this->mainBranch->uuid}", $token, ['tin_number' => '123-456-789-00001'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.tin_number.0', 'The main branch TIN must end in 00000 (head office branch code).');
+        $this->api('PATCH', "$url/{$this->otherBranch->uuid}", $token, ['tin_number' => '123-456-789-00002'])
+            ->assertJsonMissingValidationErrors('tin_number');
+
+        // Registration (main branch) must end in 00000.
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00001'], ['t' => [BranchTin::forMainBranch()]])->fails());
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch($this->mainBranch->branch_id)]])->passes());
+    }
+
+    public function test_tin_must_not_be_registered_to_another_cafes_branch(): void
+    {
+        $stranger       = $this->makeUser('Cafe Owner', ['email' => 'other@test.local']);
+        $strangerCafe   = Cafe::create(['user_id' => $stranger->user_id, 'cafe_name' => 'Other Cafe']);
+        $strangerBranch = $this->makeBranch($strangerCafe, 'Elsewhere');
+        $strangerDoc    = BranchDocument::create(['branch_id' => $strangerBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'z.pdf', 'tin_number' => '555-555-555-00000']);
+        BranchDocument::create(['branch_id' => $this->mainBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'x.pdf', 'tin_number' => '123-456-789-00000']);
+
+        $taken = 'This TIN is already registered to another cafe branch.';
+
+        // Registration and editing the main branch both reject another cafe's TIN...
+        $this->assertSame([$taken], Validator::make(['t' => '555-555-555-00000'], ['t' => [BranchTin::forMainBranch()]])->errors()->get('t'));
+        $this->api('PATCH', "/api/owner/branches/{$this->mainBranch->uuid}", $this->tokenFor($this->owner), ['tin_number' => '555-555-555-00000'])
+            ->assertStatus(422)
+            ->assertJsonPath('errors.tin_number.0', $taken);
+
+        // ...but a branch may keep its own TIN.
+        $this->assertTrue(Validator::make(['t' => '123-456-789-00000'], ['t' => [BranchTin::forMainBranch($this->mainBranch->branch_id)]])->passes());
+
+        // Once the other branch's document is archived, the TIN is free again.
+        $strangerDoc->delete();
+        $this->assertTrue(Validator::make(['t' => '555-555-555-00000'], ['t' => [BranchTin::forMainBranch()]])->passes());
+
+        // The database enforces it too.
+        $this->expectException(\Illuminate\Database\UniqueConstraintViolationException::class);
+        BranchDocument::create(['branch_id' => $strangerBranch->branch_id, 'doc_type' => 'BIR', 'file' => 'w.pdf', 'tin_number' => '123-456-789-00000']);
     }
 
     public function test_email_and_phone_must_not_be_used_by_another_user_or_a_branch(): void
@@ -614,6 +712,66 @@ class StaffAndPosTest extends TestCase
             ->assertOk();
 
         $this->api('GET', '/api/pos/device', $device)->assertUnauthorized();
+    }
+
+    public function test_checkout_logs_ingredient_consumption_per_sold_line(): void
+    {
+        $cafeId = $this->mainBranch->cafe_id;
+        $item   = \App\Models\MenuItem::create(['cafe_id' => $cafeId, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        $milk   = \App\Models\Ingredient::create(['cafe_id' => $cafeId, 'name' => 'Milk', 'normalized_name' => 'milk', 'unit' => 'ml', 'is_active' => true]);
+        \App\Models\MenuRecipe::create(['men_item_id' => $item->men_item_id, 'ingredient_id' => $milk->ingredient_id, 'ingredient_name' => 'Milk', 'quantity' => 150, 'unit' => 'ml']);
+
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->toDateString(), 'expected_servings' => 10]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items'           => [['uuid' => $item->uuid, 'quantity' => 2]],
+            'payment_method'  => 'cash',
+            'amount_tendered' => 500,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $log = \App\Models\IngredientConsumptionLog::sole();
+        $this->assertSame($milk->ingredient_id, $log->ingredient_id);
+        $this->assertSame('Milk', $log->ingredient_name);
+        $this->assertSame('ml', $log->unit);
+        $this->assertEquals(300, $log->quantity_consumed); // 150 ml x 2 cups
+    }
+
+    public function test_pos_menu_and_checkout_respect_todays_servings(): void
+    {
+        $cafeId = $this->mainBranch->cafe_id;
+        $mk = fn (string $n) => \App\Models\MenuItem::create(['cafe_id' => $cafeId, 'menu_name' => $n, 'base_price' => 100, 'is_available' => true]);
+        $stocked = $mk('Latte');
+        $noRow   = $mk('Caramel Macchiato');
+        $usedUp  = $mk('Mocha');
+        $hidden  = $mk('Hidden');
+
+        $row = fn ($item, $sold = 0) => \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today()->toDateString(), 'expected_servings' => 3, 'servings_sold' => $sold]);
+        $row($stocked);
+        $row($usedUp, 3);
+        \App\Models\MenuBranch::create(['branch_id' => $this->mainBranch->branch_id, 'men_item_id' => $hidden->men_item_id, 'is_available' => false]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $items = collect($this->api('GET', '/api/pos/device/menu', $device)->assertOk()->json('items'))->keyBy('menu_name');
+        $this->assertFalse($items['Latte']['sold_out']);
+        $this->assertSame(3, $items['Latte']['available_stock']);
+        $this->assertTrue($items['Caramel Macchiato']['sold_out']);
+        $this->assertTrue($items['Mocha']['sold_out']);
+        $this->assertArrayNotHasKey('Hidden', $items->all());
+
+        $checkout = fn ($item, $qty) => $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => $qty]], 'payment_method' => 'cash', 'amount_tendered' => 1000,
+        ]);
+        $checkout($noRow, 1)->assertStatus(422);
+        $checkout($usedUp, 1)->assertStatus(422);
+        $checkout($hidden, 1)->assertStatus(400);
+        $checkout($stocked, 4)->assertStatus(422);
+        $checkout($stocked, 3)->assertOk();
+        $checkout($stocked, 1)->assertStatus(422);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

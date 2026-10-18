@@ -7,7 +7,6 @@ use App\Models\FloorPlan;
 use App\Models\Reservation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Every lookup is scoped by branch_id so a uuid from another branch is never reachable.
@@ -28,9 +27,10 @@ class FloorPlanRepository
         return FloorPlan::where('uuid', $planUuid)->where('branch_id', $branchId)->first();
     }
 
-    public function findActiveForBranch(int $branchId): ?FloorPlan
+    /** Every floor the register shows (a cafe with several floors keeps several active). */
+    public function activeForBranch(int $branchId): Collection
     {
-        return FloorPlan::where('branch_id', $branchId)->where('is_active', true)->first();
+        return FloorPlan::where('branch_id', $branchId)->where('is_active', true)->orderBy('floorplan_name')->get();
     }
 
     /** The first plan of a branch becomes the active one automatically. */
@@ -55,16 +55,10 @@ class FloorPlanRepository
         $plan->delete();
     }
 
-    /** Exactly one active plan per branch. */
-    public function activate(FloorPlan $plan): void
+    /** Any number of plans can be active at once: one per floor of the cafe. */
+    public function setActive(FloorPlan $plan, bool $active): void
     {
-        DB::transaction(function () use ($plan) {
-            FloorPlan::where('branch_id', $plan->branch_id)
-                ->where('floor_plan_id', '!=', $plan->floor_plan_id)
-                ->update(['is_active' => false]);
-
-            $plan->update(['is_active' => true]);
-        });
+        $plan->update(['is_active' => $active]);
     }
 
     public function findTableForBranch(string $tableUuid, int $branchId): ?BranchTable

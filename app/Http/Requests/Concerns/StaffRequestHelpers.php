@@ -4,6 +4,7 @@ namespace App\Http\Requests\Concerns;
 
 use App\Models\CafeBranch;
 use App\Models\User;
+use App\Rules\UniquePhoneNumber;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -39,33 +40,12 @@ trait StaffRequestHelpers
     }
 
     /**
-     * No other user and no cafe branch may have this phone. Older rows store
-     * numbers as 09…/639… rather than +639…, so every equivalent form is
-     * checked. Runs after normalizePhoneNumber(); format is PHONE_RULE's job.
+     * No other user and no cafe branch may have this phone.
+     * Runs after normalizePhoneNumber(); format is PHONE_RULE's job.
      */
-    protected function uniquePhoneRule(?string $ignoreUserUuid = null): \Closure
+    protected function uniquePhoneRule(?string $ignoreUserUuid = null): UniquePhoneNumber
     {
-        return function (string $attribute, mixed $value, \Closure $fail) use ($ignoreUserUuid) {
-            if (! is_string($value) || ! preg_match('/^\+639\d{9}$/', $value)) {
-                return;
-            }
-
-            $local    = substr($value, 3); // 9XXXXXXXXX
-            $variants = ["+63{$local}", "63{$local}", "0{$local}", $local];
-
-            $usedByUser = User::whereIn('phone_number', $variants)
-                ->when($ignoreUserUuid, fn ($q) => $q->where('uuid', '!=', $ignoreUserUuid))
-                ->exists();
-
-            if ($usedByUser) {
-                $fail('This phone number is already used by another account.');
-                return;
-            }
-
-            if (CafeBranch::whereIn('cafe_phonenumber', $variants)->exists()) {
-                $fail('This phone number is already used by a cafe branch.');
-            }
-        };
+        return new UniquePhoneNumber($ignoreUserUuid);
     }
 
     /**

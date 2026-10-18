@@ -29,15 +29,22 @@ class ServingOverviewService
      */
     public function categories(CafeBranch $branch, ?string $search, string $sort, int $page, int $perPage): array
     {
-        $servings = $this->repo->listForDate($branch->branch_id, $this->today());
+        // Deleted menu items keep their serving row (soft delete), but no longer count.
+        $servings = $this->repo->listForDate($branch->branch_id, $this->today())
+            ->filter(fn (InventoryServing $s) => $s->menuItem && ! $s->menuItem->trashed());
         $byCategory = $servings->groupBy(fn (InventoryServing $s) => $s->menuItem?->category?->uuid ?? 'uncategorized');
 
         // Every category visible at the branch gets a card, even with nothing planned today.
         $rows = $this->repo->listAvailableCategoriesForBranch($branch)
             ->map(fn (MenuCategory $c) => $this->categoryRow($c, $byCategory->get($c->uuid, collect())));
 
-        if ($byCategory->has('uncategorized')) {
-            $rows->push($this->categoryRow(null, $byCategory->get('uncategorized')));
+        // Like a real category: shown whenever an item without a category is visible at the
+        // branch, not only once a serving row exists for it.
+        $hasUncategorizedItems = $this->repo->listAvailableItemsForBranch($branch)
+            ->contains(fn ($item) => $item->men_category_id === null);
+
+        if ($hasUncategorizedItems || $byCategory->has('uncategorized')) {
+            $rows->push($this->categoryRow(null, $byCategory->get('uncategorized', collect())));
         }
 
         if ($search !== null && $search !== '') {

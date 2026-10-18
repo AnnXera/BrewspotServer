@@ -33,7 +33,9 @@ class CafeStaff extends Model
         'position',
         'employment_status',
         'hired_at',
+        'hired_by',
         'terminated_at',
+        'terminated_by',
     ];
 
     protected $casts = [
@@ -54,6 +56,16 @@ class CafeStaff extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(CafeBranch::class, 'branch_id', 'branch_id');
+    }
+
+    public function hiredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'hired_by', 'user_id');
+    }
+
+    public function terminatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'terminated_by', 'user_id');
     }
 
     public function transactions(): HasMany

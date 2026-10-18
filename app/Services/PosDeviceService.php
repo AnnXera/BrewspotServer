@@ -14,6 +14,7 @@ use App\Models\TransactionItem;
 use App\Models\Payment;
 use App\Http\Resources\MenuCategoryResource;
 use App\Http\Resources\MenuItemResource;
+use App\Repository\InventoryServingRepository;
 use App\Repository\PosDeviceRepository;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -36,11 +37,14 @@ use Laravel\Sanctum\PersonalAccessToken;
  */
 class PosDeviceService
 {
+    /** Sale statuses that count toward totals. Anything else (voided, refunded) is reported separately. */
+    private const SETTLED_STATUSES = ['completed', 'paid'];
+
     public function __construct(
         private readonly PosDeviceRepository $repo,
-        private readonly StaffPinService $pins
-    ) {
-    }
+        private readonly StaffPinService $pins,
+        private readonly InventoryServingRepository $servings
+    ) {}
 
     // ── Setup (owner / manager token) ────────────────────────────────────
 
@@ -240,6 +244,26 @@ class PosDeviceService
         return ['success' => true, 'message' => 'This device is no longer a register.'];
     }
 
+    /**
+     * Remaining servings today for every item offered at the device's branch,
+     * keyed by men_item_id. Items without a serving row, or switched off, are 0.
+     *
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function todaysStock(PosDevice $device): \Illuminate\Support\Collection
+    {
+        $servings = $this->servings->listForDate($device->branch_id, \Illuminate\Support\Carbon::today())->keyBy('men_item_id');
+
+        return $this->servings->listAvailableItemsForBranch($device->branch)
+            ->mapWithKeys(function ($item) use ($servings) {
+                $s = $servings->get($item->men_item_id);
+
+                return [$item->men_item_id => ($s && ! $s->is_sold_out)
+                    ? max(0, $s->expected_servings - $s->servings_sold - $s->spoilage_qty)
+                    : 0];
+            });
+    }
+
     public function menu(PosDevice $device): array
     {
         $cafeId = $device->branch->cafe_id;
@@ -252,18 +276,33 @@ class PosDeviceService
                 'name' => $c->name,
             ]);
 
-        $items = \App\Models\MenuItem::with('category')
-            ->where('cafe_id', $cafeId)
-            ->where('is_available', true)
-            ->orderBy('menu_name')
-            ->get()
-            ->map(fn($i) => [
-                'uuid' => $i->uuid,
-                'category_uuid' => $i->category->uuid ?? null,
-                'menu_name' => $i->menu_name,
-                'description' => $i->description,
-                'base_price' => (float) $i->base_price,
-                'picture' => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+        // Same rules as the servings page: only items visible at this device's
+        // branch, each with today's remaining stock. 0 stock = sold out.
+        $stock = $this->todaysStock($device);
+
+        $items = $this->servings->listAvailableItemsForBranch($device->branch)
+            ->load(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->orderBy('name')])
+            ->map(fn ($i) => [
+                'uuid'            => $i->uuid,
+                'category_uuid'   => $i->category->uuid ?? null,
+                'menu_name'       => $i->menu_name,
+                'description'     => $i->description,
+                'base_price'      => (float) $i->base_price,
+                'picture'         => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+                'available_stock' => $stock->get($i->men_item_id, 0),
+                'sold_out'        => $stock->get($i->men_item_id, 0) <= 0,
+                // Empty = sold at base_price. All sizes share the item's servings.
+                'sizes'           => $i->sizes->map(fn ($s) => [
+                    'uuid'  => $s->uuid,
+                    'name'  => $s->name,
+                    'price' => (float) $s->price,
+                ])->values(),
+                'addons'          => $i->addons->map(fn ($a) => [
+                    'uuid'         => $a->uuid,
+                    'name'         => $a->name,
+                    'price'        => (float) $a->price,
+                    'max_quantity' => $a->max_quantity,
+                ])->values(),
             ]);
 
         return [
@@ -271,6 +310,55 @@ class PosDeviceService
             'categories' => $categories->values(),
             'items' => $items->values(),
         ];
+    }
+
+    /**
+     * Price of one drink: the chosen size (or base price when the item has no
+     * sizes) plus each add-on x its quantity. Add-ons must be offered on the
+     * item, available, and within their per-drink limit.
+     *
+     * @param array<int, array{uuid: string, quantity: int}> $addons
+     * @return array{unit_price: float, size: ?\App\Models\MenuItemSize, addons: array}|array{message: string}
+     */
+    private function priceLine(\App\Models\MenuItem $menuItem, ?string $sizeUuid, array $addons): array
+    {
+        $size = null;
+
+        if ($menuItem->sizes->isNotEmpty()) {
+            $size = $menuItem->sizes->firstWhere('uuid', $sizeUuid);
+
+            if (! $size) {
+                return ['message' => "Pick a size for {$menuItem->menu_name}."];
+            }
+        } elseif ($sizeUuid) {
+            return ['message' => "{$menuItem->menu_name} does not come in sizes. Remove it and add it again."];
+        }
+
+        $unitPrice = (float) ($size?->price ?? $menuItem->base_price);
+        $lines     = [];
+
+        foreach ($addons as $row) {
+            $addon = $menuItem->addons->firstWhere('uuid', $row['uuid']);
+
+            if (! $addon) {
+                return ['message' => "An add-on on {$menuItem->menu_name} is no longer available. Remove it and add it again."];
+            }
+
+            if (isset($lines[$addon->addon_id])) {
+                return ['message' => "{$addon->name} is listed twice on {$menuItem->menu_name}."];
+            }
+
+            $quantity = (int) $row['quantity'];
+
+            if ($quantity > $addon->max_quantity) {
+                return ['message' => "{$menuItem->menu_name} can have at most {$addon->max_quantity} {$addon->name}."];
+            }
+
+            $lines[$addon->addon_id] = ['addon' => $addon, 'quantity' => $quantity];
+            $unitPrice += (float) $addon->price * $quantity;
+        }
+
+        return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'addons' => array_values($lines)];
     }
 
     public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0): array
@@ -288,39 +376,48 @@ class PosDeviceService
         $totalAmount = 0;
         $transactionItemsData = [];
 
+        // Only what this branch offers, within today's remaining servings.
+        $stock     = $this->todaysStock($device);
+        $requested = [];
+
         foreach ($items as $itemData) {
-            $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])->where('cafe_id', $cafeId)->first();
-            if (!$menuItem) {
+            $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])
+                ->where('cafe_id', $cafeId)
+                ->with(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->with('recipes')])
+                ->first();
+            if (!$menuItem || !$stock->has($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
+            $quantity = (int)$itemData['quantity'];
 
-            $quantity = (int) $itemData['quantity'];
-            $price = $menuItem->base_price;
-
-            // Add 25 pesos for each addon, except ice
-            if (isset($itemData['addons']) && is_array($itemData['addons'])) {
-                foreach ($itemData['addons'] as $addon) {
-                    if (stripos($addon, 'ice') === false) {
-                        $price += 25;
-                    }
-                }
+            // Every size draws from the item's one servings count.
+            $requested[$menuItem->men_item_id] = ($requested[$menuItem->men_item_id] ?? 0) + $quantity;
+            if ($requested[$menuItem->men_item_id] > $stock->get($menuItem->men_item_id)) {
+                return ['success' => false, 'http' => 422, 'message' => "{$menuItem->menu_name} is sold out or has too few servings left."];
             }
 
-            $totalAmount += $price * $quantity;
+            // Prices always come from the menu, never from the register.
+            $line = $this->priceLine($menuItem, $itemData['size_uuid'] ?? null, $itemData['addons'] ?? []);
+            if (isset($line['message'])) {
+                return ['success' => false, 'http' => 422, 'message' => $line['message']];
+            }
+
+            $totalAmount += $line['unit_price'] * $quantity;
 
             $transactionItemsData[] = [
-                'men_item_id' => $menuItem->men_item_id,
-                'quantity' => $quantity,
-                'sugar_level' => isset($itemData['sugar_level']) ? (int) $itemData['sugar_level'] : null,
-                'addons' => isset($itemData['addons']) ? $itemData['addons'] : null,
-                'unit_price' => $price,
+                'row' => [
+                    'men_item_id' => $menuItem->men_item_id,
+                    'men_size_id' => $line['size']?->men_size_id,
+                    'size_name'   => $line['size']?->name,
+                    'quantity'    => $quantity,
+                    'unit_price'  => $line['unit_price'],
+                ],
+                'addons' => $line['addons'],
             ];
         }
 
-        // Add Tax (VAT 12%) if branch is VAT-registered
-        $vatDoc = \App\Models\BranchDocument::where('branch_id', $branchId)->whereNotNull('vat')->latest('branch_doc_id')->first();
-        $tax = ($vatDoc && $vatDoc->vat === 'vat-registered') ? $totalAmount * 0.12 : 0;
-        $grandTotal = $totalAmount + $tax - $discountAmount;
+        // No VAT: the POS is not BIR-accredited, so prices are charged as-is.
+        $grandTotal = $totalAmount - $discountAmount;
 
         if ($paymentMethod === 'cash' && $amountTendered < $grandTotal) {
             return ['success' => false, 'http' => 400, 'message' => 'Amount tendered is less than total amount.'];
@@ -348,7 +445,7 @@ class PosDeviceService
                 'receipt_number' => $nextReceiptNumber,
             ]);
 
-            foreach ($transactionItemsData as $itemData) {
+            foreach ($transactionItemsData as ['row' => $itemData, 'addons' => $addonLines]) {
                 $txItem = \App\Models\TransactionItem::create(array_merge($itemData, [
                     'transaction_id' => $transaction->transaction_id,
                 ]));
@@ -358,13 +455,13 @@ class PosDeviceService
                     [
                         'men_item_id' => $itemData['men_item_id'],
                         'branch_id' => $branchId,
-                        'date' => \Carbon\Carbon::today()->toDateString()
+                        'date' => \Carbon\Carbon::today()->toDateString(),
                     ],
                     [
                         'expected_servings' => 0,
                         'servings_sold' => 0,
                         'spoilage_qty' => 0,
-                        'is_sold_out' => false
+                        'is_sold_out' => false,
                     ]
                 );
 
@@ -374,8 +471,10 @@ class PosDeviceService
                     $serving->update(['is_sold_out' => true]);
                 }
 
-                // 2. Ingredient Consumption Logs
-                $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])->get();
+                // 2. Ingredient Consumption Logs: rows for every size, plus the sold size's own rows
+                $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])
+                    ->where(fn ($q) => $q->whereNull('men_size_id')->orWhere('men_size_id', $itemData['men_size_id']))
+                    ->get();
                 foreach ($recipes as $recipe) {
                     \App\Models\IngredientConsumptionLog::create([
                         'transaction_item_id' => $txItem->transaction_item_id,
@@ -384,6 +483,26 @@ class PosDeviceService
                         'quantity_consumed' => $recipe->quantity * $itemData['quantity'],
                         'unit' => $recipe->unit,
                     ]);
+                }
+
+                // 3. Add-ons, and what they use (per drink x drinks on the line)
+                foreach ($addonLines as ['addon' => $addon, 'quantity' => $addonQty]) {
+                    $txItem->addons()->create([
+                        'addon_id'   => $addon->addon_id,
+                        'addon_name' => $addon->name,
+                        'price'      => $addon->price,
+                        'quantity'   => $addonQty,
+                    ]);
+
+                    foreach ($addon->recipes as $recipe) {
+                        \App\Models\IngredientConsumptionLog::create([
+                            'transaction_item_id' => $txItem->transaction_item_id,
+                            'ingredient_id'       => $recipe->ingredient_id,
+                            'ingredient_name'     => $recipe->ingredient_name,
+                            'quantity_consumed'   => $recipe->quantity * $addonQty * $itemData['quantity'],
+                            'unit'                => $recipe->unit,
+                        ]);
+                    }
                 }
             }
 
@@ -409,37 +528,102 @@ class PosDeviceService
         ];
     }
 
+    /**
+     * Today's sales for this register's branch. Totals count settled sales only, so voided
+     * sales never inflate what the drawer should hold; voids are reported beside them.
+     */
     public function transactions(PosDevice $device): array
     {
         $branchId = $device->branch_id;
+        $settled  = self::SETTLED_STATUSES;
 
         $todayTransactions = \App\Models\Transaction::where('branch_id', $branchId)
             ->whereDate('created_at', \Carbon\Carbon::today())
             ->with(['staff.user'])
+            ->withCount('items')
+            ->orderBy('created_at')
             ->get();
 
-        $monthTransactions = \App\Models\Transaction::where('branch_id', $branchId)
+        [$todaySettled, $todayVoided] = $todayTransactions->partition(fn ($t) => in_array($t->status, $settled, true));
+
+        $monthTotal = \App\Models\Transaction::where('branch_id', $branchId)
+            ->whereIn('status', $settled)
             ->whereMonth('created_at', \Carbon\Carbon::now()->month)
             ->whereYear('created_at', \Carbon\Carbon::now()->year)
-            ->get();
+            ->sum('total_amount');
 
-        $todayTotal = $todayTransactions->sum('total_amount');
-        $monthTotal = $monthTransactions->sum('total_amount');
+        $netTotal  = (float) $todaySettled->sum('total_amount');
+        $voidTotal = (float) $todayVoided->sum('total_amount');
 
         return [
-            'success' => true,
-            'today_total' => (float) $todayTotal,
-            'today_count' => $todayTransactions->count(),
-            'month_total' => (float) $monthTotal,
-            'transactions' => $todayTransactions->map(fn($t) => [
-                'uuid' => $t->uuid,
+            'success'      => true,
+            'today_total'  => $netTotal,                // net: settled sales only
+            'today_count'  => $todaySettled->count(),
+            'gross_total'  => $netTotal + $voidTotal,   // everything rung up, voids included
+            'void_count'   => $todayVoided->count(),
+            'void_total'   => $voidTotal,
+            'month_total'  => (float) $monthTotal,      // net, settled sales only
+            'transactions' => $todayTransactions->map(fn ($t) => [
+                'uuid'           => $t->uuid,
                 'receipt_number' => $t->receipt_number ?: $t->uuid,
-                'created_at' => $t->created_at->toISOString(),
-                'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
-                'total_amount' => (float) $t->total_amount,
-                'status' => $t->status,
-                'items_count' => $t->items()->count(),
+                'created_at'     => $t->created_at->toISOString(),
+                'staff_name'     => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'total_amount'   => (float) $t->total_amount,
+                'status'         => $t->status,
+                'items_count'    => $t->items_count,
             ])->values(),
+        ];
+    }
+
+    /**
+     * One sale from this register's branch: lines with size and add-ons, discount, and payment.
+     */
+    public function transaction(PosDevice $device, string $transactionUuid): array
+    {
+        $t = \App\Models\Transaction::where('branch_id', $device->branch_id)
+            ->where('uuid', $transactionUuid)
+            ->with(['staff.user', 'items.menuItem', 'items.addons', 'payments'])
+            ->first();
+
+        if (! $t) {
+            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
+        }
+
+        $payment = $t->payments->sortByDesc('created_at')->first();
+        $subtotal = $t->items->sum(fn ($i) => (float) $i->unit_price * $i->quantity);
+
+        return [
+            'success'     => true,
+            'transaction' => [
+                'uuid'            => $t->uuid,
+                'receipt_number'  => $t->receipt_number ?: $t->uuid,
+                'created_at'      => $t->created_at->toISOString(),
+                'staff_name'      => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'status'          => $t->status,
+                'subtotal'        => round($subtotal, 2),
+                'discount_type'   => $t->discount_type,
+                'discount_amount' => (float) $t->discount_amount,
+                'total_amount'    => (float) $t->total_amount,
+                'payment'         => $payment ? [
+                    'method'           => $payment->payment_method_type,
+                    'reference_number' => $payment->payment_instrument,
+                    'amount_tendered'  => (float) $payment->amount_tendered,
+                    'change'           => (float) $payment->amount_change,
+                ] : null,
+                'items' => $t->items->map(fn ($i) => [
+                    'uuid'       => $i->uuid,
+                    'menu_name'  => $i->menuItem?->menu_name ?? 'Removed item',
+                    'size_name'  => $i->size_name,
+                    'quantity'   => $i->quantity,
+                    'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
+                    'line_total' => round((float) $i->unit_price * $i->quantity, 2),
+                    'addons'     => $i->addons->map(fn ($a) => [
+                        'name'     => $a->addon_name,
+                        'quantity' => $a->quantity,
+                        'price'    => (float) $a->price,
+                    ])->values(),
+                ])->values(),
+            ],
         ];
     }
 }

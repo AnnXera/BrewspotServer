@@ -20,14 +20,13 @@ class TransactionItem extends Model
         'uuid',
         'transaction_id',
         'men_item_id',
+        'men_size_id',
+        'size_name', // snapshot at time of sale
         'quantity',
-        'sugar_level',
-        'addons',
         'unit_price',
     ];
 
     protected $casts = [
-        'addons' => 'array',
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
     ];
@@ -45,6 +44,11 @@ class TransactionItem extends Model
     public function menuItem(): BelongsTo
     {
         return $this->belongsTo(MenuItem::class, 'men_item_id', 'men_item_id');
+    }
+
+    public function addons(): HasMany
+    {
+        return $this->hasMany(TransactionItemAddon::class, 'transaction_item_id', 'transaction_item_id');
     }
 
     public function consumptionLogs(): HasMany
