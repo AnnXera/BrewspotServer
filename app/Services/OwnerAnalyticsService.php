@@ -74,7 +74,7 @@ class OwnerAnalyticsService
             ],
             'granularity' => $granularity,
             'series'      => $this->series($granularity, $days, $from, $to),
-            'heatmap'     => $this->heatmap($this->repo->hourlyTotals($ids, $from, $to)),
+            'heatmap'     => $this->repo->hourlyGrid($ids, $from, $to),
             'payments'    => $payments
                 ->map(fn ($row) => [
                     'method' => $row->method ?: 'unknown',
@@ -529,26 +529,6 @@ class OwnerAnalyticsService
         }
 
         return $buckets;
-    }
-
-    /**
-     * 7 x 24 grid (weekday 0 = Sunday), every cell present.
-     */
-    private function heatmap(Collection $rows): array
-    {
-        $grid = [];
-        for ($d = 0; $d < 7; $d++) {
-            $grid[$d] = array_fill(0, 24, ['orders' => 0, 'revenue' => 0.0]);
-        }
-
-        foreach ($rows as $row) {
-            $grid[(int) $row->weekday][(int) $row->hour] = [
-                'orders'  => (int) $row->orders,
-                'revenue' => round((float) $row->revenue, 2),
-            ];
-        }
-
-        return $grid;
     }
 
     private function withShare(Collection $rows, string $key): array

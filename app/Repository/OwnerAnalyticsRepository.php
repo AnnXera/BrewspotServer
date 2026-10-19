@@ -95,6 +95,26 @@ class OwnerAnalyticsRepository
             ->get();
     }
 
+    /**
+     * hourlyTotals as a 7 x 24 grid (weekday 0 = Sunday), every cell present.
+     */
+    public function hourlyGrid(Collection $branchIds, Carbon $from, Carbon $to): array
+    {
+        $grid = [];
+        for ($d = 0; $d < 7; $d++) {
+            $grid[$d] = array_fill(0, 24, ['orders' => 0, 'revenue' => 0.0]);
+        }
+
+        foreach ($this->hourlyTotals($branchIds, $from, $to) as $row) {
+            $grid[(int) $row->weekday][(int) $row->hour] = [
+                'orders'  => (int) $row->orders,
+                'revenue' => round((float) $row->revenue, 2),
+            ];
+        }
+
+        return $grid;
+    }
+
     public function paymentMethods(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
         return DB::table('payments')

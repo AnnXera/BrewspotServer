@@ -7,6 +7,7 @@ use App\Models\CafeStaff;
 use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\Transaction;
+use App\Repository\OwnerAnalyticsRepository;
 use App\Repository\OwnerDashboardRepository;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,8 +26,12 @@ class ManagerDashboardService
         'monthly' => 12,
     ];
 
+    /** Peak hours always look back this many days, whatever the chart range. */
+    private const PEAK_DAYS = 28;
+
     public function __construct(
-        private readonly OwnerDashboardRepository $ownerRepo
+        private readonly OwnerDashboardRepository $ownerRepo,
+        private readonly OwnerAnalyticsRepository $analyticsRepo
     ) {}
 
     public function stats(CafeBranch $branch, string $range): array
@@ -58,6 +63,8 @@ class ManagerDashboardService
 
         // Recent transactions
         $recentTransactions = $this->recentTransactions($branch);
+
+        $peakFrom = $now->copy()->subDays(self::PEAK_DAYS - 1)->startOfDay();
 
         return [
             'success'      => true,
@@ -99,6 +106,11 @@ class ManagerDashboardService
             'reservations'        => $reservationsData,
             'employees'           => $employeesData,
             'recent_transactions' => $recentTransactions,
+            'peak_hours'          => [
+                'from' => $peakFrom->toDateString(),
+                'to'   => $now->toDateString(),
+                'grid' => $this->analyticsRepo->hourlyGrid($branchIds, $peakFrom, $now),
+            ],
         ];
     }
 
