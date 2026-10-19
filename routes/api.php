@@ -277,7 +277,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::middleware(['pos.device', 'plan.feature:reservations'])->prefix('device')->group(function () {
             Route::get('/floor-plan',                  [PosFloorPlanController::class, 'floorPlan']);
             Route::patch('/tables/{tableUuid}/status', [PosFloorPlanController::class, 'tableStatus']);
-            Route::get('/reservations',                [PosFloorPlanController::class, 'reservations']);
+            Route::get('/reservations',                                [PosFloorPlanController::class, 'reservations']);
+            Route::patch('/reservations/{reservationUuid}/status',     [PosFloorPlanController::class, 'reservationStatus']);
         });
     });
 
