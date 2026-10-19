@@ -29,7 +29,7 @@ class ReservationTest extends FloorPlanTestCase
 
         $this->api('POST', $this->url(), $this->tokenFor($this->manager), $this->booking($table, ['reservation_end' => '2026-10-06 13:15:00', 'notes' => 'Birthday']))
             ->assertCreated()
-            ->assertJsonPath('reservation.status', 'pending')
+            ->assertJsonPath('reservation.status', 'confirmed')
             ->assertJsonPath('reservation.table.table_name', 'T1')
             ->assertJsonPath('reservation.table.floor_plan_name', 'Main Floor')
             ->assertJsonPath('reservation.notes', 'Birthday')
@@ -43,6 +43,10 @@ class ReservationTest extends FloorPlanTestCase
     public function test_owner_can_create_a_confirmed_reservation(): void
     {
         $this->api('POST', $this->base('owner') . '/reservations', $this->tokenFor($this->owner), $this->booking($this->table(), ['status' => 'confirmed']))
+            ->assertCreated()->assertJsonPath('reservation.status', 'confirmed');
+
+        // Even an old client asking for pending gets a confirmed booking.
+        $this->api('POST', $this->base('owner') . '/reservations', $this->tokenFor($this->owner), $this->booking($this->table('T3'), ['status' => 'pending']))
             ->assertCreated()->assertJsonPath('reservation.status', 'confirmed');
 
         $this->api('POST', $this->base('owner') . '/reservations', $this->tokenFor($this->owner), $this->booking($this->table('T2'), ['status' => 'seated']))
@@ -290,14 +294,56 @@ class ReservationTest extends FloorPlanTestCase
         $this->api('POST', $url, $token, ['status' => 'confirmed'])->assertStatus(422);  // cancelled is final
     }
 
-    public function test_cancelling_or_no_show_leaves_the_table_status_alone(): void
+    public function test_a_no_show_releases_a_reserved_table(): void
     {
         $table = $this->table();
-        $table->update(['status' => 'reserved']); // set manually by staff
+        $table->update(['status' => 'reserved']); // held by staff for this party
         $res   = $this->makeReservation($table, '2026-10-06 10:00:00', '2026-10-06 11:00:00', 'confirmed');
+        $this->travelTo('2026-10-06 10:20:00'); // the guest is late
 
         $this->api('POST', $this->url("/{$res->uuid}/status"), $this->tokenFor($this->manager), ['status' => 'no_show'])->assertOk();
-        $this->assertSame('reserved', $table->fresh()->status);
+        $this->assertSame('available', $table->fresh()->status);
+    }
+
+    public function test_cancelling_releases_a_reserved_table(): void
+    {
+        $table = $this->table();
+        $table->update(['status' => 'reserved']);
+        $res   = $this->makeReservation($table, '2026-10-06 10:00:00', '2026-10-06 11:00:00', 'pending');
+
+        $this->api('POST', $this->url("/{$res->uuid}/status"), $this->tokenFor($this->manager), ['status' => 'cancelled'])->assertOk();
+        $this->assertSame('available', $table->fresh()->status);
+    }
+
+    public function test_cancelling_leaves_an_occupied_or_cleaning_table_alone(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        foreach (['occupied', 'cleaning'] as $i => $status) {
+            $table = $this->table("T{$i}");
+            $table->update(['status' => $status]); // someone else is there, or it's being reset
+            $res = $this->makeReservation($table, '2026-10-06 10:00:00', '2026-10-06 11:00:00', 'confirmed');
+
+            $this->api('POST', $this->url("/{$res->uuid}/status"), $token, ['status' => 'cancelled'])->assertOk();
+            $this->assertSame($status, $table->fresh()->status);
+        }
+    }
+
+    public function test_no_show_only_from_the_start_time_and_cancel_only_before_it(): void
+    {
+        $table = $this->table();
+        $res   = $this->makeReservation($table, '2026-10-06 10:00:00', '2026-10-06 11:00:00', 'confirmed');
+        $token = $this->tokenFor($this->manager);
+        $url   = $this->url("/{$res->uuid}/status");
+
+        $this->api('POST', $url, $token, ['status' => 'no_show'])->assertStatus(422); // a day early
+        $this->assertSame('confirmed', $res->fresh()->status);
+
+        $this->travelTo('2026-10-06 10:00:00');
+        $this->api('POST', $url, $token, ['status' => 'cancelled'])->assertStatus(422); // already started
+        $this->assertSame('confirmed', $res->fresh()->status);
+
+        $this->api('POST', $url, $token, ['status' => 'no_show'])->assertOk();
     }
 
     public function test_cannot_seat_onto_an_occupied_table(): void

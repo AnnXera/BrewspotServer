@@ -127,7 +127,8 @@ class ManagerDashboardService
         $upcomingList = (clone $baseQuery)
             ->with(['table' => fn ($q) => $q->withTrashed(), 'creator'])
             ->where('reservation_date', '>=', $todayStart)
-            ->orderBy('reservation_date', 'asc')
+            ->orderByDesc('created_at')
+            ->orderByDesc('reservation_id')
             ->take(8)
             ->get()
             ->map(fn (Reservation $r) => [
@@ -141,6 +142,7 @@ class ManagerDashboardService
                 'table_name'       => $r->table?->table_name ?? 'Table',
                 'status'           => $r->status,
                 'notes'            => $r->notes,
+                'created_at'       => $r->created_at?->toISOString(),
                 'created_by'       => $r->creator ? trim("{$r->creator->firstname} {$r->creator->lastname}") : null,
             ])
             ->values()

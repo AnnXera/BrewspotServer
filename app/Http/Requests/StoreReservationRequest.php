@@ -29,6 +29,7 @@ class StoreReservationRequest extends FormRequest
             'party_size'       => ['required', 'integer', 'min:1', 'max:100'],
             'reservation_date' => ['required', 'date'],
             'reservation_end'  => ['required', 'date', 'after:reservation_date'],
+            // New bookings are always saved as confirmed; the field is accepted for older clients.
             'status'           => ['nullable', Rule::in(['pending', 'confirmed'])],
             'notes'            => ['nullable', 'string', 'max:1000'],
         ];
