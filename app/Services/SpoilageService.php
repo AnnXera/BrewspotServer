@@ -27,6 +27,10 @@ use Illuminate\Support\Facades\Log;
  */
 class SpoilageService
 {
+    public function __construct(
+        private readonly BranchAlertService $alerts
+    ) {}
+
     // ── On the register (device token) ───────────────────────────────────
 
     /**
@@ -97,9 +101,10 @@ class SpoilageService
                 'reason'      => $reason,
             ]);
 
+            $usedBefore = $serving->used();
             $serving->increment('spoilage_qty', $quantity);
 
-            return ['success' => true, 'log' => $log];
+            return ['success' => true, 'log' => $log, 'serving' => $serving, 'used_before' => $usedBefore];
         });
 
         if (! $result['success']) {
@@ -107,6 +112,10 @@ class SpoilageService
         }
 
         $log = $this->loadForDisplay($result['log']);
+
+        // Spoiled servings count toward the day's limit too, so they can run an item low or out.
+        $this->alerts->servingsUsed($result['serving'], $result['used_before']);
+        $this->alerts->spoilageLogged($device->branch, $log);
 
         Log::channel('owner')->info('Spoilage logged on register.', [
             'device_uuid' => $device->uuid,

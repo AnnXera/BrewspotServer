@@ -106,7 +106,8 @@ class StaffPinService
         ]);
 
         if ($locked) {
-            return ['success' => false, 'locked' => true, 'message' => 'Too many wrong attempts. This PIN is now locked. Ask your manager or the owner to reset it.'];
+            // just_locked: this attempt locked it (vs. already locked), so callers alert once.
+            return ['success' => false, 'locked' => true, 'just_locked' => true, 'message' => 'Too many wrong attempts. This PIN is now locked. Ask your manager or the owner to reset it.'];
         }
 
         return [

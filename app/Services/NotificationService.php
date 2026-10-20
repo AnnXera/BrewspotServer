@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\NotificationResource;
 use App\Models\User;
+use App\Notifications\AppNotice;
 use App\Notifications\OwnerNotice;
 use App\Repository\NotificationRepository;
 use Illuminate\Notifications\Notification;
@@ -39,28 +40,68 @@ class NotificationService
         }
     }
 
-    /**
-     * Notify one owner. Never throws, for the same reason as notifyAdmins(), and skips
-     * the notice when the owner already has one with the same dedupe key.
-     */
     public function notifyOwner(?User $owner, OwnerNotice $notice): void
     {
-        if (! $owner) {
+        $this->notifyUser($owner, $notice);
+    }
+
+    /**
+     * Notify one user. Never throws, for the same reason as notifyAdmins(), and skips
+     * the notice when the user already has one with the same dedupe key.
+     */
+    public function notifyUser(?User $user, AppNotice $notice): void
+    {
+        if (! $user) {
             return;
         }
 
         try {
-            if ($notice->dedupeKey && $this->repo->hasDedupeKey($owner, $notice->dedupeKey)) {
+            if ($notice->dedupeKey && $this->repo->hasDedupeKey($user, $notice->dedupeKey)) {
                 return;
             }
 
-            $owner->notify($notice);
+            $user->notify($notice);
         } catch (\Throwable $e) {
-            Log::warning('Failed to notify owner.', [
-                'owner_uuid' => $owner->uuid,
-                'kind'       => $notice->kind,
-                'error'      => $e->getMessage(),
+            Log::warning('Failed to notify user.', [
+                'user_uuid' => $user->uuid,
+                'kind'      => $notice->kind,
+                'error'     => $e->getMessage(),
             ]);
+        }
+    }
+
+    /** @param iterable<User> $users */
+    public function notifyUsers(iterable $users, AppNotice $notice): void
+    {
+        foreach ($users as $user) {
+            $this->notifyUser($user, $notice);
+        }
+    }
+
+    /**
+     * For running summaries (one per dedupe key): rewrite the user's existing notice with
+     * the new copy, mark it unread and move it to the top; create it if there is none.
+     *
+     * @param iterable<User> $users
+     */
+    public function refreshForUsers(iterable $users, AppNotice $notice): void
+    {
+        foreach ($users as $user) {
+            try {
+                $existing = $notice->dedupeKey ? $this->repo->findByDedupeKey($user, $notice->dedupeKey) : null;
+
+                if ($existing) {
+                    $this->repo->refresh($existing, $notice->toArray($user));
+                } else {
+                    $user->notify($notice);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to refresh notification.', [
+                    'user_uuid' => $user->uuid,
+                    'kind'      => $notice->kind,
+                    'error'     => $e->getMessage(),
+                ]);
+            }
         }
     }
 

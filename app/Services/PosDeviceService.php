@@ -44,7 +44,8 @@ class PosDeviceService
     public function __construct(
         private readonly PosDeviceRepository $repo,
         private readonly StaffPinService $pins,
-        private readonly InventoryServingRepository $servings
+        private readonly InventoryServingRepository $servings,
+        private readonly BranchAlertService $alerts
     ) {}
 
     // ── Setup (owner / manager token) ────────────────────────────────────
@@ -163,7 +164,7 @@ class PosDeviceService
         $check = $this->pins->verify($assignment->user, $pin);
 
         if (!$check['success']) {
-            return $this->pinFailure($check);
+            return $this->pinFailure($check, $device, $assignment->user);
         }
 
         // Correct temporary PIN: the register must ask for a new one
@@ -194,14 +195,20 @@ class PosDeviceService
         $result = $this->pins->changeWithCurrentPin($assignment->user, $currentPin, $newPin);
 
         if (!$result['success']) {
-            return $this->pinFailure($result);
+            return $this->pinFailure($result, $device, $assignment->user);
         }
 
         return $this->unlockAs($device, $assignment->fresh('user.role'));
     }
 
-    private function pinFailure(array $check): array
+    private function pinFailure(array $check, PosDevice $device, User $user): array
     {
+        if (!empty($check['just_locked'])) {
+            $this->alerts->pinLocked($device->branch, $user);
+        }
+
+        unset($check['just_locked']);
+
         return [
             ...$check,
             'http' => !empty($check['locked']) ? 423 : 422,
@@ -425,7 +432,8 @@ class PosDeviceService
         }
 
         $transaction = null;
-        \Illuminate\Support\Facades\DB::transaction(function () use (&$transaction, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
+        $servingChanges = []; // [serving, used before this sale], alerted on after commit
+        \Illuminate\Support\Facades\DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
             $latestTransaction = \App\Models\Transaction::where('branch_id', $branchId)
                 ->lockForUpdate()
                 ->orderBy('transaction_id', 'desc')
@@ -466,6 +474,7 @@ class PosDeviceService
                     ]
                 );
 
+                $servingChanges[] = [$serving, $serving->used()];
                 $serving->increment('servings_sold', $itemData['quantity']);
 
                 if ($serving->isUsedUp()) {
@@ -520,6 +529,10 @@ class PosDeviceService
                 'status' => 'paid',
             ]);
         });
+
+        foreach ($servingChanges as [$serving, $usedBefore]) {
+            $this->alerts->servingsUsed($serving, $usedBefore);
+        }
 
         return [
             'success' => true,
@@ -725,6 +738,10 @@ class PosDeviceService
 
         $check = $this->pins->verify($managerUser, $pin);
         if (! $check['success']) {
+            if (! empty($check['just_locked'])) {
+                $this->alerts->pinLocked($device->branch, $managerUser);
+            }
+
             return [
                 'success'       => false,
                 'http'          => ! empty($check['locked']) ? 423 : 422,
@@ -788,6 +805,8 @@ class PosDeviceService
                 $serving->save();
             }
         });
+
+        $this->alerts->refundApproved($device->branch, $transaction, $managerUser, $reason);
 
         Log::channel('auth')->info('POS transaction refunded.', [
             'transaction_uuid' => $transaction->uuid,

@@ -2,26 +2,11 @@
 
 namespace App\Notifications;
 
-use Illuminate\Notifications\Notification;
-
 /**
  * In-app notice for a cafe owner (account decisions, branch reviews, billing).
- * One class for every kind: the bell only needs kind, copy and where to go.
- *
- * `dedupeKey` marks notices that can be triggered more than once for the same
- * event (gateway webhook retries, reminder re-queues); NotificationService skips
- * a notice whose key the owner already has.
  */
-class OwnerNotice extends Notification
+class OwnerNotice extends AppNotice
 {
-    public function __construct(
-        public readonly string $kind,
-        public readonly string $title,
-        public readonly string $body,
-        public readonly ?string $link = null,
-        public readonly ?string $dedupeKey = null
-    ) {}
-
     // ---- Account and branch decisions (admin) ----
 
     public static function accountStatus(string $status, ?string $reason = null): self
@@ -108,21 +93,5 @@ class OwnerNotice extends Notification
         return new self('subscription_expired', 'Subscription expired',
             "Your {$planName} ended on {$endedOn}. Renew to turn your plan features back on.", '/owner/subscription',
             "expired:{$subscriptionUuid}:{$endedOn}");
-    }
-
-    public function via(object $notifiable): array
-    {
-        return ['database'];
-    }
-
-    public function toArray(object $notifiable): array
-    {
-        return array_filter([
-            'kind'       => $this->kind,
-            'title'      => $this->title,
-            'body'       => $this->body,
-            'link'       => $this->link,
-            'dedupe_key' => $this->dedupeKey,
-        ], fn ($value) => $value !== null);
     }
 }
