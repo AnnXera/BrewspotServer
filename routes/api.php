@@ -275,6 +275,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/menu',                    [PosDeviceController::class, 'menu']);
             Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
             Route::get('/spoilage',                [SpoilageController::class, 'deviceIndex']);
+            Route::post('/spoilage',               [SpoilageController::class, 'deviceStore']);
             Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
             Route::get('/approving-managers',             [PosDeviceController::class, 'approvingManagers']);
