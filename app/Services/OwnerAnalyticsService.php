@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Transaction;
 use App\Models\User;
 use App\Repository\OwnerAnalyticsRepository;
 use Illuminate\Support\Carbon;
@@ -18,7 +19,8 @@ use Illuminate\Support\Collection;
 class OwnerAnalyticsService
 {
     public function __construct(
-        private readonly OwnerAnalyticsRepository $repo
+        private readonly OwnerAnalyticsRepository $repo,
+        private readonly ManagerDashboardService $managerDashboard
     ) {}
 
     // ── Sales ────────────────────────────────────────────────────────────
@@ -94,6 +96,115 @@ class OwnerAnalyticsService
                 ->sortByDesc('amount')
                 ->values()
                 ->all(),
+        ];
+    }
+
+    // ── Transaction log (Sales tab) ──────────────────────────────────────
+
+    /**
+     * Every sale in the window, newest first, with who rang it up and, for refunds,
+     * who approved it and when. Paged; status and search narrow it.
+     */
+    public function transactions(User $owner, array $filters): array
+    {
+        $scope = $this->scope($owner, $filters);
+        if (isset($scope['error'])) {
+            return $scope['error'];
+        }
+
+        $page = $this->repo->transactionLog(
+            $scope['branch_ids'],
+            $scope['from'],
+            $scope['to'],
+            $filters['status'] ?? null,
+            isset($filters['search']) ? trim($filters['search']) : null,
+            (int) ($filters['per_page'] ?? 20),
+            (int) ($filters['page'] ?? 1),
+        );
+
+        return [
+            'success'      => true,
+            'filters'      => $this->filtersOut($scope),
+            'counts'       => $this->repo->transactionLogCounts($scope['branch_ids'], $scope['from'], $scope['to']),
+            'transactions' => collect($page->items())->map(fn (Transaction $t) => $this->logRow($t))->all(),
+            'pagination'   => [
+                'page'      => $page->currentPage(),
+                'per_page'  => $page->perPage(),
+                'total'     => $page->total(),
+                'last_page' => $page->lastPage(),
+            ],
+        ];
+    }
+
+    /**
+     * One sale's receipt, if it belongs to one of the owner's branches.
+     */
+    public function transaction(User $owner, string $uuid): array
+    {
+        $branchIds = $this->repo->branchesByOwner($owner->user_id)->pluck('branch_id');
+        $t         = $this->repo->findTransaction($branchIds, $uuid);
+
+        if (! $t) {
+            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
+        }
+
+        $res = $this->managerDashboard->transaction($t->branch, $uuid);
+        if (! empty($res['transaction'])) {
+            $res['transaction']['branch_name'] = $t->branch?->branch_name;
+            $res['transaction']['changed_at']  = $this->changedAt($t);
+            $res['transaction']['refund']      = $this->refundInfo($t);
+        }
+
+        return $res;
+    }
+
+    private function logRow(Transaction $t): array
+    {
+        $payment = $t->payments->sortByDesc('created_at')->first();
+
+        return [
+            'uuid'            => $t->uuid,
+            'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
+            'created_at'      => $t->created_at->toISOString(),
+            'changed_at'      => $this->changedAt($t),
+            'branch'          => $t->branch?->branch_name,
+            'cashier'         => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : null,
+            'items'           => (int) $t->items_quantity,
+            'payment_method'  => $payment?->payment_method_type,
+            'discount_type'   => (float) $t->discount_amount > 0 ? $t->discount_type : null,
+            'discount_amount' => round((float) $t->discount_amount, 2),
+            'total_amount'    => round((float) $t->total_amount, 2),
+            'status'          => $t->status,
+            'refund'          => $this->refundInfo($t),
+        ];
+    }
+
+    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
+    private function changedAt(Transaction $t): ?string
+    {
+        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true) || ! $t->updated_at) {
+            return null;
+        }
+
+        return $t->updated_at->toISOString();
+    }
+
+    /**
+     * Approver and reason of a refund. The POS records them only in the note, as
+     * "Refunded by First Last (Role): reason", appended after any earlier note.
+     *
+     * @return array{by: string, role: string|null, reason: string|null}|null
+     */
+    private function refundInfo(Transaction $t): ?array
+    {
+        if (! $t->walk_in_note || ! preg_match('/Refunded by (.+?)(?: \(([^)]*)\))?(?:: (.*))?$/s', $t->walk_in_note, $m)) {
+            return null;
+        }
+
+        return [
+            'by'     => trim($m[1]),
+            'role'   => ($m[2] ?? '') !== '' ? $m[2] : null,
+            'reason' => isset($m[3]) && trim($m[3]) !== '' ? trim($m[3]) : null,
         ];
     }
 

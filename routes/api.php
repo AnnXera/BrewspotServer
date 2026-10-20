@@ -199,6 +199,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         // Feature-Gated: Analytics (one call per tab; ?from=&to=&branch=)
         Route::middleware('plan.feature:advanced_analytics')->prefix('analytics')->group(function () {
             Route::get('/sales',      [\App\Http\Controllers\OwnerAnalyticsController::class, 'sales']);
+            Route::get('/transactions',        [\App\Http\Controllers\OwnerAnalyticsController::class, 'transactions']);
+            Route::get('/transactions/{uuid}', [\App\Http\Controllers\OwnerAnalyticsController::class, 'transaction']);
             Route::get('/menu',       [\App\Http\Controllers\OwnerAnalyticsController::class, 'menu']);
             Route::get('/branches',   [\App\Http\Controllers\OwnerAnalyticsController::class, 'branches']);
             Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);

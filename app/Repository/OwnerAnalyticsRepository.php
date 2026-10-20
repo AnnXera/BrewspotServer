@@ -8,6 +8,7 @@ use App\Models\MenuItem;
 use App\Models\Reservation;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -126,6 +127,82 @@ class OwnerAnalyticsRepository
             ->groupBy('payments.payment_method_type')
             ->selectRaw('payments.payment_method_type as method, COUNT(DISTINCT transactions.transaction_id) as orders, COALESCE(SUM(transactions.total_amount), 0) as amount')
             ->get();
+    }
+
+    // ── Transaction log ─────────────────────────────────────────────────
+
+    /** Status filter groups on the transaction log. The POS has written both "void" and "voided". */
+    public const LOG_STATUSES = [
+        'settled'  => self::SETTLED,
+        'refunded' => ['refunded'],
+        'void'     => ['void', 'voided'],
+    ];
+
+    /**
+     * Every sale rung up in the window, newest first, whatever its status.
+     * $search matches the receipt number, the note (refund approver and reason live
+     * there) or the cashier's name.
+     */
+    public function transactionLog(Collection $branchIds, Carbon $from, Carbon $to, ?string $status, ?string $search, int $perPage, int $page): LengthAwarePaginator
+    {
+        return Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->whereBetween('created_at', [$from, $to])
+            ->when($status, fn ($q) => $q->whereIn('status', self::LOG_STATUSES[$status]))
+            ->when($search, function ($q) use ($search) {
+                $like = '%' . addcslashes($search, '%_\\') . '%';
+                $q->where(function (Builder $w) use ($like) {
+                    $w->where('receipt_number', 'like', $like)
+                        ->orWhere('walk_in_note', 'like', $like)
+                        ->orWhereHas('staff.user', fn ($u) => $u
+                            ->where('firstname', 'like', $like)
+                            ->orWhere('lastname', 'like', $like));
+                });
+            })
+            ->with([
+                'staff.user:user_id,firstname,lastname',
+                'branch' => fn ($q) => $q->withTrashed()->select('branch_id', 'branch_name'),
+                'payments:payments_id,payable_type,payable_id,payment_method_type,created_at',
+            ])
+            ->withSum('items as items_quantity', 'quantity')
+            ->orderByDesc('created_at')
+            ->orderByDesc('transaction_id')
+            ->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    /**
+     * Sale count per log status group in the window, for the filter chips.
+     *
+     * @return array{all: int, settled: int, refunded: int, void: int}
+     */
+    public function transactionLogCounts(Collection $branchIds, Carbon $from, Carbon $to): array
+    {
+        $byStatus = Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->whereBetween('created_at', [$from, $to])
+            ->groupBy('status')
+            ->selectRaw('status, COUNT(*) as n')
+            ->toBase()
+            ->pluck('n', 'status');
+
+        $counts = ['all' => (int) $byStatus->sum()];
+        foreach (self::LOG_STATUSES as $group => $statuses) {
+            $counts[$group] = (int) $byStatus->only($statuses)->sum();
+        }
+
+        return $counts;
+    }
+
+    /**
+     * One sale by uuid, only if it belongs to one of the given branches.
+     */
+    public function findTransaction(Collection $branchIds, string $uuid): ?Transaction
+    {
+        return Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->where('uuid', $uuid)
+            ->with(['branch' => fn ($q) => $q->withTrashed()])
+            ->first();
     }
 
     public function discountTypes(Collection $branchIds, Carbon $from, Carbon $to): Collection
