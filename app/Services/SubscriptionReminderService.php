@@ -8,6 +8,7 @@ use App\Mail\SubscriptionExpiringMail;
 use App\Mail\SubscriptionRenewalOpenMail;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Notifications\OwnerNotice;
 use App\Repository\SubscriptionRepository;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Carbon;
@@ -21,6 +22,7 @@ class SubscriptionReminderService
 
     public function __construct(
         private readonly SubscriptionRepository $subscriptionRepo,
+        private readonly NotificationService $notifications,
     ) {}
 
     /**
@@ -42,6 +44,11 @@ class SubscriptionReminderService
                 renewUrl: $this->buildRenewUrl($subscription),
                 renewPlanName: $renewPlan?->sub_name ?? $subscription->plan->sub_name,
                 renewalOpensOn: $subscription->renewalOpensAt()?->format('F j, Y'),
+            ), OwnerNotice::subscriptionExpiring(
+                $subscription->uuid,
+                $subscription->plan->sub_name,
+                $subscription->end_date->format('F j, Y'),
+                $daysRemaining,
             ));
 
             $count += (int) $sent;
@@ -64,6 +71,10 @@ class SubscriptionReminderService
                 renewPlanName: $this->renewPlan($subscription)?->sub_name,
                 endDate: $subscription->end_date->format('F j, Y'),
                 renewUrl: $this->buildRenewUrl($subscription),
+            ), OwnerNotice::renewalOpen(
+                $subscription->uuid,
+                $this->renewPlan($subscription)?->sub_name ?? $subscription->plan->sub_name,
+                $subscription->end_date->format('F j, Y'),
             ));
 
             $count += (int) $sent;
@@ -86,6 +97,10 @@ class SubscriptionReminderService
                 renewPlanName: $this->renewPlan($subscription)?->sub_name,
                 endedOn: $subscription->end_date->format('F j, Y'),
                 renewUrl: $this->buildRenewUrl($subscription),
+            ), OwnerNotice::subscriptionExpired(
+                $subscription->uuid,
+                $subscription->plan->sub_name,
+                $subscription->end_date->format('F j, Y'),
             ));
 
             $count += (int) $sent;
@@ -95,15 +110,19 @@ class SubscriptionReminderService
     }
 
     /**
-     * Claims the notice and queues it. The job releases the claim if sending ultimately fails.
+     * Claims the notice, posts it to the owner's bell, and queues the email. The job releases
+     * the claim if sending ultimately fails; the bell notice's dedupe key keeps that retry
+     * from posting it twice.
      */
-    private function queue(Subscription $subscription, string $marker, callable $buildMail): bool
+    private function queue(Subscription $subscription, string $marker, callable $buildMail, OwnerNotice $notice): bool
     {
         $owner = $subscription->user;
 
         if (! $owner || ! $this->subscriptionRepo->claimNotice($subscription, $marker)) {
             return false;
         }
+
+        $this->notifications->notifyOwner($owner, $notice);
 
         /** @var Mailable $mail */
         $mail = $buildMail($owner);

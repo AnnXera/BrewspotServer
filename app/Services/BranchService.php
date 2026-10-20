@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\CafeBranchResource;
 use App\Models\User;
+use App\Notifications\BranchSubmittedForApproval;
 
 use App\Repository\BranchRepository;
 use App\Repository\SubscriptionRepository;
@@ -31,7 +32,8 @@ class BranchService
 
     public function __construct(
         private readonly BranchRepository $repo,
-        private readonly SubscriptionRepository $subscriptionRepo
+        private readonly SubscriptionRepository $subscriptionRepo,
+        private readonly NotificationService $notifications
     ) {}
 
     public function createBranch(User $owner, array $payload): array
@@ -74,9 +76,11 @@ class BranchService
         }
 
         $result = [];
+        $createdBranch = null;
+        $createdApproval = null;
 
         try {
-            DB::transaction(function () use ($owner, $cafe, $payload, &$result) {
+            DB::transaction(function () use ($owner, $cafe, $payload, &$result, &$createdBranch, &$createdApproval) {
 
                 $branch       = $this->repo->create($cafe->cafe_id, $payload);
                 $branchFolder = "users/{$owner->uuid}/cafes/{$cafe->uuid}/branches/{$branch->uuid}";
@@ -101,7 +105,8 @@ class BranchService
                     'vat'           => $payload['vat'],
                 ]);
 
-                $this->repo->createApprovalEntry($owner->user_id, $cafe->cafe_id, $branch->branch_id);
+                $createdApproval = $this->repo->createApprovalEntry($owner->user_id, $cafe->cafe_id, $branch->branch_id);
+                $createdBranch   = $branch;
 
                 Log::channel('owner')->info('Side branch submitted for approval.', [
                     'owner_uuid'  => $owner->uuid,
@@ -115,6 +120,13 @@ class BranchService
                     'branch'  => new CafeBranchResource($branch->load('documents')),
                 ];
             });
+
+            // Let admins know there's a branch waiting in Approvals (after commit, so it can't be rolled back)
+            if ($createdBranch && $createdApproval) {
+                $this->notifications->notifyAdmins(
+                    new BranchSubmittedForApproval($owner, $cafe, $createdBranch, $createdApproval)
+                );
+            }
 
             return $result;
 

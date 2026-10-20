@@ -13,9 +13,15 @@ use App\Mail\SubscriptionPaymentMail;
 use App\Mail\SubscriptionPlanChangedMail;
 use App\Mail\SubscriptionCancelledMail;
 use Illuminate\Support\Facades\Mail;
+use App\Notifications\OwnerNotice;
+use App\Services\NotificationService;
 
 class PayPalSubscriptionController extends Controller
 {
+    public function __construct(
+        private readonly NotificationService $notifications
+    ) {}
+
     /**
      * Store the initial subscription from the Nuxt frontend checkout
      */
@@ -45,6 +51,13 @@ class PayPalSubscriptionController extends Controller
             ]);
 
             if ($user) {
+                $this->notifications->notifyOwner($user, OwnerNotice::planChangeScheduled(
+                    $existingSub->uuid,
+                    $plan->sub_name,
+                    $existingSub->end_date ? $existingSub->end_date->format('F j, Y') : 'your next billing date',
+                    fromGateway: true,
+                ));
+
                 Mail::to($user->email)->send(new SubscriptionPlanChangedMail(
                     ownerName: $user->firstname ?? $user->username ?? 'there',
                     newPlanName: $plan->sub_name,
@@ -154,6 +167,13 @@ class PayPalSubscriptionController extends Controller
                     // Send receipt
                     $owner = $subscription->user;
                     if ($owner) {
+                        $this->notifications->notifyOwner($owner, OwnerNotice::paymentReceived(
+                            $subscription->uuid,
+                            $plan->sub_name ?? 'subscription',
+                            number_format($amount, 2),
+                            $newEndDate->format('F j, Y'),
+                        ));
+
                         Mail::to($owner->email)->send(new SubscriptionPaymentMail(
                             ownerName: $owner->firstname ?? $owner->username ?? 'there',
                             planName: $plan->sub_name ?? 'Unknown Plan',
@@ -187,6 +207,13 @@ class PayPalSubscriptionController extends Controller
 
                         $owner = $subscription->user;
                         if ($owner) {
+                            $this->notifications->notifyOwner($owner, OwnerNotice::planChangeScheduled(
+                                $subscription->uuid,
+                                $newPlan->sub_name,
+                                $subscription->end_date ? $subscription->end_date->format('F j, Y') : 'your next billing date',
+                                fromGateway: true,
+                            ));
+
                             Mail::to($owner->email)->send(new SubscriptionPlanChangedMail(
                                 ownerName: $owner->firstname ?? $owner->username ?? 'there',
                                 newPlanName: $newPlan->sub_name,
@@ -220,6 +247,13 @@ class PayPalSubscriptionController extends Controller
                         $owner = $sub->user;
                         $plan = SubscriptionPlan::find($sub->sub_plan_id);
                         if ($owner && $plan) {
+                            $this->notifications->notifyOwner($owner, OwnerNotice::subscriptionCancelled(
+                                $sub->uuid,
+                                $plan->sub_name,
+                                $sub->end_date ? $sub->end_date->format('F j, Y') : 'the end of your billing cycle',
+                                fromGateway: true,
+                            ));
+
                             Mail::to($owner->email)->send(new SubscriptionCancelledMail(
                                 ownerName: $owner->firstname ?? $owner->username ?? 'there',
                                 planName: $plan->sub_name,

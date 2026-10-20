@@ -6,6 +6,7 @@ use App\Contracts\MailAdapterInterface;
 use App\Http\Resources\UserResource;
 use App\Mail\RegistrationSubmittedMail;
 use App\Models\User;
+use App\Notifications\OwnerApplicationSubmitted;
 use App\Repository\RegistrationRepository;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ class RegistrationService
 {
     public function __construct(
         private readonly RegistrationRepository $repo,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly NotificationService $notifications
     ) {}
 
     public function register(User $user, array $payload): array
@@ -35,9 +37,10 @@ class RegistrationService
         $result = [];
         $createdCafe = null;
         $createdBranch = null;
+        $createdApproval = null;
 
         try {
-            DB::transaction(function () use ($user, $payload, &$result, &$createdCafe, &$createdBranch) {
+            DB::transaction(function () use ($user, $payload, &$result, &$createdCafe, &$createdBranch, &$createdApproval) {
 
                 $userFolder = 'users/' . $user->uuid;
 
@@ -101,7 +104,7 @@ class RegistrationService
                 ]);
 
                 // 8. Create approval entry for admin review
-                $this->repo->createApprovalEntry(
+                $createdApproval = $this->repo->createApprovalEntry(
                     $user->user_id,
                     $cafe->cafe_id,
                     $branch->branch_id
@@ -134,6 +137,13 @@ class RegistrationService
                         'error'     => $mailError->getMessage(),
                     ]);
                 }
+            }
+
+            // Let admins know there's an application waiting in Approvals
+            if (!empty($result['success']) && $createdCafe && $createdApproval) {
+                $this->notifications->notifyAdmins(
+                    new OwnerApplicationSubmitted($user->refresh(), $createdCafe, $createdApproval)
+                );
             }
 
             return $result;

@@ -35,6 +35,7 @@ use App\Http\Controllers\ServingOverviewController;
 use App\Http\Controllers\SpoilageController;
 
 use App\Http\Controllers\TempUploadController;
+use App\Http\Controllers\NotificationController;
 
 // Employees tab, registers and today's servings of one branch. Mounted under /owner and /manager,
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
@@ -117,6 +118,11 @@ Route::post('/upload/temp', [TempUploadController::class, 'upload']);
 Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // In-app notifications (navbar bell) for the signed-in user
+    Route::get('/notifications',            [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all',  [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     // Admin only
     Route::middleware('role:Admin')->prefix('admin')->group(function () {
