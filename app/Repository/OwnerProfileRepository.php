@@ -4,6 +4,7 @@ namespace App\Repository;
 
 use App\Models\Cafe;
 use App\Models\CafeBranch;
+use App\Models\CafeStaff;
 use App\Models\User;
 
 class OwnerProfileRepository
@@ -40,6 +41,11 @@ class OwnerProfileRepository
                         ->orWhereHas('cafe', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"));
                 });
             })
+            // Active managers only, for the "Manager" column on the branch list.
+            ->with(['staff' => fn ($q) => $q
+                ->where('employment_status', CafeStaff::STATUS_ACTIVE)
+                ->whereHas('user.role', fn ($r) => $r->where('role_name', 'Manager'))
+                ->with('user:user_id,firstname,lastname')])
             ->latest('created_at')
             ->paginate($perPage);
     }
