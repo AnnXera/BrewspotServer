@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Transaction;
+use App\Models\TransactionEvent;
 use App\Models\User;
 use App\Repository\OwnerAnalyticsRepository;
 use Illuminate\Support\Carbon;
@@ -180,32 +181,51 @@ class OwnerAnalyticsService
     }
 
     /** When a sale left the settled state (refund, void). Null while it still counts as income. */
+    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
     private function changedAt(Transaction $t): ?string
     {
-        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true) || ! $t->updated_at) {
+        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true)) {
             return null;
         }
 
-        return $t->updated_at->toISOString();
+        // Sales refunded before transaction_events existed fall back to their last update.
+        return ($this->lastEvent($t)?->created_at ?? $t->updated_at)?->toISOString();
     }
 
     /**
-     * Approver and reason of a refund. The POS records them only in the note, as
-     * "Refunded by First Last (Role): reason", appended after any earlier note.
+     * Who approved the refund or void, and why, from transaction_events. Refunds from
+     * before that table only have it in the note, as "Refunded by First Last (Role): reason".
      *
-     * @return array{by: string, role: string|null, reason: string|null}|null
+     * @return array{by: string, role: string|null, reason: string|null, restocked: bool|null}|null
      */
     private function refundInfo(Transaction $t): ?array
     {
+        if ($event = $this->lastEvent($t)) {
+            $user = $event->user;
+
+            return [
+                'by'        => $user ? trim("{$user->firstname} {$user->lastname}") : 'Deleted account',
+                'role'      => $user?->roleName(),
+                'reason'    => $event->reason,
+                'restocked' => $event->restocked,
+            ];
+        }
+
         if (! $t->walk_in_note || ! preg_match('/Refunded by (.+?)(?: \(([^)]*)\))?(?:: (.*))?$/s', $t->walk_in_note, $m)) {
             return null;
         }
 
         return [
-            'by'     => trim($m[1]),
-            'role'   => ($m[2] ?? '') !== '' ? $m[2] : null,
-            'reason' => isset($m[3]) && trim($m[3]) !== '' ? trim($m[3]) : null,
+            'by'        => trim($m[1]),
+            'role'      => ($m[2] ?? '') !== '' ? $m[2] : null,
+            'reason'    => isset($m[3]) && trim($m[3]) !== '' ? trim($m[3]) : null,
+            'restocked' => true, // before this was asked, every refund put its servings back
         ];
+    }
+
+    private function lastEvent(Transaction $t): ?TransactionEvent
+    {
+        return $t->events->sortByDesc('created_at')->first();
     }
 
     // ── Menu ─────────────────────────────────────────────────────────────
@@ -432,7 +452,7 @@ class OwnerAnalyticsService
     }
 
     /**
-     * Planned vs sold vs spoiled. Spoilage value is each entry's size price kept
+     * Planned vs sold vs spoiled vs refunded. Spoilage value is each entry's size price kept
      * when it was logged; spoilage with no entry behind it (recorded before
      * entries existed) is valued at the item's base price. Add-ons aren't counted.
      */
@@ -454,6 +474,7 @@ class OwnerAnalyticsService
                 'expected'        => $expected,
                 'sold'            => $sold,
                 'spoilage'        => $spoiled,
+                'refunded'        => (int) $servings->sum('refunded'), // made and served, then refunded
                 'spoilage_value'  => round((float) $servings->sum('spoilage_value'), 2),
                 'spoilage_change' => $spoiled === 0 && $previousSpoiled === 0 ? 0.0 : $this->change($spoiled, $previousSpoiled),
                 // How much of what was planned actually sold.
@@ -474,6 +495,7 @@ class OwnerAnalyticsService
                     'expected'       => (int) $row->expected,
                     'sold'           => (int) $row->sold,
                     'spoilage'       => (int) $row->spoilage,
+                    'refunded'       => (int) $row->refunded,
                     'spoilage_value' => round((float) $row->spoilage_value, 2),
                     'sold_out_days'  => (int) $row->sold_out_days,
                     'days'          => (int) $row->days,

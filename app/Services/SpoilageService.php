@@ -74,7 +74,7 @@ class SpoilageService
                 return ['success' => false, 'http' => 422, 'message' => 'This item has no servings set for today.'];
             }
 
-            $left = $serving->expected_servings - $serving->servings_sold - $serving->spoilage_qty;
+            $left = $serving->remaining();
 
             if ($quantity > $left) {
                 return [

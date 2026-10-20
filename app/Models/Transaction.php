@@ -54,6 +54,11 @@ class Transaction extends Model
         return $this->hasMany(TransactionItem::class, 'transaction_id', 'transaction_id');
     }
 
+    public function events(): HasMany
+    {
+        return $this->hasMany(TransactionEvent::class, 'transaction_id', 'transaction_id');
+    }
+
     public function payments(): MorphMany
     {
         return $this->morphMany(Payment::class, 'payable');

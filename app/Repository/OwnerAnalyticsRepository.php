@@ -163,6 +163,8 @@ class OwnerAnalyticsRepository
                 'staff.user:user_id,firstname,lastname',
                 'branch' => fn ($q) => $q->withTrashed()->select('branch_id', 'branch_name'),
                 'payments:payments_id,payable_type,payable_id,payment_method_type,created_at',
+                'events.user:user_id,firstname,lastname,role_id',
+                'events.user.role',
             ])
             ->withSum('items as items_quantity', 'quantity')
             ->orderByDesc('created_at')
@@ -201,7 +203,7 @@ class OwnerAnalyticsRepository
         return Transaction::query()
             ->whereIn('branch_id', $branchIds)
             ->where('uuid', $uuid)
-            ->with(['branch' => fn ($q) => $q->withTrashed()])
+            ->with(['branch' => fn ($q) => $q->withTrashed(), 'events.user.role'])
             ->first();
     }
 
@@ -334,7 +336,7 @@ class OwnerAnalyticsRepository
     }
 
     /**
-     * Daily servings planned vs sold vs spoiled, per menu item. Days of a
+     * Daily servings planned vs sold vs spoiled vs refunded, per menu item. Days of a
      * deleted item where nothing was sold or spoiled are left out (a plan
      * that never ran); days with activity stay, flagged `removed`.
      */
@@ -348,13 +350,15 @@ class OwnerAnalyticsRepository
             ->where(fn ($q) => $q
                 ->whereNull('menu_items.deleted_at')
                 ->orWhere('inventory_servings.servings_sold', '>', 0)
-                ->orWhere('inventory_servings.spoilage_qty', '>', 0))
+                ->orWhere('inventory_servings.spoilage_qty', '>', 0)
+                ->orWhere('inventory_servings.servings_refunded', '>', 0))
             ->groupBy('menu_items.uuid', 'menu_items.menu_name')
             ->selectRaw('menu_items.uuid, menu_items.menu_name,
                 MAX(CASE WHEN menu_items.deleted_at IS NULL THEN 0 ELSE 1 END) as removed,
                 SUM(inventory_servings.expected_servings) as expected,
                 SUM(inventory_servings.servings_sold) as sold,
                 SUM(inventory_servings.spoilage_qty) as spoilage,
+                SUM(inventory_servings.servings_refunded) as refunded,
                 MAX(menu_items.base_price) as base_price,
                 SUM(CASE WHEN inventory_servings.is_sold_out THEN 1 ELSE 0 END) as sold_out_days,
                 COUNT(*) as days')

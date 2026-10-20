@@ -39,6 +39,7 @@ class ServingService
                 'expected_servings' => $servings->sum('expected_servings'),
                 'servings_sold'     => $servings->sum('servings_sold'),
                 'spoilage_qty'      => $servings->sum('spoilage_qty'),
+                'servings_refunded' => $servings->sum('servings_refunded'),
                 'sold_out'          => $servings->filter(fn (InventoryServing $s) => $s->is_sold_out)->count(),
             ],
             'servings' => InventoryServingResource::collection($servings),
@@ -120,13 +121,11 @@ class ServingService
         }
 
         $expected = $payload['expected_servings'] ?? $serving->expected_servings;
-        $spoilage = $serving->spoilage_qty;
-
-        if ($serving->servings_sold + $spoilage > $expected) {
+        if ($serving->used() > $expected) {
             return [
                 'success' => false,
                 'http'    => 422,
-                'message' => "Expected servings can't be lower than servings sold ({$serving->servings_sold}) plus spoilage ({$spoilage}).",
+                'message' => "Expected servings can't be lower than the {$serving->used()} already used today ({$this->usedBreakdown($serving)}).",
             ];
         }
 
@@ -200,10 +199,10 @@ class ServingService
             $serving = $servings->get($item->men_item_id);
             $limit   = (int) $row['daily_limit'];
 
-            if ($serving && $serving->servings_sold + $serving->spoilage_qty > $limit) {
+            if ($serving && $serving->used() > $limit) {
                 $errors["items.$i.daily_limit"][] = $limit === 0
                     ? "{$item->menu_name} already has sales today, so its limit can't be 0."
-                    : "{$item->menu_name}: the limit can't be lower than servings sold ({$serving->servings_sold}) plus spoilage ({$serving->spoilage_qty}).";
+                    : "{$item->menu_name}: the limit can't be lower than the {$serving->used()} already used today ({$this->usedBreakdown($serving)}).";
                 continue;
             }
 
@@ -259,11 +258,11 @@ class ServingService
             return $this->notFound();
         }
 
-        if ($serving->servings_sold > 0 || $serving->spoilage_qty > 0) {
+        if ($serving->used() > 0) {
             return [
                 'success' => false,
                 'http'    => 422,
-                'message' => 'This item already has sales or spoilage today and can\'t be removed. Mark it as sold out instead.',
+                'message' => 'This item already has sales, spoilage or refunds today and can\'t be removed. Mark it as sold out instead.',
             ];
         }
 
@@ -276,6 +275,16 @@ class ServingService
         ]);
 
         return ['success' => true, 'message' => 'Menu item removed from today\'s servings.'];
+    }
+
+    /** "3 sold, 1 spoiled, 1 refunded", leaving out the zeros. */
+    private function usedBreakdown(InventoryServing $s): string
+    {
+        return collect([
+            'sold'     => $s->servings_sold,
+            'spoiled'  => $s->spoilage_qty,
+            'refunded' => $s->servings_refunded,
+        ])->filter()->map(fn ($n, $label) => "{$n} {$label}")->join(', ');
     }
 
     private function today(): Carbon

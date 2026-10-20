@@ -187,6 +187,7 @@ class PosDeviceController extends Controller
             'manager_uuid' => 'required|string',
             'pin'          => 'required|string',
             'reason'       => 'nullable|string|max:255',
+            'restock'      => 'nullable|boolean', // true: never made, servings go back on sale
         ]);
 
         return $this->respond($this->service->refund(
@@ -194,7 +195,8 @@ class PosDeviceController extends Controller
             $transactionUuid,
             $request->input('manager_uuid'),
             $request->input('pin'),
-            $request->input('reason')
+            $request->input('reason'),
+            $request->boolean('restock')
         ));
     }
 }

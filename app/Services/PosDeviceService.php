@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Transaction;
+use App\Models\TransactionEvent;
 use App\Models\TransactionItem;
 use App\Models\Payment;
 use App\Http\Resources\MenuCategoryResource;
@@ -259,7 +260,7 @@ class PosDeviceService
                 $s = $servings->get($item->men_item_id);
 
                 return [$item->men_item_id => ($s && ! $s->is_sold_out)
-                    ? max(0, $s->expected_servings - $s->servings_sold - $s->spoilage_qty)
+                    ? $s->remaining()
                     : 0];
             });
     }
@@ -460,13 +461,14 @@ class PosDeviceService
                         'expected_servings' => 0,
                         'servings_sold' => 0,
                         'spoilage_qty' => 0,
+                        'servings_refunded' => 0,
                         'is_sold_out' => false,
                     ]
                 );
 
                 $serving->increment('servings_sold', $itemData['quantity']);
 
-                if ($serving->expected_servings > 0 && $serving->servings_sold >= $serving->expected_servings) {
+                if ($serving->isUsedUp()) {
                     $serving->update(['is_sold_out' => true]);
                 }
 
@@ -673,8 +675,10 @@ class PosDeviceService
 
     /**
      * Process a refund for a completed transaction, requiring manager PIN authorization.
+     * $restock: the order was never made, so its servings go back on sale. Otherwise
+     * they were made and served, and count as refunded (still used up).
      */
-    public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
+    public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null, bool $restock = false): array
     {
         if (! $device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
@@ -729,7 +733,7 @@ class PosDeviceService
             ];
         }
 
-        DB::transaction(function () use ($transaction, $device, $managerUser, $reason) {
+        DB::transaction(function () use ($transaction, $device, $managerUser, $reason, $restock) {
             $actorRole = $managerUser->roleName() ?: 'Manager';
             $refundNote = "Refunded by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
             if (! empty($reason)) {
@@ -744,22 +748,44 @@ class PosDeviceService
                 'walk_in_note' => $refundNote,
             ]);
 
+            $transaction->events()->create([
+                'event'     => TransactionEvent::REFUNDED,
+                'user_id'   => $managerUser->user_id,
+                'reason'    => ! empty($reason) ? trim($reason) : null,
+                'restocked' => $restock,
+            ]);
+
             // Update associated payments to refunded
             $transaction->payments()->update(['status' => 'refunded']);
 
-            // Restore daily inventory servings sold
+            // Take the servings off the day's sold count. Made servings can't be sold
+            // again, so they move to servings_refunded and what's left stays the same;
+            // servings never made go back on sale.
             foreach ($transaction->items as $item) {
                 $serving = \App\Models\InventoryServing::where('men_item_id', $item->men_item_id)
                     ->where('branch_id', $device->branch_id)
                     ->where('date', $transaction->created_at->toDateString())
+                    ->lockForUpdate()
                     ->first();
 
-                if ($serving) {
-                    $serving->decrement('servings_sold', min($serving->servings_sold, (int) $item->quantity));
-                    if ($serving->is_sold_out && $serving->servings_sold < $serving->expected_servings) {
-                        $serving->update(['is_sold_out' => false]);
-                    }
+                $qty = $serving ? min($serving->servings_sold, (int) $item->quantity) : 0;
+                if ($qty <= 0) {
+                    continue;
                 }
+
+                $ranOut = $serving->isUsedUp();
+                $serving->servings_sold -= $qty;
+
+                if ($restock) {
+                    // Sold out only because it ran out (not switched off by a manager): back on sale.
+                    if ($serving->is_sold_out && $ranOut && ! $serving->isUsedUp()) {
+                        $serving->is_sold_out = false;
+                    }
+                } else {
+                    $serving->servings_refunded += $qty;
+                }
+
+                $serving->save();
             }
         });
 
@@ -770,6 +796,7 @@ class PosDeviceService
             'manager_uuid'     => $managerUser->uuid,
             'manager_name'     => "{$managerUser->firstname} {$managerUser->lastname}",
             'reason'           => $reason,
+            'restocked'        => $restock,
         ]);
 
         return [

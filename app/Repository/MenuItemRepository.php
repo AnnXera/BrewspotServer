@@ -195,6 +195,7 @@ class MenuItemRepository
                 ->whereDate('date', '>=', today())
                 ->where('servings_sold', 0)
                 ->where('spoilage_qty', 0)
+                ->where('servings_refunded', 0)
                 ->delete();
 
             $item->delete();
