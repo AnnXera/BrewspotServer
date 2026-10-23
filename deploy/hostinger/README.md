@@ -47,16 +47,27 @@ Do **not** run `config:cache`: `PayPalSubscriptionController` reads `env()` dire
 
 The admin seeded by `AdminSeeder` uses the password from the seeder file. Log in and change it immediately.
 
-## 5. Permanent cron job (Custom, every minute)
+## 5. Permanent cron jobs (Custom, every minute)
 
-hPanel rejects commands containing `[ ]` or `{ }`, and there is no "every minute" preset:
-set each of Minute/Hour/Day/Month/Weekday to its `(*)` option.
-
-One job runs the scheduler, then drains the queue (subscription emails) for up to 45 seconds:
+Two jobs, one plain command each with absolute paths:
 
 ```
-cd /home/<user>/brewspot-api && /usr/bin/php artisan schedule:run > storage/logs/schedule.log 2>&1; /usr/bin/php artisan queue:work --stop-when-empty --max-time=45 > /dev/null 2>&1
+/usr/bin/php /home/<user>/brewspot-api/artisan schedule:run
 ```
+
+```
+/usr/bin/php /home/<user>/brewspot-api/artisan queue:work --stop-when-empty --max-time=45
+```
+
+The queue sends mail that is queued (login 2FA codes, subscription notices); without the second
+job those emails sit in the `jobs` table forever.
+
+hPanel quirks found on the Single plan:
+- At most 2 cron jobs; a third is silently not saved.
+- Commands over ~255 characters, or containing `[ ]` / `{ }`, are silently not saved.
+- `cd ... &&`, `;` chains and `>` redirection don't behave as in a shell: only use single commands
+  with absolute paths. Output shows under "View Output".
+- No "every minute" preset: set each of Minute/Hour/Day/Month/Weekday to its `(*)` option.
 
 ## 6. Check
 
