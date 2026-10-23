@@ -110,6 +110,10 @@ The paths depend on where the FTP account starts. If its root is the home folder
 `brewspot-api/` and `domains/<domain>/public_html/`. If it starts inside `public_html`, the API
 folder is unreachable: create an FTP account whose directory is the home folder instead.
 
-The first run uploads everything (the API has ~7,700 files, so allow 10-20 minutes); later runs
-only upload changes. `backend/index.php` and `.env` are never touched; re-upload `backend/index.php`
-by hand if it ever changes. Seeders are not run automatically.
+The first run uploads all app files (a few hundred); later runs only upload changes.
+`backend/index.php` and `.env` are never touched; re-upload `backend/index.php` by hand if it ever
+changes. Seeders are not run automatically.
+
+**`vendor/` is not auto-deployed.** It is ~7,000 files, and Hostinger closes FTP sessions after about
+an hour, before a full upload finishes. When `composer.lock` changes (the server workflow shows a
+warning), run `build.ps1` and extract `brewspot-api.zip` over `brewspot-api/` with "Overwrite" checked.

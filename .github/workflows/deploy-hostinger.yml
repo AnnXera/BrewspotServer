@@ -21,6 +21,17 @@ jobs:
       FTP_DIR: ${{ vars.FTP_API_DIR }}
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      # vendor/ (~7,000 files) is not uploaded: Hostinger drops FTP sessions after about an hour.
+      # When composer.lock changes, upload vendor/ by hand (deploy/hostinger/README.md).
+      - name: Warn if Composer dependencies changed
+        if: github.event_name == 'push'
+        run: |
+          if ! git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- composer.lock; then
+            echo "::warning::composer.lock changed, but vendor/ is not auto-deployed. Upload vendor/ by hand (see deploy/hostinger/README.md)."
+          fi
 
       - uses: shivammathur/setup-php@2.40.0
         with:
@@ -65,6 +76,7 @@ jobs:
             deploy/**
             tests/**
             storage/**
+            vendor/**
             .env
             .env.*
 
