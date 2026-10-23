@@ -309,3 +309,13 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
 
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);
+// CI deploy hook: run pending migrations on hosts without SSH (see deploy/hostinger/README.md).
+Route::post('/deploy/migrate', function (\Illuminate\Http\Request $request) {
+    $token = config('app.deploy_token');
+    abort_unless($token && hash_equals($token, (string) $request->header('X-Deploy-Token')), 404);
+
+    $code = \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+
+    return response(\Illuminate\Support\Facades\Artisan::output(), $code === 0 ? 200 : 500)
+        ->header('Content-Type', 'text/plain');
+});

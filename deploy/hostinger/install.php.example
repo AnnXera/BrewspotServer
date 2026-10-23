@@ -1,0 +1,64 @@
+<?php
+
+// One-time installer for Hostinger (no SSH). Copy to public_html/install-<random hex>.php and open
+//   ?log=1   tail of laravel.log and schedule.log
+//   ?run=1   migrate + seed, then delete this file
+// No storage:link step: Hostinger disables symlink()/exec(), so the public disk is served by
+// Laravel instead ('serve' => true in config/filesystems.php).
+
+header('Content-Type: text/plain; charset=utf-8');
+set_time_limit(300);
+
+$basePath = null;
+for ($dir = __DIR__; $dir !== dirname($dir); $dir = dirname($dir)) {
+    if (is_file($dir.'/brewspot-api/artisan')) {
+        $basePath = $dir.'/brewspot-api';
+        break;
+    }
+}
+if ($basePath === null) {
+    exit('brewspot-api not found');
+}
+
+echo 'PHP '.PHP_VERSION."\n";
+
+if (isset($_GET['log'])) {
+    $log = $basePath.'/storage/logs/laravel.log';
+    echo is_file($log) ? substr(file_get_contents($log), -6000) : 'no laravel.log';
+    $schedule = $basePath.'/storage/logs/schedule.log';
+    echo "\n\nschedule.log:\n".(is_file($schedule) ? substr(file_get_contents($schedule), -2000) : '(missing)');
+    exit;
+}
+
+if (! isset($_GET['run'])) {
+    exit('nothing to do');
+}
+
+require $basePath.'/vendor/autoload.php';
+$app = require $basePath.'/bootstrap/app.php';
+$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->bootstrap();
+
+$commands = [
+    ['migrate', ['--force' => true]],
+    ['db:seed', ['--class' => 'RoleSeeder', '--force' => true]],
+    ['db:seed', ['--class' => 'AdminSeeder', '--force' => true]],
+    ['db:seed', ['--class' => 'FeatureSeeder', '--force' => true]],
+    ['db:seed', ['--class' => 'SubscriptionPlanSeeder', '--force' => true]],
+];
+
+foreach ($commands as [$name, $params]) {
+    echo "\n> $name ".json_encode($params)."\n";
+    try {
+        $code = $kernel->call($name, $params);
+    } catch (Throwable $e) {
+        exit('FAILED: '.get_class($e).': '.$e->getMessage());
+    }
+    echo $kernel->output();
+    if ($code !== 0) {
+        exit("FAILED with exit code $code");
+    }
+}
+
+echo "\nAll done.";
+echo @unlink(__FILE__) ? ' Installer deleted itself.' : ' Could not delete installer: delete it manually.';
