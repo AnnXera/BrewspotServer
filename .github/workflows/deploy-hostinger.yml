@@ -1,0 +1,66 @@
+# Builds the Laravel API and deploys it to Hostinger over FTP, then runs pending migrations.
+# Setup (secrets and variables): deploy/hostinger/README.md, "Auto-deploy with GitHub Actions".
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hostinger-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_DIR: ${{ vars.FTP_API_DIR }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: shivammathur/setup-php@2.40.0
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install production dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      # Refuse to upload unless FTP_API_DIR points at the existing Laravel folder (it must contain artisan).
+      - name: Check FTP target folder
+        run: |
+          listing=$(curl --silent --show-error --ssl --list-only --user "$FTP_USERNAME:$FTP_PASSWORD" "ftp://$FTP_SERVER/$FTP_DIR") || exit 1
+          if ! printf '%s\n' "$listing" | grep -qx artisan; then
+            echo "::error::No 'artisan' in '$FTP_DIR' on the FTP server. Set the FTP_API_DIR variable to the brewspot-api folder as seen from the FTP root."
+            exit 1
+          fi
+
+      - uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          server-dir: ${{ vars.FTP_API_DIR }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            .github/**
+            .claude/**
+            deploy/**
+            tests/**
+            storage/**
+            .env
+            .env.*
+
+      - name: Run migrations
+        run: |
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "X-Deploy-Token: ${{ secrets.DEPLOY_TOKEN }}" \
+            "${{ vars.SITE_URL }}/api/deploy/migrate"

@@ -25,10 +25,14 @@ class StoreBranchRequest extends FormRequest
                 $digits = preg_replace('/\D/', '', $raw);
                 if (str_starts_with($digits, '09')) {
                     $digits = substr($digits, 1);
+                    $this->merge(['cafe_phonenumber' => '+63' . $digits]);
                 } elseif (str_starts_with($digits, '639')) {
                     $digits = substr($digits, 2);
+                    $this->merge(['cafe_phonenumber' => '+63' . $digits]);
+                } else {
+                    // For landlines, keep as is (raw)
+                    $this->merge(['cafe_phonenumber' => $raw]);
                 }
-                $this->merge(['cafe_phonenumber' => '+63' . $digits]);
             }
         }
 
@@ -53,6 +57,7 @@ class StoreBranchRequest extends FormRequest
             'address'              => ['required', 'string'],
             'bir_file'             => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bir_registered_at'    => ['required', 'date'],
+            'bir_expired_at'       => ['nullable', 'date', 'after_or_equal:bir_registered_at'],
             'tin_number'           => [
                 'required',
                 'string',

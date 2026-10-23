@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Transaction;
+use App\Models\TransactionEvent;
 use App\Models\User;
 use App\Repository\OwnerAnalyticsRepository;
 use Illuminate\Support\Carbon;
@@ -18,7 +20,8 @@ use Illuminate\Support\Collection;
 class OwnerAnalyticsService
 {
     public function __construct(
-        private readonly OwnerAnalyticsRepository $repo
+        private readonly OwnerAnalyticsRepository $repo,
+        private readonly ManagerDashboardService $managerDashboard
     ) {}
 
     // ── Sales ────────────────────────────────────────────────────────────
@@ -74,7 +77,7 @@ class OwnerAnalyticsService
             ],
             'granularity' => $granularity,
             'series'      => $this->series($granularity, $days, $from, $to),
-            'heatmap'     => $this->heatmap($this->repo->hourlyTotals($ids, $from, $to)),
+            'heatmap'     => $this->repo->hourlyGrid($ids, $from, $to),
             'payments'    => $payments
                 ->map(fn ($row) => [
                     'method' => $row->method ?: 'unknown',
@@ -95,6 +98,134 @@ class OwnerAnalyticsService
                 ->values()
                 ->all(),
         ];
+    }
+
+    // ── Transaction log (Sales tab) ──────────────────────────────────────
+
+    /**
+     * Every sale in the window, newest first, with who rang it up and, for refunds,
+     * who approved it and when. Paged; status and search narrow it.
+     */
+    public function transactions(User $owner, array $filters): array
+    {
+        $scope = $this->scope($owner, $filters);
+        if (isset($scope['error'])) {
+            return $scope['error'];
+        }
+
+        $page = $this->repo->transactionLog(
+            $scope['branch_ids'],
+            $scope['from'],
+            $scope['to'],
+            $filters['status'] ?? null,
+            isset($filters['search']) ? trim($filters['search']) : null,
+            (int) ($filters['per_page'] ?? 20),
+            (int) ($filters['page'] ?? 1),
+        );
+
+        return [
+            'success'      => true,
+            'filters'      => $this->filtersOut($scope),
+            'counts'       => $this->repo->transactionLogCounts($scope['branch_ids'], $scope['from'], $scope['to']),
+            'transactions' => collect($page->items())->map(fn (Transaction $t) => $this->logRow($t))->all(),
+            'pagination'   => [
+                'page'      => $page->currentPage(),
+                'per_page'  => $page->perPage(),
+                'total'     => $page->total(),
+                'last_page' => $page->lastPage(),
+            ],
+        ];
+    }
+
+    /**
+     * One sale's receipt, if it belongs to one of the owner's branches.
+     */
+    public function transaction(User $owner, string $uuid): array
+    {
+        $branchIds = $this->repo->branchesByOwner($owner->user_id)->pluck('branch_id');
+        $t         = $this->repo->findTransaction($branchIds, $uuid);
+
+        if (! $t) {
+            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
+        }
+
+        $res = $this->managerDashboard->transaction($t->branch, $uuid);
+        if (! empty($res['transaction'])) {
+            $res['transaction']['branch_name'] = $t->branch?->branch_name;
+            $res['transaction']['changed_at']  = $this->changedAt($t);
+            $res['transaction']['refund']      = $this->refundInfo($t);
+        }
+
+        return $res;
+    }
+
+    private function logRow(Transaction $t): array
+    {
+        $payment = $t->payments->sortByDesc('created_at')->first();
+
+        return [
+            'uuid'            => $t->uuid,
+            'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
+            'created_at'      => $t->created_at->toISOString(),
+            'changed_at'      => $this->changedAt($t),
+            'branch'          => $t->branch?->branch_name,
+            'cashier'         => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : null,
+            'items'           => (int) $t->items_quantity,
+            'payment_method'  => $payment?->payment_method_type,
+            'discount_type'   => (float) $t->discount_amount > 0 ? $t->discount_type : null,
+            'discount_amount' => round((float) $t->discount_amount, 2),
+            'total_amount'    => round((float) $t->total_amount, 2),
+            'status'          => $t->status,
+            'refund'          => $this->refundInfo($t),
+        ];
+    }
+
+    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
+    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
+    private function changedAt(Transaction $t): ?string
+    {
+        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true)) {
+            return null;
+        }
+
+        // Sales refunded before transaction_events existed fall back to their last update.
+        return ($this->lastEvent($t)?->created_at ?? $t->updated_at)?->toISOString();
+    }
+
+    /**
+     * Who approved the refund or void, and why, from transaction_events. Refunds from
+     * before that table only have it in the note, as "Refunded by First Last (Role): reason".
+     *
+     * @return array{by: string, role: string|null, reason: string|null, restocked: bool|null}|null
+     */
+    private function refundInfo(Transaction $t): ?array
+    {
+        if ($event = $this->lastEvent($t)) {
+            $user = $event->user;
+
+            return [
+                'by'        => $user ? trim("{$user->firstname} {$user->lastname}") : 'Deleted account',
+                'role'      => $user?->roleName(),
+                'reason'    => $event->reason,
+                'restocked' => $event->restocked,
+            ];
+        }
+
+        if (! $t->walk_in_note || ! preg_match('/Refunded by (.+?)(?: \(([^)]*)\))?(?:: (.*))?$/s', $t->walk_in_note, $m)) {
+            return null;
+        }
+
+        return [
+            'by'        => trim($m[1]),
+            'role'      => ($m[2] ?? '') !== '' ? $m[2] : null,
+            'reason'    => isset($m[3]) && trim($m[3]) !== '' ? trim($m[3]) : null,
+            'restocked' => true, // before this was asked, every refund put its servings back
+        ];
+    }
+
+    private function lastEvent(Transaction $t): ?TransactionEvent
+    {
+        return $t->events->sortByDesc('created_at')->first();
     }
 
     // ── Menu ─────────────────────────────────────────────────────────────
@@ -269,7 +400,31 @@ class OwnerAnalyticsService
                 ->values()
                 ->take(12)
                 ->all(),
-            'reservations' => $this->reservationStats($reservations),
+            'reservations' => $this->reservationStats($reservations) + [
+                'upcoming' => $this->upcomingReservations($ids),
+            ],
+        ];
+    }
+
+    /** Pending and confirmed bookings from now through the next 14 days. */
+    private function upcomingReservations(Collection $ids): array
+    {
+        $days = 14;
+        $rows = $this->repo->upcomingReservations($ids, Carbon::now(), Carbon::today()->addDays($days - 1)->endOfDay());
+
+        return [
+            'days'    => $days,
+            'total'   => $rows->count(),
+            'guests'  => (int) $rows->sum('party_size'),
+            'pending' => $rows->where('status', 'pending')->count(),
+            'next'    => $rows->take(5)->map(fn ($r) => [
+                'uuid'       => $r->uuid,
+                'date'       => Carbon::parse($r->reservation_date)->toIso8601String(),
+                'party_size' => (int) $r->party_size,
+                'status'     => $r->status,
+                'table'      => $r->table_name,
+                'branch'     => $r->branch_name,
+            ])->values()->all(),
         ];
     }
 
@@ -297,7 +452,7 @@ class OwnerAnalyticsService
     }
 
     /**
-     * Planned vs sold vs spoiled. Spoilage value is each entry's size price kept
+     * Planned vs sold vs spoiled vs refunded. Spoilage value is each entry's size price kept
      * when it was logged; spoilage with no entry behind it (recorded before
      * entries existed) is valued at the item's base price. Add-ons aren't counted.
      */
@@ -319,6 +474,7 @@ class OwnerAnalyticsService
                 'expected'        => $expected,
                 'sold'            => $sold,
                 'spoilage'        => $spoiled,
+                'refunded'        => (int) $servings->sum('refunded'), // made and served, then refunded
                 'spoilage_value'  => round((float) $servings->sum('spoilage_value'), 2),
                 'spoilage_change' => $spoiled === 0 && $previousSpoiled === 0 ? 0.0 : $this->change($spoiled, $previousSpoiled),
                 // How much of what was planned actually sold.
@@ -339,6 +495,7 @@ class OwnerAnalyticsService
                     'expected'       => (int) $row->expected,
                     'sold'           => (int) $row->sold,
                     'spoilage'       => (int) $row->spoilage,
+                    'refunded'       => (int) $row->refunded,
                     'spoilage_value' => round((float) $row->spoilage_value, 2),
                     'sold_out_days'  => (int) $row->sold_out_days,
                     'days'          => (int) $row->days,
@@ -505,26 +662,6 @@ class OwnerAnalyticsService
         }
 
         return $buckets;
-    }
-
-    /**
-     * 7 x 24 grid (weekday 0 = Sunday), every cell present.
-     */
-    private function heatmap(Collection $rows): array
-    {
-        $grid = [];
-        for ($d = 0; $d < 7; $d++) {
-            $grid[$d] = array_fill(0, 24, ['orders' => 0, 'revenue' => 0.0]);
-        }
-
-        foreach ($rows as $row) {
-            $grid[(int) $row->weekday][(int) $row->hour] = [
-                'orders'  => (int) $row->orders,
-                'revenue' => round((float) $row->revenue, 2),
-            ];
-        }
-
-        return $grid;
     }
 
     private function withShare(Collection $rows, string $key): array

@@ -14,20 +14,26 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('transaction_items', function (Blueprint $table) {
-            $table->foreignId('men_size_id')->nullable()->after('men_item_id')
-                ->constrained('menu_item_sizes', 'men_size_id')->nullOnDelete();
-            $table->string('size_name', 50)->nullable()->after('men_size_id');
+            if (!Schema::hasColumn('transaction_items', 'men_size_id')) {
+                $table->foreignId('men_size_id')->nullable()->after('men_item_id')
+                    ->constrained('menu_item_sizes', 'men_size_id')->nullOnDelete();
+            }
+            if (!Schema::hasColumn('transaction_items', 'size_name')) {
+                $table->string('size_name', 50)->nullable()->after('men_size_id');
+            }
         });
 
-        Schema::create('transaction_item_addons', function (Blueprint $table) {
-            $table->id('transaction_item_addon_id');
-            $table->foreignId('transaction_item_id')->constrained('transaction_items', 'transaction_item_id')->onDelete('cascade');
-            $table->foreignId('addon_id')->nullable()->constrained('menu_addons', 'addon_id')->nullOnDelete();
-            $table->string('addon_name', 100);
-            $table->decimal('price', 10, 2);   // one serving of the add-on
-            $table->unsignedTinyInteger('quantity'); // per drink
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('transaction_item_addons')) {
+            Schema::create('transaction_item_addons', function (Blueprint $table) {
+                $table->id('transaction_item_addon_id');
+                $table->foreignId('transaction_item_id')->constrained('transaction_items', 'transaction_item_id')->onDelete('cascade');
+                $table->foreignId('addon_id')->nullable()->constrained('menu_addons', 'addon_id')->nullOnDelete();
+                $table->string('addon_name', 100);
+                $table->decimal('price', 10, 2);   // one serving of the add-on
+                $table->unsignedTinyInteger('quantity'); // per drink
+                $table->timestamps();
+            });
+        }
     }
 
     public function down(): void

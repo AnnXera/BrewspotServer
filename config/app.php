@@ -125,4 +125,7 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
 
+    // Shared secret for POST /api/deploy/migrate (CI deploys on hosts without SSH). Unset = disabled.
+    'deploy_token' => env('DEPLOY_TOKEN'),
+
 ];

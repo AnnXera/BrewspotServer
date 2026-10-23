@@ -8,6 +8,7 @@ use App\Mail\SubscriptionPlanChangedMail;
 use App\Services\PaymentGatewayManager;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Notifications\OwnerNotice;
 use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionPlanRepository;
 use App\Repository\SubscriptionRepository;
@@ -28,7 +29,8 @@ class SubscriptionCheckoutService
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly PaymentRepository $paymentRepo,
         private readonly PaymentGatewayManager $paymentManager,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly NotificationService $notifications
     ) {}
 
     public function createCheckout(User $owner, string $planUuid, string $billingCycle = 'monthly', string $gateway = 'paymongo'): array
@@ -278,6 +280,11 @@ class SubscriptionCheckoutService
 
         $payableFrom = $current->renewalOpensAt()?->format('F j, Y');
 
+        $this->notifications->notifyOwner(
+            $owner,
+            OwnerNotice::planChangeScheduled($current->uuid, $plan->sub_name, $effective)
+        );
+
         // Written confirmation of the booking. Gateway-managed subscriptions bill themselves;
         // everyone else is told up front that they will have to pay, and when.
         $this->mailer->sendMailable($owner->email, new SubscriptionPlanChangedMail(
@@ -359,6 +366,11 @@ class SubscriptionCheckoutService
             'subscription_uuid' => $current->uuid,
             'access_until'      => $current->end_date?->toDateString(),
         ]);
+
+        $this->notifications->notifyOwner(
+            $owner,
+            OwnerNotice::subscriptionCancelled($current->uuid, $current->plan?->sub_name ?? 'subscription', $endsOn)
+        );
 
         $this->mailer->sendMailable($owner->email, new SubscriptionCancelledMail(
             ownerName: $owner->firstname ?? $owner->username ?? 'there',

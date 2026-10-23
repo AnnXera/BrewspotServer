@@ -62,6 +62,26 @@ class PosFloorPlanController extends Controller
         return $this->respond($this->reservations->list($request->user()->branch, $filters));
     }
 
+    /**
+     * PATCH /api/pos/device/reservations/{reservationUuid}/status
+     */
+    public function reservationStatus(Request $request, string $reservationUuid): JsonResponse
+    {
+        if ($locked = $this->unlocked($request)) {
+            return $locked;
+        }
+
+        $validated = $request->validate([
+            'status' => 'required|in:confirmed,seated,completed,cancelled,no_show',
+        ]);
+
+        return $this->respond($this->reservations->updateStatus(
+            $request->user()->branch,
+            $reservationUuid,
+            $validated['status']
+        ));
+    }
+
     /** A 423 response while nobody has unlocked the register, otherwise null. */
     private function unlocked(Request $request): ?JsonResponse
     {

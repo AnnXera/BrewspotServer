@@ -8,6 +8,7 @@ use App\Models\MenuItem;
 use App\Models\Reservation;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -95,6 +96,26 @@ class OwnerAnalyticsRepository
             ->get();
     }
 
+    /**
+     * hourlyTotals as a 7 x 24 grid (weekday 0 = Sunday), every cell present.
+     */
+    public function hourlyGrid(Collection $branchIds, Carbon $from, Carbon $to): array
+    {
+        $grid = [];
+        for ($d = 0; $d < 7; $d++) {
+            $grid[$d] = array_fill(0, 24, ['orders' => 0, 'revenue' => 0.0]);
+        }
+
+        foreach ($this->hourlyTotals($branchIds, $from, $to) as $row) {
+            $grid[(int) $row->weekday][(int) $row->hour] = [
+                'orders'  => (int) $row->orders,
+                'revenue' => round((float) $row->revenue, 2),
+            ];
+        }
+
+        return $grid;
+    }
+
     public function paymentMethods(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
         return DB::table('payments')
@@ -106,6 +127,84 @@ class OwnerAnalyticsRepository
             ->groupBy('payments.payment_method_type')
             ->selectRaw('payments.payment_method_type as method, COUNT(DISTINCT transactions.transaction_id) as orders, COALESCE(SUM(transactions.total_amount), 0) as amount')
             ->get();
+    }
+
+    // ── Transaction log ─────────────────────────────────────────────────
+
+    /** Status filter groups on the transaction log. The POS has written both "void" and "voided". */
+    public const LOG_STATUSES = [
+        'settled'  => self::SETTLED,
+        'refunded' => ['refunded'],
+        'void'     => ['void', 'voided'],
+    ];
+
+    /**
+     * Every sale rung up in the window, newest first, whatever its status.
+     * $search matches the receipt number, the note (refund approver and reason live
+     * there) or the cashier's name.
+     */
+    public function transactionLog(Collection $branchIds, Carbon $from, Carbon $to, ?string $status, ?string $search, int $perPage, int $page): LengthAwarePaginator
+    {
+        return Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->whereBetween('created_at', [$from, $to])
+            ->when($status, fn ($q) => $q->whereIn('status', self::LOG_STATUSES[$status]))
+            ->when($search, function ($q) use ($search) {
+                $like = '%' . addcslashes($search, '%_\\') . '%';
+                $q->where(function (Builder $w) use ($like) {
+                    $w->where('receipt_number', 'like', $like)
+                        ->orWhere('walk_in_note', 'like', $like)
+                        ->orWhereHas('staff.user', fn ($u) => $u
+                            ->where('firstname', 'like', $like)
+                            ->orWhere('lastname', 'like', $like));
+                });
+            })
+            ->with([
+                'staff.user:user_id,firstname,lastname',
+                'branch' => fn ($q) => $q->withTrashed()->select('branch_id', 'branch_name'),
+                'payments:payments_id,payable_type,payable_id,payment_method_type,created_at',
+                'events.user:user_id,firstname,lastname,role_id',
+                'events.user.role',
+            ])
+            ->withSum('items as items_quantity', 'quantity')
+            ->orderByDesc('created_at')
+            ->orderByDesc('transaction_id')
+            ->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    /**
+     * Sale count per log status group in the window, for the filter chips.
+     *
+     * @return array{all: int, settled: int, refunded: int, void: int}
+     */
+    public function transactionLogCounts(Collection $branchIds, Carbon $from, Carbon $to): array
+    {
+        $byStatus = Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->whereBetween('created_at', [$from, $to])
+            ->groupBy('status')
+            ->selectRaw('status, COUNT(*) as n')
+            ->toBase()
+            ->pluck('n', 'status');
+
+        $counts = ['all' => (int) $byStatus->sum()];
+        foreach (self::LOG_STATUSES as $group => $statuses) {
+            $counts[$group] = (int) $byStatus->only($statuses)->sum();
+        }
+
+        return $counts;
+    }
+
+    /**
+     * One sale by uuid, only if it belongs to one of the given branches.
+     */
+    public function findTransaction(Collection $branchIds, string $uuid): ?Transaction
+    {
+        return Transaction::query()
+            ->whereIn('branch_id', $branchIds)
+            ->where('uuid', $uuid)
+            ->with(['branch' => fn ($q) => $q->withTrashed(), 'events.user.role'])
+            ->first();
     }
 
     public function discountTypes(Collection $branchIds, Carbon $from, Carbon $to): Collection
@@ -237,7 +336,7 @@ class OwnerAnalyticsRepository
     }
 
     /**
-     * Daily servings planned vs sold vs spoiled, per menu item. Days of a
+     * Daily servings planned vs sold vs spoiled vs refunded, per menu item. Days of a
      * deleted item where nothing was sold or spoiled are left out (a plan
      * that never ran); days with activity stay, flagged `removed`.
      */
@@ -251,13 +350,15 @@ class OwnerAnalyticsRepository
             ->where(fn ($q) => $q
                 ->whereNull('menu_items.deleted_at')
                 ->orWhere('inventory_servings.servings_sold', '>', 0)
-                ->orWhere('inventory_servings.spoilage_qty', '>', 0))
+                ->orWhere('inventory_servings.spoilage_qty', '>', 0)
+                ->orWhere('inventory_servings.servings_refunded', '>', 0))
             ->groupBy('menu_items.uuid', 'menu_items.menu_name')
             ->selectRaw('menu_items.uuid, menu_items.menu_name,
                 MAX(CASE WHEN menu_items.deleted_at IS NULL THEN 0 ELSE 1 END) as removed,
                 SUM(inventory_servings.expected_servings) as expected,
                 SUM(inventory_servings.servings_sold) as sold,
                 SUM(inventory_servings.spoilage_qty) as spoilage,
+                SUM(inventory_servings.servings_refunded) as refunded,
                 MAX(menu_items.base_price) as base_price,
                 SUM(CASE WHEN inventory_servings.is_sold_out THEN 1 ELSE 0 END) as sold_out_days,
                 COUNT(*) as days')
@@ -348,6 +449,26 @@ class OwnerAnalyticsRepository
             ->whereIn('floor_plans.branch_id', $branchIds)
             ->whereBetween('reservations.reservation_date', [$from, $to])
             ->get(['reservations.status', 'reservations.party_size', 'reservations.reservation_date']);
+    }
+
+    /**
+     * Bookings still ahead (pending or confirmed) from $from to $to, soonest first.
+     * Independent of the analytics period, which always ends today.
+     */
+    public function upcomingReservations(Collection $branchIds, Carbon $from, Carbon $to): Collection
+    {
+        return Reservation::query()
+            ->join('branch_tables', 'branch_tables.table_id', '=', 'reservations.table_id')
+            ->join('floor_plans', 'floor_plans.floor_plan_id', '=', 'branch_tables.floorplan_id')
+            ->join('cafe_branches', 'cafe_branches.branch_id', '=', 'floor_plans.branch_id')
+            ->whereIn('floor_plans.branch_id', $branchIds)
+            ->whereIn('reservations.status', ['pending', 'confirmed'])
+            ->whereBetween('reservations.reservation_date', [$from, $to])
+            ->orderBy('reservations.reservation_date')
+            ->get([
+                'reservations.uuid', 'reservations.status', 'reservations.party_size', 'reservations.reservation_date',
+                'branch_tables.table_name', 'cafe_branches.branch_name',
+            ]);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

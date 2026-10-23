@@ -193,6 +193,14 @@ class OwnerAnalyticsTest extends TestCase
                 'status' => $status,
             ]);
         }
+        // Ahead of today: only pending/confirmed within the next 14 days count as upcoming.
+        foreach ([['pending', 2, '2026-10-18 10:00'], ['confirmed', 3, '2026-10-17 12:00'], ['cancelled', 5, '2026-10-17 13:00'], ['confirmed', 4, '2026-11-05 12:00']] as [$status, $party, $at]) {
+            Reservation::create([
+                'table_id' => $table->table_id, 'created_by' => $this->owner->user_id, 'customer_name' => 'Guest',
+                'customer_phone' => '+639170000001', 'party_size' => $party, 'reservation_date' => $at,
+                'reservation_end' => Carbon::parse($at)->addMinutes(90), 'status' => $status,
+            ]);
+        }
 
         $this->api('/api/owner/analytics/operations?from=2026-10-10&to=2026-10-16')
             ->assertOk()
@@ -217,7 +225,13 @@ class OwnerAnalyticsTest extends TestCase
             ->assertJsonPath('reservations.guests', 6)
             ->assertJsonPath('reservations.no_show_rate', 33.3)
             ->assertJsonPath('reservations.cancel_rate', 25)
-            ->assertJsonPath('reservations.by_weekday.3.count', 4);
+            ->assertJsonPath('reservations.by_weekday.3.count', 4)
+            ->assertJsonPath('reservations.upcoming.total', 2)
+            ->assertJsonPath('reservations.upcoming.guests', 5)
+            ->assertJsonPath('reservations.upcoming.pending', 1)
+            ->assertJsonPath('reservations.upcoming.next.0.party_size', 3)
+            ->assertJsonPath('reservations.upcoming.next.0.table', 'T1')
+            ->assertJsonPath('reservations.upcoming.next.0.branch', $this->main->branch_name);
     }
 
     public function test_waste_skips_idle_days_of_deleted_items_and_flags_the_rest(): void

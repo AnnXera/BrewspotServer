@@ -24,6 +24,7 @@ class InventoryServing extends Model
         'expected_servings',
         'servings_sold',
         'spoilage_qty',
+        'servings_refunded',
         'is_sold_out',
     ];
 
@@ -32,12 +33,30 @@ class InventoryServing extends Model
         'expected_servings' => 'integer',
         'servings_sold' => 'integer',
         'spoilage_qty' => 'integer',
+        'servings_refunded' => 'integer',
         'is_sold_out' => 'boolean',
     ];
 
     protected static function booted(): void
     {
         static::creating(fn ($serving) => $serving->uuid = (string) Str::uuid());
+    }
+
+    /** Servings gone for the day: sold, spoiled, or made and then refunded. */
+    public function used(): int
+    {
+        return $this->servings_sold + $this->spoilage_qty + $this->servings_refunded;
+    }
+
+    public function remaining(): int
+    {
+        return max(0, $this->expected_servings - $this->used());
+    }
+
+    /** Every expected serving is used. Days without a target never run out. */
+    public function isUsedUp(): bool
+    {
+        return $this->expected_servings > 0 && $this->used() >= $this->expected_servings;
     }
 
     public function menuItem(): BelongsTo

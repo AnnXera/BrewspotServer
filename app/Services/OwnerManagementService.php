@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 use App\Mail\OwnerStatusMail;
 use App\Mail\BranchStatusMail;
+use App\Notifications\OwnerNotice;
 
 use App\Http\Resources\UserResource;
 use App\Http\Resources\ApprovalListResource;
@@ -31,7 +32,8 @@ class OwnerManagementService
 
     public function __construct(
         private readonly OwnerManagementRepository $repo,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly NotificationService $notifications
     ) {}
 
     /**
@@ -210,6 +212,11 @@ class OwnerManagementService
             }
         }
 
+        $this->notifications->notifyOwner(
+            $owner,
+            OwnerNotice::accountStatus($status, $status === 'rejected' ? $reason : null)
+        );
+
         $this->mailer->sendMailable($owner->email, new OwnerStatusMail(
             firstname: $owner->firstname,
             status: $status,
@@ -283,6 +290,11 @@ class OwnerManagementService
         $owner = $branch->cafe->owner ?? null;
 
         if ($owner) {
+            $this->notifications->notifyOwner(
+                $owner,
+                OwnerNotice::branchStatus($branch->branch_name, $branch->uuid, $status, $status === 'rejected' ? $reason : null)
+            );
+
             $this->mailer->sendMailable(
                 $owner->email,
                 new BranchStatusMail(

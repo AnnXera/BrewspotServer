@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Contracts\MailAdapterInterface;
 use App\Mail\SubscriptionPaymentMail;
+use App\Notifications\OwnerNotice;
+use App\Services\NotificationService;
 use App\Services\PaymentGatewayManager;
 use App\Models\Subscription;
 use App\Repository\PaymentRepository;
@@ -19,7 +21,8 @@ class PayMongoWebhookController extends Controller
         private readonly PaymentGatewayManager $paymentManager,
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly PaymentRepository $paymentRepo,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly NotificationService $notifications
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -196,19 +199,26 @@ class PayMongoWebhookController extends Controller
             return;
         }
 
-        $plan = $subscription->plan;
+        $plan    = $subscription->plan;
+        $amount  = number_format(
+            $subscription->billing_cycle === 'yearly'
+                ? ($plan->yearly_price ?? $plan->price)
+                : $plan->price,
+            2
+        );
+        $endDate = $subscription->end_date?->format('F j, Y');
+
+        // Webhooks can be redelivered; the notice's dedupe key keeps the bell to one per term.
+        $this->notifications->notifyOwner($owner, $status === 'active'
+            ? OwnerNotice::paymentReceived($subscription->uuid, $plan->sub_name, $amount, $endDate)
+            : OwnerNotice::paymentFailed($subscription->uuid, $plan->sub_name, $endDate));
 
         $this->mailer->sendMailable($owner->email, new SubscriptionPaymentMail(
             ownerName: $owner->firstname ?? $owner->username ?? 'there',
             planName: $plan->sub_name,
             status: $status,
-            amount: number_format(
-                $subscription->billing_cycle === 'yearly'
-                    ? ($plan->yearly_price ?? $plan->price)
-                    : $plan->price,
-                2
-            ),
-            endDate: $subscription->end_date?->format('F j, Y'),
+            amount: $amount,
+            endDate: $endDate,
         ));
 
         Log::channel('owner')->info('Subscription payment email sent.', [

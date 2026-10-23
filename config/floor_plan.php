@@ -43,9 +43,11 @@ return [
 
     'reservations' => [
         // The end time is chosen per reservation; the default only pre-fills the form.
+        // The manager page books a table from arrival until closing (guests may stay longer),
+        // so a reservation can last up to a whole day.
         'default_duration_minutes' => 90,
         'min_duration_minutes'     => 15,
-        'max_duration_minutes'     => 480,
+        'max_duration_minutes'     => 1440,
         'max_days_ahead'           => 180,
         // Bookings made for "right now" are still accepted this many minutes late.
         'past_grace_minutes'       => 5,

@@ -25,6 +25,7 @@ use App\Http\Controllers\CafeStaffController;
 use App\Http\Controllers\ItemBranchController;
 use App\Http\Controllers\BranchStaffController;
 use App\Http\Controllers\ManagerAccountController;
+use App\Http\Controllers\ManagerDashboardController;
 use App\Http\Controllers\PosDeviceController;
 use App\Http\Controllers\PosFloorPlanController;
 use App\Http\Controllers\FloorPlanController;
@@ -34,6 +35,7 @@ use App\Http\Controllers\ServingOverviewController;
 use App\Http\Controllers\SpoilageController;
 
 use App\Http\Controllers\TempUploadController;
+use App\Http\Controllers\NotificationController;
 
 // Employees tab, registers and today's servings of one branch. Mounted under /owner and /manager,
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
@@ -117,6 +119,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
+    // In-app notifications (navbar bell) for the signed-in user
+    Route::get('/notifications',            [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all',  [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+
     // Admin only
     Route::middleware('role:Admin')->prefix('admin')->group(function () {
         Route::get('/owners/stats',           [OwnerManagementController::class, 'stats']); //get the total number of cafe owners for each status
@@ -192,6 +199,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         // Feature-Gated: Analytics (one call per tab; ?from=&to=&branch=)
         Route::middleware('plan.feature:advanced_analytics')->prefix('analytics')->group(function () {
             Route::get('/sales',      [\App\Http\Controllers\OwnerAnalyticsController::class, 'sales']);
+            Route::get('/transactions',        [\App\Http\Controllers\OwnerAnalyticsController::class, 'transactions']);
+            Route::get('/transactions/{uuid}', [\App\Http\Controllers\OwnerAnalyticsController::class, 'transaction']);
             Route::get('/menu',       [\App\Http\Controllers\OwnerAnalyticsController::class, 'menu']);
             Route::get('/branches',   [\App\Http\Controllers\OwnerAnalyticsController::class, 'branches']);
             Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);
@@ -234,6 +243,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::get('/branches/{branchUuid}', [ManagerAccountController::class, 'branch'])->middleware('branch.access'); // Cafe Management
         Route::put('/pin',      [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
 
+        // Manager Dashboard stats & transactions
+        Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats'])->middleware('branch.access');
+        Route::get('/branches/{branchUuid}/transactions', [ManagerDashboardController::class, 'transactions'])->middleware('branch.access');
+        Route::get('/branches/{branchUuid}/transactions/{transactionUuid}', [ManagerDashboardController::class, 'transaction'])->middleware('branch.access');
+
         // Only branches with an active assignment (enforced by branch.access).
         // Managers can manage cashiers only (enforced in BranchStaffService).
         Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
@@ -251,6 +265,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::middleware('pos.device')->prefix('device')->group(function () {
             Route::get('/',                        [PosDeviceController::class, 'current']);
             Route::delete('/',                     [PosDeviceController::class, 'unregister']);
+            Route::get('/menu',                    [PosDeviceController::class, 'menu']);
+            Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
+            Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
             Route::get('/staff',                   [PosDeviceController::class, 'staff']); // lock-screen names
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
@@ -261,13 +278,16 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::post('/spoilage',               [SpoilageController::class, 'deviceStore']);
             Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
+            Route::get('/approving-managers',             [PosDeviceController::class, 'approvingManagers']);
+            Route::post('/transactions/{transactionUuid}/refund', [PosDeviceController::class, 'refund'])->middleware('throttle:pos-unlock');
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.
         Route::middleware(['pos.device', 'plan.feature:reservations'])->prefix('device')->group(function () {
             Route::get('/floor-plan',                  [PosFloorPlanController::class, 'floorPlan']);
             Route::patch('/tables/{tableUuid}/status', [PosFloorPlanController::class, 'tableStatus']);
-            Route::get('/reservations',                [PosFloorPlanController::class, 'reservations']);
+            Route::get('/reservations',                                [PosFloorPlanController::class, 'reservations']);
+            Route::patch('/reservations/{reservationUuid}/status',     [PosFloorPlanController::class, 'reservationStatus']);
         });
     });
 
@@ -289,3 +309,13 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
 
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);
+// CI deploy hook: run pending migrations on hosts without SSH (see deploy/hostinger/README.md).
+Route::post('/deploy/migrate', function (\Illuminate\Http\Request $request) {
+    $token = config('app.deploy_token');
+    abort_unless($token && hash_equals($token, (string) $request->header('X-Deploy-Token')), 404);
+
+    $code = \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+
+    return response(\Illuminate\Support\Facades\Artisan::output(), $code === 0 ? 200 : 500)
+        ->header('Content-Type', 'text/plain');
+});

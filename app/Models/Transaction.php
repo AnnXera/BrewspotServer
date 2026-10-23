@@ -19,6 +19,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'uuid',
+        'receipt_number',
         'branch_id',
         'staff_id',
         'total_amount',
@@ -51,6 +52,11 @@ class Transaction extends Model
     public function items(): HasMany
     {
         return $this->hasMany(TransactionItem::class, 'transaction_id', 'transaction_id');
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(TransactionEvent::class, 'transaction_id', 'transaction_id');
     }
 
     public function payments(): MorphMany

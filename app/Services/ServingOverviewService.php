@@ -218,7 +218,7 @@ class ServingOverviewService
 
     private function remaining(InventoryServing $s): int
     {
-        return max(0, $s->expected_servings - $s->servings_sold - $s->spoilage_qty);
+        return $s->remaining();
     }
 
     private function paginate(Collection $rows, int $page, int $perPage): array

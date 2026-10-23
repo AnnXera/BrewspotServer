@@ -77,9 +77,6 @@ class PosDeviceController extends Controller
         return $this->respond($this->service->unregisterSelf($request->user()));
     }
 
-    /**
-     * GET /api/pos/device/staff — names on the lock screen.
-     */
     public function staff(Request $request): JsonResponse
     {
         return $this->respond($this->service->lockScreenStaff($request->user()));
@@ -171,5 +168,35 @@ class PosDeviceController extends Controller
     public function lock(Request $request): JsonResponse
     {
         return $this->respond($this->service->lock($request->user()));
+    }
+
+    /**
+     * GET /api/pos/device/approving-managers — managers authorized to approve refunds.
+     */
+    public function approvingManagers(Request $request): JsonResponse
+    {
+        return $this->respond($this->service->approvingManagers($request->user()));
+    }
+
+    /**
+     * POST /api/pos/device/transactions/{transactionUuid}/refund — refund a sale with manager PIN.
+     */
+    public function refund(Request $request, string $transactionUuid): JsonResponse
+    {
+        $request->validate([
+            'manager_uuid' => 'required|string',
+            'pin'          => 'required|string',
+            'reason'       => 'nullable|string|max:255',
+            'restock'      => 'nullable|boolean', // true: never made, servings go back on sale
+        ]);
+
+        return $this->respond($this->service->refund(
+            $request->user(),
+            $transactionUuid,
+            $request->input('manager_uuid'),
+            $request->input('pin'),
+            $request->input('reason'),
+            $request->boolean('restock')
+        ));
     }
 }

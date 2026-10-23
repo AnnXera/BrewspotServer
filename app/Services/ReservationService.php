@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\DB;
  *   Counter seating (shared tables) holds seats instead: parties can overlap as long as
  *   the seats taken at any moment stay within the capacity.
  * - Table status stays manual, except: seating a reservation marks the table
- *   occupied, and completing it marks the table cleaning.
+ *   occupied, completing it marks the table cleaning, and cancelling or a no-show
+ *   turns a reserved table back to available.
  *
  * Results carry an `http` key that the controller turns into the status code.
  */
@@ -88,7 +89,7 @@ class ReservationService
                 'party_size'       => (int) $data['party_size'],
                 'reservation_date' => $start,
                 'reservation_end'  => $end,
-                'status'           => $data['status'] ?? 'pending',
+                'status'           => 'confirmed', // staff book on the guest's word: nothing left to confirm
                 'notes'            => $data['notes'] ?? null,
             ]);
 
@@ -176,6 +177,17 @@ class ReservationService
             return ['success' => false, 'http' => 422, 'message' => "A {$reservation->status} reservation can't be changed to {$status}."];
         }
 
+        // A guest can only miss a booking that has started, and only an upcoming one can be cancelled.
+        $started = $reservation->reservation_date->lte(now());
+
+        if ($status === 'no_show' && ! $started) {
+            return ['success' => false, 'http' => 422, 'message' => "This reservation hasn't started yet. It can be marked no-show from its start time."];
+        }
+
+        if ($status === 'cancelled' && $started) {
+            return ['success' => false, 'http' => 422, 'message' => 'This reservation has already started, so it can no longer be cancelled.'];
+        }
+
         $table = $reservation->table;
 
         if ($status === 'seated') {
@@ -200,6 +212,9 @@ class ReservationService
                 $table->update(['status' => 'occupied']);
             } elseif ($status === 'completed' && ! $table->trashed()) {
                 $table->update(['status' => 'cleaning']);
+            } elseif (in_array($status, ['cancelled', 'no_show'], true) && ! $table->trashed() && $table->status === 'reserved') {
+                // The party isn't coming, so release the hold. Occupied or cleaning tables are someone else's.
+                $table->update(['status' => 'available']);
             }
         });
 
