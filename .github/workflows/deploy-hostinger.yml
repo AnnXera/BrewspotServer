@@ -40,6 +40,15 @@ jobs:
             exit 1
           fi
 
+      # FTP-Deploy-Action's first publish drops the FTPS data connection while fetching its missing
+      # state file (SamKirkland/FTP-Deploy-Action#489); an empty one makes it do a clean first publish.
+      - name: Create deploy state file on first deploy
+        run: |
+          state="ftp://$FTP_SERVER/${FTP_DIR}.ftp-deploy-sync-state.json"
+          if ! curl --silent --ssl-reqd --head --user "$FTP_USERNAME:$FTP_PASSWORD" "$state" > /dev/null; then
+            curl --silent --show-error --ssl-reqd --user "$FTP_USERNAME:$FTP_PASSWORD" -T /dev/null "$state"
+          fi
+
       - uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_SERVER }}
