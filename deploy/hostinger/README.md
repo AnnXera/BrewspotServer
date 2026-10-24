@@ -56,8 +56,12 @@ Two jobs, one plain command each with absolute paths:
 ```
 
 ```
-/usr/bin/php /home/<user>/brewspot-api/artisan queue:work --stop-when-empty --max-time=45
+/usr/bin/php /home/<user>/brewspot-api/artisan queue:work --stop-when-empty --max-time=45 --tries=3 --backoff=60
 ```
+
+`--tries=3 --backoff=60` gives every queued job three attempts a minute apart (jobs that set their own
+`$tries`, like `SendSubscriptionNotice`, keep theirs). Jobs that still fail land in `failed_jobs`; to retry
+them, temporarily swap the `schedule:run` job for `/usr/bin/php /home/<user>/brewspot-api/artisan queue:retry all`.
 
 The queue sends mail that is queued (login 2FA codes, subscription notices); without the second
 job those emails sit in the `jobs` table forever.
