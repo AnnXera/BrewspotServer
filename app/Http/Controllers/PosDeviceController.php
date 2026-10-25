@@ -13,7 +13,8 @@ class PosDeviceController extends Controller
 {
     public function __construct(
         private readonly PosDeviceService $service
-    ) {}
+    ) {
+    }
 
     // ── Setup (owner / manager token) ────────────────────────────────────
 
@@ -185,9 +186,9 @@ class PosDeviceController extends Controller
     {
         $request->validate([
             'manager_uuid' => 'required|string',
-            'pin'          => 'required|string',
-            'reason'       => 'nullable|string|max:255',
-            'restock'      => 'nullable|boolean', // true: never made, servings go back on sale
+            'pin' => 'required|string',
+            'reason' => 'nullable|string|max:255',
+            'restock' => 'nullable|boolean', // true: never made, servings go back on sale
         ]);
 
         return $this->respond($this->service->refund(

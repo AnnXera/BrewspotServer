@@ -46,7 +46,8 @@ class PosDeviceService
         private readonly StaffPinService $pins,
         private readonly InventoryServingRepository $servings,
         private readonly BranchAlertService $alerts
-    ) {}
+    ) {
+    }
 
     // ── Setup (owner / manager token) ────────────────────────────────────
 
@@ -266,9 +267,11 @@ class PosDeviceService
             ->mapWithKeys(function ($item) use ($servings) {
                 $s = $servings->get($item->men_item_id);
 
-                return [$item->men_item_id => ($s && ! $s->is_sold_out)
-                    ? $s->remaining()
-                    : 0];
+                return [
+                    $item->men_item_id => ($s && !$s->is_sold_out)
+                        ? $s->remaining()
+                        : 0
+                ];
             });
     }
 
@@ -289,26 +292,26 @@ class PosDeviceService
         $stock = $this->todaysStock($device);
 
         $items = $this->servings->listAvailableItemsForBranch($device->branch)
-            ->load(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->orderBy('name')])
-            ->map(fn ($i) => [
-                'uuid'            => $i->uuid,
-                'category_uuid'   => $i->category->uuid ?? null,
-                'menu_name'       => $i->menu_name,
-                'description'     => $i->description,
-                'base_price'      => (float) $i->base_price,
-                'picture'         => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+            ->load(['sizes', 'addons' => fn($q) => $q->where('is_available', true)->orderBy('name')])
+            ->map(fn($i) => [
+                'uuid' => $i->uuid,
+                'category_uuid' => $i->category->uuid ?? null,
+                'menu_name' => $i->menu_name,
+                'description' => $i->description,
+                'base_price' => (float) $i->base_price,
+                'picture' => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
                 'available_stock' => $stock->get($i->men_item_id, 0),
-                'sold_out'        => $stock->get($i->men_item_id, 0) <= 0,
+                'sold_out' => $stock->get($i->men_item_id, 0) <= 0,
                 // Empty = sold at base_price. All sizes share the item's servings.
-                'sizes'           => $i->sizes->map(fn ($s) => [
-                    'uuid'  => $s->uuid,
-                    'name'  => $s->name,
+                'sizes' => $i->sizes->map(fn($s) => [
+                    'uuid' => $s->uuid,
+                    'name' => $s->name,
                     'price' => (float) $s->price,
                 ])->values(),
-                'addons'          => $i->addons->map(fn ($a) => [
-                    'uuid'         => $a->uuid,
-                    'name'         => $a->name,
-                    'price'        => (float) $a->price,
+                'addons' => $i->addons->map(fn($a) => [
+                    'uuid' => $a->uuid,
+                    'name' => $a->name,
+                    'price' => (float) $a->price,
                     'max_quantity' => $a->max_quantity,
                 ])->values(),
             ]);
@@ -335,7 +338,7 @@ class PosDeviceService
         if ($menuItem->sizes->isNotEmpty()) {
             $size = $menuItem->sizes->firstWhere('uuid', $sizeUuid);
 
-            if (! $size) {
+            if (!$size) {
                 return ['message' => "Pick a size for {$menuItem->menu_name}."];
             }
         } elseif ($sizeUuid) {
@@ -343,12 +346,12 @@ class PosDeviceService
         }
 
         $unitPrice = (float) ($size?->price ?? $menuItem->base_price);
-        $lines     = [];
+        $lines = [];
 
         foreach ($addons as $row) {
             $addon = $menuItem->addons->firstWhere('uuid', $row['uuid']);
 
-            if (! $addon) {
+            if (!$addon) {
                 return ['message' => "An add-on on {$menuItem->menu_name} is no longer available. Remove it and add it again."];
             }
 
@@ -385,18 +388,18 @@ class PosDeviceService
         $transactionItemsData = [];
 
         // Only what this branch offers, within today's remaining servings.
-        $stock     = $this->todaysStock($device);
+        $stock = $this->todaysStock($device);
         $requested = [];
 
         foreach ($items as $itemData) {
             $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])
                 ->where('cafe_id', $cafeId)
-                ->with(['sizes', 'addons' => fn ($q) => $q->where('is_available', true)->with('recipes')])
+                ->with(['sizes', 'addons' => fn($q) => $q->where('is_available', true)->with('recipes')])
                 ->first();
             if (!$menuItem || !$stock->has($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
-            $quantity = (int)$itemData['quantity'];
+            $quantity = (int) $itemData['quantity'];
 
             // Every size draws from the item's one servings count.
             $requested[$menuItem->men_item_id] = ($requested[$menuItem->men_item_id] ?? 0) + $quantity;
@@ -416,9 +419,9 @@ class PosDeviceService
                 'row' => [
                     'men_item_id' => $menuItem->men_item_id,
                     'men_size_id' => $line['size']?->men_size_id,
-                    'size_name'   => $line['size']?->name,
-                    'quantity'    => $quantity,
-                    'unit_price'  => $line['unit_price'],
+                    'size_name' => $line['size']?->name,
+                    'quantity' => $quantity,
+                    'unit_price' => $line['unit_price'],
                 ],
                 'addons' => $line['addons'],
             ];
@@ -483,7 +486,7 @@ class PosDeviceService
 
                 // 2. Ingredient Consumption Logs: rows for every size, plus the sold size's own rows
                 $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])
-                    ->where(fn ($q) => $q->whereNull('men_size_id')->orWhere('men_size_id', $itemData['men_size_id']))
+                    ->where(fn($q) => $q->whereNull('men_size_id')->orWhere('men_size_id', $itemData['men_size_id']))
                     ->get();
                 foreach ($recipes as $recipe) {
                     \App\Models\IngredientConsumptionLog::create([
@@ -498,19 +501,19 @@ class PosDeviceService
                 // 3. Add-ons, and what they use (per drink x drinks on the line)
                 foreach ($addonLines as ['addon' => $addon, 'quantity' => $addonQty]) {
                     $txItem->addons()->create([
-                        'addon_id'   => $addon->addon_id,
+                        'addon_id' => $addon->addon_id,
                         'addon_name' => $addon->name,
-                        'price'      => $addon->price,
-                        'quantity'   => $addonQty,
+                        'price' => $addon->price,
+                        'quantity' => $addonQty,
                     ]);
 
                     foreach ($addon->recipes as $recipe) {
                         \App\Models\IngredientConsumptionLog::create([
                             'transaction_item_id' => $txItem->transaction_item_id,
-                            'ingredient_id'       => $recipe->ingredient_id,
-                            'ingredient_name'     => $recipe->ingredient_name,
-                            'quantity_consumed'   => $recipe->quantity * $addonQty * $itemData['quantity'],
-                            'unit'                => $recipe->unit,
+                            'ingredient_id' => $recipe->ingredient_id,
+                            'ingredient_name' => $recipe->ingredient_name,
+                            'quantity_consumed' => $recipe->quantity * $addonQty * $itemData['quantity'],
+                            'unit' => $recipe->unit,
                         ]);
                     }
                 }
@@ -549,7 +552,7 @@ class PosDeviceService
     public function transactions(PosDevice $device): array
     {
         $branchId = $device->branch_id;
-        $settled  = self::SETTLED_STATUSES;
+        $settled = self::SETTLED_STATUSES;
 
         $todayTransactions = \App\Models\Transaction::where('branch_id', $branchId)
             ->whereDate('created_at', \Carbon\Carbon::today())
@@ -558,7 +561,7 @@ class PosDeviceService
             ->orderBy('created_at')
             ->get();
 
-        [$todaySettled, $todayVoided] = $todayTransactions->partition(fn ($t) => in_array($t->status, $settled, true));
+        [$todaySettled, $todayVoided] = $todayTransactions->partition(fn($t) => in_array($t->status, $settled, true));
 
         $monthTotal = \App\Models\Transaction::where('branch_id', $branchId)
             ->whereIn('status', $settled)
@@ -566,25 +569,25 @@ class PosDeviceService
             ->whereYear('created_at', \Carbon\Carbon::now()->year)
             ->sum('total_amount');
 
-        $netTotal  = (float) $todaySettled->sum('total_amount');
+        $netTotal = (float) $todaySettled->sum('total_amount');
         $voidTotal = (float) $todayVoided->sum('total_amount');
 
         return [
-            'success'      => true,
-            'today_total'  => $netTotal,                // net: settled sales only
-            'today_count'  => $todaySettled->count(),
-            'gross_total'  => $netTotal + $voidTotal,   // everything rung up, voids included
-            'void_count'   => $todayVoided->count(),
-            'void_total'   => $voidTotal,
-            'month_total'  => (float) $monthTotal,      // net, settled sales only
-            'transactions' => $todayTransactions->map(fn ($t) => [
-                'uuid'           => $t->uuid,
+            'success' => true,
+            'today_total' => $netTotal,                // net: settled sales only
+            'today_count' => $todaySettled->count(),
+            'gross_total' => $netTotal + $voidTotal,   // everything rung up, voids included
+            'void_count' => $todayVoided->count(),
+            'void_total' => $voidTotal,
+            'month_total' => (float) $monthTotal,      // net, settled sales only
+            'transactions' => $todayTransactions->map(fn($t) => [
+                'uuid' => $t->uuid,
                 'receipt_number' => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
-                'created_at'     => $t->created_at->toISOString(),
-                'staff_name'     => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
-                'total_amount'   => (float) $t->total_amount,
-                'status'         => $t->status,
-                'items_count'    => $t->items_count,
+                'created_at' => $t->created_at->toISOString(),
+                'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'total_amount' => (float) $t->total_amount,
+                'status' => $t->status,
+                'items_count' => $t->items_count,
             ])->values(),
         ];
     }
@@ -599,44 +602,50 @@ class PosDeviceService
             ->with(['staff.user', 'items.menuItem', 'items.addons', 'payments'])
             ->first();
 
-        if (! $t) {
+        if (!$t) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
         }
 
         $payment = $t->payments ? $t->payments->sortByDesc('created_at')->first() : null;
         $items = $t->items ?? collect();
-        $subtotal = $items->sum(fn ($i) => (float) $i->unit_price * $i->quantity);
+        $subtotal = $items->sum(fn($i) => (float) $i->unit_price * $i->quantity);
+
+        $branch = $device->branch;
+        $cafe = $branch?->cafe;
 
         return [
-            'success'     => true,
+            'success' => true,
             'transaction' => [
-                'uuid'            => $t->uuid,
-                'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
-                'created_at'      => $t->created_at->toISOString(),
-                'staff_name'      => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
-                'status'          => $t->status,
-                'walk_in_note'    => $t->walk_in_note,
-                'subtotal'        => round($subtotal, 2),
-                'discount_type'   => $t->discount_type,
+                'uuid' => $t->uuid,
+                'receipt_number' => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
+                'cafe_name' => $cafe?->cafe_name,
+                'branch_name' => $branch?->branch_name,
+                'branch_address' => $branch?->address,
+                'created_at' => $t->created_at->toISOString(),
+                'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
+                'status' => $t->status,
+                'walk_in_note' => $t->walk_in_note,
+                'subtotal' => round($subtotal, 2),
+                'discount_type' => $t->discount_type,
                 'discount_amount' => (float) $t->discount_amount,
-                'total_amount'    => (float) $t->total_amount,
-                'payment'         => $payment ? [
-                    'method'           => $payment->payment_method_type,
+                'total_amount' => (float) $t->total_amount,
+                'payment' => $payment ? [
+                    'method' => $payment->payment_method_type,
                     'reference_number' => $payment->payment_instrument,
-                    'amount_tendered'  => (float) $payment->amount_tendered,
-                    'change'           => (float) $payment->amount_change,
+                    'amount_tendered' => (float) $payment->amount_tendered,
+                    'change' => (float) $payment->amount_change,
                 ] : null,
-                'items' => $items->map(fn ($i) => [
-                    'uuid'       => $i->uuid,
-                    'menu_name'  => $i->menuItem?->menu_name ?? ('Item #' . $i->men_item_id),
-                    'size_name'  => $i->size_name,
-                    'quantity'   => $i->quantity,
+                'items' => $items->map(fn($i) => [
+                    'uuid' => $i->uuid,
+                    'menu_name' => $i->menuItem?->menu_name ?? ('Item #' . $i->men_item_id),
+                    'size_name' => $i->size_name,
+                    'quantity' => $i->quantity,
                     'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),
-                    'addons'     => ($i->addons ?? collect())->map(fn ($a) => [
-                        'name'     => $a->addon_name,
+                    'addons' => ($i->addons ?? collect())->map(fn($a) => [
+                        'name' => $a->addon_name,
                         'quantity' => (int) $a->quantity,
-                        'price'    => (float) $a->price,
+                        'price' => (float) $a->price,
                     ])->values(),
                 ])->values(),
             ],
@@ -653,16 +662,16 @@ class PosDeviceService
 
         $staffManagers = CafeStaff::where('branch_id', $branchId)
             ->active()
-            ->whereHas('user', fn ($q) => $q
+            ->whereHas('user', fn($q) => $q
                 ->where('status', '!=', 'inactive')
-                ->whereHas('role', fn ($r) => $r->where('role_name', 'Manager')))
+                ->whereHas('role', fn($r) => $r->where('role_name', 'Manager')))
             ->with(['user.role'])
             ->get()
-            ->map(fn ($s) => [
-                'uuid'      => $s->user->uuid,
-                'name'      => $s->user->firstname . ' ' . $s->user->lastname,
-                'role'      => 'Manager',
-                'has_pin'   => $s->user->hasPin(),
+            ->map(fn($s) => [
+                'uuid' => $s->user->uuid,
+                'name' => $s->user->firstname . ' ' . $s->user->lastname,
+                'role' => 'Manager',
+                'has_pin' => $s->user->hasPin(),
                 'is_locked' => $s->user->isPinLocked(),
             ]);
 
@@ -670,10 +679,10 @@ class PosDeviceService
         $ownerList = collect();
         if ($owner && $owner->status !== 'inactive') {
             $ownerList->push([
-                'uuid'      => $owner->uuid,
-                'name'      => $owner->firstname . ' ' . $owner->lastname . ' (Owner)',
-                'role'      => 'Cafe Owner',
-                'has_pin'   => $owner->hasPin(),
+                'uuid' => $owner->uuid,
+                'name' => $owner->firstname . ' ' . $owner->lastname . ' (Owner)',
+                'role' => 'Cafe Owner',
+                'has_pin' => $owner->hasPin(),
                 'is_locked' => $owner->isPinLocked(),
             ]);
         }
@@ -681,7 +690,7 @@ class PosDeviceService
         $all = $staffManagers->concat($ownerList)->unique('uuid')->values();
 
         return [
-            'success'  => true,
+            'success' => true,
             'managers' => $all,
         ];
     }
@@ -693,7 +702,7 @@ class PosDeviceService
      */
     public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null, bool $restock = false): array
     {
-        if (! $device->active_staff_id) {
+        if (!$device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
         }
 
@@ -702,7 +711,7 @@ class PosDeviceService
             ->with(['items', 'payments'])
             ->first();
 
-        if (! $transaction) {
+        if (!$transaction) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
         }
 
@@ -715,7 +724,7 @@ class PosDeviceService
             ->with('role')
             ->first();
 
-        if (! $managerUser) {
+        if (!$managerUser) {
             return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
         }
 
@@ -723,12 +732,12 @@ class PosDeviceService
         $isBranchManager = CafeStaff::where('branch_id', $device->branch_id)
             ->where('user_id', $managerUser->user_id)
             ->active()
-            ->whereHas('user.role', fn ($r) => $r->where('role_name', 'Manager'))
+            ->whereHas('user.role', fn($r) => $r->where('role_name', 'Manager'))
             ->exists();
 
         $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
 
-        if (! $isBranchManager && ! $isCafeOwner) {
+        if (!$isBranchManager && !$isCafeOwner) {
             return ['success' => false, 'http' => 403, 'message' => 'Only an authorized Manager or Cafe Owner can approve refunds.'];
         }
 
@@ -737,15 +746,15 @@ class PosDeviceService
         }
 
         $check = $this->pins->verify($managerUser, $pin);
-        if (! $check['success']) {
-            if (! empty($check['just_locked'])) {
+        if (!$check['success']) {
+            if (!empty($check['just_locked'])) {
                 $this->alerts->pinLocked($device->branch, $managerUser);
             }
 
             return [
-                'success'       => false,
-                'http'          => ! empty($check['locked']) ? 423 : 422,
-                'message'       => $check['message'] ?? 'Incorrect manager PIN.',
+                'success' => false,
+                'http' => !empty($check['locked']) ? 423 : 422,
+                'message' => $check['message'] ?? 'Incorrect manager PIN.',
                 'attempts_left' => $check['attempts_left'] ?? null,
             ];
         }
@@ -753,7 +762,7 @@ class PosDeviceService
         DB::transaction(function () use ($transaction, $device, $managerUser, $reason, $restock) {
             $actorRole = $managerUser->roleName() ?: 'Manager';
             $refundNote = "Refunded by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
-            if (! empty($reason)) {
+            if (!empty($reason)) {
                 $refundNote .= ': ' . trim($reason);
             }
             if ($transaction->walk_in_note) {
@@ -761,14 +770,14 @@ class PosDeviceService
             }
 
             $transaction->update([
-                'status'       => 'refunded',
+                'status' => 'refunded',
                 'walk_in_note' => $refundNote,
             ]);
 
             $transaction->events()->create([
-                'event'     => TransactionEvent::REFUNDED,
-                'user_id'   => $managerUser->user_id,
-                'reason'    => ! empty($reason) ? trim($reason) : null,
+                'event' => TransactionEvent::REFUNDED,
+                'user_id' => $managerUser->user_id,
+                'reason' => !empty($reason) ? trim($reason) : null,
                 'restocked' => $restock,
             ]);
 
@@ -795,7 +804,7 @@ class PosDeviceService
 
                 if ($restock) {
                     // Sold out only because it ran out (not switched off by a manager): back on sale.
-                    if ($serving->is_sold_out && $ranOut && ! $serving->isUsedUp()) {
+                    if ($serving->is_sold_out && $ranOut && !$serving->isUsedUp()) {
                         $serving->is_sold_out = false;
                     }
                 } else {
@@ -810,17 +819,17 @@ class PosDeviceService
 
         Log::channel('auth')->info('POS transaction refunded.', [
             'transaction_uuid' => $transaction->uuid,
-            'receipt_number'   => $transaction->receipt_number,
-            'amount'           => $transaction->total_amount,
-            'manager_uuid'     => $managerUser->uuid,
-            'manager_name'     => "{$managerUser->firstname} {$managerUser->lastname}",
-            'reason'           => $reason,
-            'restocked'        => $restock,
+            'receipt_number' => $transaction->receipt_number,
+            'amount' => $transaction->total_amount,
+            'manager_uuid' => $managerUser->uuid,
+            'manager_name' => "{$managerUser->firstname} {$managerUser->lastname}",
+            'reason' => $reason,
+            'restocked' => $restock,
         ]);
 
         return [
-            'success'     => true,
-            'message'     => 'Transaction successfully refunded.',
+            'success' => true,
+            'message' => 'Transaction successfully refunded.',
             'transaction' => $this->transaction($device, $transaction->uuid)['transaction'] ?? null,
         ];
     }
