@@ -41,73 +41,73 @@ use App\Http\Controllers\NotificationController;
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
 $branchScopedRoutes = function () {
     Route::middleware('plan.feature:staff_management')->group(function () {
-        Route::get('/staff',                       [BranchStaffController::class, 'index']);
-        Route::get('/staff/stats',                 [BranchStaffController::class, 'stats']); // before {userUuid}
-        Route::post('/staff',                      [BranchStaffController::class, 'store']);
-        Route::get('/staff/{userUuid}',            [BranchStaffController::class, 'show']);
-        Route::patch('/staff/{userUuid}',          [BranchStaffController::class, 'update']);
-        Route::put('/staff/{userUuid}/schedule',   [BranchStaffController::class, 'updateSchedule']);
+        Route::get('/staff', [BranchStaffController::class, 'index']);
+        Route::get('/staff/stats', [BranchStaffController::class, 'stats']); // before {userUuid}
+        Route::post('/staff', [BranchStaffController::class, 'store']);
+        Route::get('/staff/{userUuid}', [BranchStaffController::class, 'show']);
+        Route::patch('/staff/{userUuid}', [BranchStaffController::class, 'update']);
+        Route::put('/staff/{userUuid}/schedule', [BranchStaffController::class, 'updateSchedule']);
         Route::post('/staff/{userUuid}/terminate', [BranchStaffController::class, 'terminate']);
-        Route::put('/staff/{userUuid}/pin',        [BranchStaffController::class, 'setPin']); // set / reset / unlock
+        Route::put('/staff/{userUuid}/pin', [BranchStaffController::class, 'setPin']); // set / reset / unlock
     });
 
     Route::middleware('plan.feature:pos_system')->group(function () {
-        Route::get('/pos-devices',                 [PosDeviceController::class, 'index']);
+        Route::get('/pos-devices', [PosDeviceController::class, 'index']);
         Route::delete('/pos-devices/{deviceUuid}', [PosDeviceController::class, 'destroy']);
     });
 
     // Today's servings (current day only, app timezone)
     Route::middleware('plan.feature:menu_management')->group(function () {
-        Route::get('/servings',                    [ServingController::class, 'index']);
-        Route::get('/servings/available-items',    [ServingController::class, 'availableItems']); // before {servingUuid}
-        Route::get('/servings/categories',         [ServingOverviewController::class, 'categories']);
+        Route::get('/servings', [ServingController::class, 'index']);
+        Route::get('/servings/available-items', [ServingController::class, 'availableItems']); // before {servingUuid}
+        Route::get('/servings/categories', [ServingOverviewController::class, 'categories']);
         Route::get('/servings/categories/{categoryUuid}/items', [ServingOverviewController::class, 'categoryItems']);
         Route::put('/servings/categories/{categoryUuid}/items', [ServingController::class, 'saveCategoryItems']);
-        Route::get('/servings/ingredients-used',   [ServingOverviewController::class, 'ingredientsUsed']);
-        Route::get('/servings/log',                [ServingOverviewController::class, 'log']);
-        Route::get('/servings/spoilage',           [SpoilageController::class, 'index']);
+        Route::get('/servings/ingredients-used', [ServingOverviewController::class, 'ingredientsUsed']);
+        Route::get('/servings/log', [ServingOverviewController::class, 'log']);
+        Route::get('/servings/spoilage', [SpoilageController::class, 'index']);
         Route::post('/servings/spoilage/{logUuid}/void', [SpoilageController::class, 'void']);
-        Route::post('/servings',                 [ServingController::class, 'store']);
-        Route::patch('/servings/{servingUuid}',    [ServingController::class, 'update']);
-        Route::delete('/servings/{servingUuid}',   [ServingController::class, 'destroy']);
+        Route::post('/servings', [ServingController::class, 'store']);
+        Route::patch('/servings/{servingUuid}', [ServingController::class, 'update']);
+        Route::delete('/servings/{servingUuid}', [ServingController::class, 'destroy']);
     });
 
     // Floor plans, tables and reservations (the `reservations` plan feature)
     Route::middleware('plan.feature:reservations')->group(function () {
-        Route::get('/floor-plans/assets',                 [FloorPlanController::class, 'assets']); // before {planUuid}
-        Route::get('/floor-plans',                        [FloorPlanController::class, 'index']);
-        Route::post('/floor-plans',                       [FloorPlanController::class, 'store']);
-        Route::get('/floor-plans/{planUuid}',             [FloorPlanController::class, 'show']);
-        Route::patch('/floor-plans/{planUuid}',           [FloorPlanController::class, 'update']);
-        Route::delete('/floor-plans/{planUuid}',          [FloorPlanController::class, 'destroy']);
-        Route::post('/floor-plans/{planUuid}/activate',   [FloorPlanController::class, 'activate']);   // show on the register
+        Route::get('/floor-plans/assets', [FloorPlanController::class, 'assets']); // before {planUuid}
+        Route::get('/floor-plans', [FloorPlanController::class, 'index']);
+        Route::post('/floor-plans', [FloorPlanController::class, 'store']);
+        Route::get('/floor-plans/{planUuid}', [FloorPlanController::class, 'show']);
+        Route::patch('/floor-plans/{planUuid}', [FloorPlanController::class, 'update']);
+        Route::delete('/floor-plans/{planUuid}', [FloorPlanController::class, 'destroy']);
+        Route::post('/floor-plans/{planUuid}/activate', [FloorPlanController::class, 'activate']);   // show on the register
         Route::post('/floor-plans/{planUuid}/deactivate', [FloorPlanController::class, 'deactivate']); // hide from the register
-        Route::put('/floor-plans/{planUuid}/layout',      [FloorPlanController::class, 'saveLayout']);
-        Route::patch('/tables/{tableUuid}/status',        [FloorPlanController::class, 'tableStatus']);
+        Route::put('/floor-plans/{planUuid}/layout', [FloorPlanController::class, 'saveLayout']);
+        Route::patch('/tables/{tableUuid}/status', [FloorPlanController::class, 'tableStatus']);
 
-        Route::get('/opening-hours',                      [\App\Http\Controllers\CafeOpeningHourController::class, 'branch']); // read-only, for reservation time slots
-        Route::get('/reservations',                       [ReservationController::class, 'index']);
-        Route::post('/reservations',                      [ReservationController::class, 'store']);
-        Route::get('/reservations/{reservationUuid}',     [ReservationController::class, 'show']);
-        Route::patch('/reservations/{reservationUuid}',   [ReservationController::class, 'update']);
+        Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'branch']); // read-only, for reservation time slots
+        Route::get('/reservations', [ReservationController::class, 'index']);
+        Route::post('/reservations', [ReservationController::class, 'store']);
+        Route::get('/reservations/{reservationUuid}', [ReservationController::class, 'show']);
+        Route::patch('/reservations/{reservationUuid}', [ReservationController::class, 'update']);
         Route::post('/reservations/{reservationUuid}/status', [ReservationController::class, 'updateStatus']);
     });
 };
 
 // Public routes
 Route::prefix('auth')->group(function () {
-    Route::post('/send-code',         [VerificationCodeController::class, 'sendCode']); // registration email verification code
-    Route::post('/resend-code',        [VerificationCodeController::class, 'resendCode']); // resend registration email verification code
-    Route::post('/verify-code',       [VerificationCodeController::class, 'verifyCode']); // registration email verification code
-    Route::post('/register/{user}',   [RegistrationController::class, 'register']);
+    Route::post('/send-code', [VerificationCodeController::class, 'sendCode']); // registration email verification code
+    Route::post('/resend-code', [VerificationCodeController::class, 'resendCode']); // resend registration email verification code
+    Route::post('/verify-code', [VerificationCodeController::class, 'verifyCode']); // registration email verification code
+    Route::post('/register/{user}', [RegistrationController::class, 'register']);
     Route::post('/validate-registration-step/{uuid?}', [RegistrationController::class, 'validateStep']);
-    Route::get('/application/{uuid}',  [RegistrationController::class, 'showApplication']); // view submitted application details
+    Route::get('/application/{uuid}', [RegistrationController::class, 'showApplication']); // view submitted application details
 
-    Route::get('/setup-password/{uuid}',  [PasswordSetupController::class, 'show']); // check password setup link status
+    Route::get('/setup-password/{uuid}', [PasswordSetupController::class, 'show']); // check password setup link status
     Route::post('/setup-password/{uuid}', [PasswordSetupController::class, 'setup']); // set password for cafe owner
 
-    Route::post('/login',              [AuthController::class, 'login']); // login 2FA code
-    Route::post('/resend-login-code',  [AuthController::class, 'resendLoginCode']); // resend login 2FA code
+    Route::post('/login', [AuthController::class, 'login']); // login 2FA code
+    Route::post('/resend-login-code', [AuthController::class, 'resendLoginCode']); // resend login 2FA code
     Route::post('/verify-login-code', [AuthController::class, 'verifyLoginCode']); // login 2FA code
 });
 
@@ -120,33 +120,33 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     // In-app notifications (navbar bell) for the signed-in user
-    Route::get('/notifications',            [NotificationController::class, 'index']);
-    Route::post('/notifications/read-all',  [NotificationController::class, 'markAllRead']);
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
     // Admin only
     Route::middleware('role:Admin')->prefix('admin')->group(function () {
-        Route::get('/owners/stats',           [OwnerManagementController::class, 'stats']); //get the total number of cafe owners for each status
-        Route::get('/owners',                 [OwnerManagementController::class, 'index']); //list all cafe owners and show only firstname, lastname, status
-        Route::get('/owners/{uuid}',          [OwnerManagementController::class, 'show']); //get cafe, branch, status of cafe owner
+        Route::get('/owners/stats', [OwnerManagementController::class, 'stats']); //get the total number of cafe owners for each status
+        Route::get('/owners', [OwnerManagementController::class, 'index']); //list all cafe owners and show only firstname, lastname, status
+        Route::get('/owners/{uuid}', [OwnerManagementController::class, 'show']); //get cafe, branch, status of cafe owner
         Route::patch('/owners/{uuid}/status', [OwnerManagementController::class, 'updateStatus']); //update status of cafe, branch and send email notification to cafe owner
-        
-        Route::get('/approvals',              [OwnerManagementController::class, 'approvals']); //get approval list for the cafe owner with status pending_approval (filtered by status parameter)
+
+        Route::get('/approvals', [OwnerManagementController::class, 'approvals']); //get approval list for the cafe owner with status pending_approval (filtered by status parameter)
         Route::get('/approvals/stats', [OwnerManagementController::class, 'approvalStats']);
         Route::get('/owners/{uuid}/application-history', [OwnerManagementController::class, 'applicationHistory']);
         Route::get('/approvals/{uuid}/snapshot', [OwnerManagementController::class, 'approvalSnapshot']);
 
-        Route::get('/features',                        [FeatureController::class, 'index']); // list all system features
-        Route::get('/features/active',                 [FeatureController::class, 'active']); // list only active features
-        Route::post('/features',                       [FeatureController::class, 'store']); // create feature
-        Route::patch('/features/{uuid}',               [FeatureController::class, 'update']); // update feature
-        Route::delete('/features/{uuid}',              [FeatureController::class, 'destroy']); // delete feature
+        Route::get('/features', [FeatureController::class, 'index']); // list all system features
+        Route::get('/features/active', [FeatureController::class, 'active']); // list only active features
+        Route::post('/features', [FeatureController::class, 'store']); // create feature
+        Route::patch('/features/{uuid}', [FeatureController::class, 'update']); // update feature
+        Route::delete('/features/{uuid}', [FeatureController::class, 'destroy']); // delete feature
 
-        Route::get('/subscription-plans',              [SubscriptionPlanController::class, 'index']); // list all subscription plans
-        Route::get('/subscription-plans/{uuid}',       [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid
-        Route::post('/subscription-plans/create',      [SubscriptionPlanController::class, 'store']); // create subscription plan
-        Route::patch('/subscription-plans/{uuid}/update',      [SubscriptionPlanController::class, 'update']); // update subscription plan by uuid
-        Route::delete('/subscription-plans/{uuid}/delete',     [SubscriptionPlanController::class, 'destroy']); // delete subscription plan by uuid
+        Route::get('/subscription-plans', [SubscriptionPlanController::class, 'index']); // list all subscription plans
+        Route::get('/subscription-plans/{uuid}', [SubscriptionPlanController::class, 'show']); // get subscription plan by uuid
+        Route::post('/subscription-plans/create', [SubscriptionPlanController::class, 'store']); // create subscription plan
+        Route::patch('/subscription-plans/{uuid}/update', [SubscriptionPlanController::class, 'update']); // update subscription plan by uuid
+        Route::delete('/subscription-plans/{uuid}/delete', [SubscriptionPlanController::class, 'destroy']); // delete subscription plan by uuid
         Route::patch('/subscription-plans/{uuid}/restore', [SubscriptionPlanController::class, 'restore']); // restore subscription plan by uuid
 
         Route::get('/subscribers', [SubscriptionController::class, 'subscribers']); // admin - get all subscribers
@@ -161,15 +161,15 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
-        Route::get('/profile',         [OwnerProfileController::class, 'profile']);
+        Route::get('/profile', [OwnerProfileController::class, 'profile']);
         Route::get('/dashboard-stats', [\App\Http\Controllers\OwnerDashboardController::class, 'stats']); // totals + income series, all branches
-        Route::get('/cafes',           [OwnerProfileController::class, 'cafes']);
-        Route::get('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
-        Route::put('/opening-hours',   [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
-        Route::get('/branches',        [OwnerProfileController::class, 'branches']);
+        Route::get('/cafes', [OwnerProfileController::class, 'cafes']);
+        Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
+        Route::put('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
+        Route::get('/branches', [OwnerProfileController::class, 'branches']);
         Route::get('/branches/{uuid}', [OwnerProfileController::class, 'branch']);
 
-        Route::get('/subscription-plans',        [SubscriptionPlanController::class, 'ownerIndex']);
+        Route::get('/subscription-plans', [SubscriptionPlanController::class, 'ownerIndex']);
         Route::get('/subscription-plans/{uuid}', [SubscriptionPlanController::class, 'ownerShow']);
 
         Route::get('/subscription/current', [OwnerProfileController::class, 'currentPlan']);
@@ -188,8 +188,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
         // Feature-Gated: Staff Management
         Route::middleware('plan.feature:staff_management')->group(function () {
-            Route::get('/staff',           [CafeStaffController::class, 'index']);
-            Route::post('/staff',          [CafeStaffController::class, 'store']);
+            Route::get('/staff', [CafeStaffController::class, 'index']);
+            Route::post('/staff', [CafeStaffController::class, 'store']);
             Route::delete('/staff/{uuid}', [CafeStaffController::class, 'destroy']); // terminate at all branches
         });
 
@@ -198,42 +198,42 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
         // Feature-Gated: Analytics (one call per tab; ?from=&to=&branch=)
         Route::middleware('plan.feature:advanced_analytics')->prefix('analytics')->group(function () {
-            Route::get('/sales',      [\App\Http\Controllers\OwnerAnalyticsController::class, 'sales']);
-            Route::get('/transactions',        [\App\Http\Controllers\OwnerAnalyticsController::class, 'transactions']);
+            Route::get('/sales', [\App\Http\Controllers\OwnerAnalyticsController::class, 'sales']);
+            Route::get('/transactions', [\App\Http\Controllers\OwnerAnalyticsController::class, 'transactions']);
             Route::get('/transactions/{uuid}', [\App\Http\Controllers\OwnerAnalyticsController::class, 'transaction']);
-            Route::get('/menu',       [\App\Http\Controllers\OwnerAnalyticsController::class, 'menu']);
-            Route::get('/branches',   [\App\Http\Controllers\OwnerAnalyticsController::class, 'branches']);
+            Route::get('/menu', [\App\Http\Controllers\OwnerAnalyticsController::class, 'menu']);
+            Route::get('/branches', [\App\Http\Controllers\OwnerAnalyticsController::class, 'branches']);
             Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);
         });
 
         // Feature-Gated: Menu Management
         Route::middleware('plan.feature:menu_management')->group(function () {
-            Route::get('/menu-categories',                        [MenuCategoryController::class, 'index']);
-            Route::post('/menu-categories',                       [MenuCategoryController::class, 'store']);
-            Route::patch('/menu-categories/{uuid}',                [MenuCategoryController::class, 'update']);
-            Route::delete('/menu-categories/{uuid}',               [MenuCategoryController::class, 'destroy']);
+            Route::get('/menu-categories', [MenuCategoryController::class, 'index']);
+            Route::post('/menu-categories', [MenuCategoryController::class, 'store']);
+            Route::patch('/menu-categories/{uuid}', [MenuCategoryController::class, 'update']);
+            Route::delete('/menu-categories/{uuid}', [MenuCategoryController::class, 'destroy']);
 
-            Route::get('/ingredients',                            [IngredientController::class, 'index']); // picker + Ingredients page
-            Route::post('/ingredients',                           [IngredientController::class, 'store']);
-            Route::patch('/ingredients/{uuid}',                   [IngredientController::class, 'update']); // rename, unit, retire/restore
+            Route::get('/ingredients', [IngredientController::class, 'index']); // picker + Ingredients page
+            Route::post('/ingredients', [IngredientController::class, 'store']);
+            Route::patch('/ingredients/{uuid}', [IngredientController::class, 'update']); // rename, unit, retire/restore
 
-            Route::get('/menu-items',                             [MenuItemController::class, 'index']);
-            Route::get('/menu-items/{uuid}',                      [MenuItemController::class, 'show']);
-            Route::post('/menu-items',                            [MenuItemController::class, 'store']);
-            Route::patch('/menu-items/{uuid}',                    [MenuItemController::class, 'update']);
-            Route::delete('/menu-items/{uuid}',                   [MenuItemController::class, 'destroy']);
+            Route::get('/menu-items', [MenuItemController::class, 'index']);
+            Route::get('/menu-items/{uuid}', [MenuItemController::class, 'show']);
+            Route::post('/menu-items', [MenuItemController::class, 'store']);
+            Route::patch('/menu-items/{uuid}', [MenuItemController::class, 'update']);
+            Route::delete('/menu-items/{uuid}', [MenuItemController::class, 'destroy']);
 
-            Route::get('/menu-addons',                            [MenuAddonController::class, 'index']);
-            Route::post('/menu-addons',                           [MenuAddonController::class, 'store']);
-            Route::patch('/menu-addons/{uuid}',                   [MenuAddonController::class, 'update']);
-            Route::delete('/menu-addons/{uuid}',                  [MenuAddonController::class, 'destroy']);
+            Route::get('/menu-addons', [MenuAddonController::class, 'index']);
+            Route::post('/menu-addons', [MenuAddonController::class, 'store']);
+            Route::patch('/menu-addons/{uuid}', [MenuAddonController::class, 'update']);
+            Route::delete('/menu-addons/{uuid}', [MenuAddonController::class, 'destroy']);
 
-            Route::get('/menu-categories/{uuid}/branches',                       [CategoryBranchController::class, 'index']);
-            Route::get('/menu-categories/{uuid}/branches-status',                [CategoryBranchController::class, 'status']);
+            Route::get('/menu-categories/{uuid}/branches', [CategoryBranchController::class, 'index']);
+            Route::get('/menu-categories/{uuid}/branches-status', [CategoryBranchController::class, 'status']);
             Route::patch('/menu-categories/{categoryUuid}/branches/{branchUuid}', [CategoryBranchController::class, 'update']);
 
-            Route::get('/menu-items/{uuid}/branches-status',                     [ItemBranchController::class, 'status']);
-            Route::patch('/menu-items/{itemUuid}/branches/{branchUuid}',         [ItemBranchController::class, 'update']);
+            Route::get('/menu-items/{uuid}/branches-status', [ItemBranchController::class, 'status']);
+            Route::patch('/menu-items/{itemUuid}/branches/{branchUuid}', [ItemBranchController::class, 'update']);
         });
     });
 
@@ -241,7 +241,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     Route::middleware('role:Manager')->prefix('manager')->group(function () use ($branchScopedRoutes) {
         Route::get('/branches', [ManagerAccountController::class, 'branches']); // branch switcher
         Route::get('/branches/{branchUuid}', [ManagerAccountController::class, 'branch'])->middleware('branch.access'); // Cafe Management
-        Route::put('/pin',      [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
+        Route::put('/pin', [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
 
         // Manager Dashboard stats & transactions
         Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats'])->middleware('branch.access');
@@ -258,36 +258,36 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         // One-time setup: an owner/manager signs in on the device and registers it.
         Route::middleware(['role:Cafe Owner,Manager', 'plan.feature:pos_system'])->group(function () {
             Route::get('/setup/branches', [PosDeviceController::class, 'setupBranches']);
-            Route::post('/setup',         [PosDeviceController::class, 'register']);
+            Route::post('/setup', [PosDeviceController::class, 'register']);
         });
 
         // Device token only. Branch comes from the token, never the request.
         Route::middleware('pos.device')->prefix('device')->group(function () {
-            Route::get('/',                        [PosDeviceController::class, 'current']);
-            Route::delete('/',                     [PosDeviceController::class, 'unregister']);
-            Route::get('/menu',                    [PosDeviceController::class, 'menu']);
-            Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
-            Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
-            Route::get('/staff',                   [PosDeviceController::class, 'staff']); // lock-screen names
+            Route::get('/', [PosDeviceController::class, 'current']);
+            Route::delete('/', [PosDeviceController::class, 'unregister']);
+            Route::get('/menu', [PosDeviceController::class, 'menu']);
+            Route::get('/transactions', [PosDeviceController::class, 'transactions']);
+            Route::post('/checkout', [PosDeviceController::class, 'checkout']);
+            Route::get('/staff', [PosDeviceController::class, 'staff']); // lock-screen names
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
-            Route::post('/lock',                   [PosDeviceController::class, 'lock']);
-            Route::get('/menu',                    [PosDeviceController::class, 'menu']);
-            Route::post('/checkout',               [PosDeviceController::class, 'checkout']);
-            Route::get('/spoilage',                [SpoilageController::class, 'deviceIndex']);
-            Route::post('/spoilage',               [SpoilageController::class, 'deviceStore']);
-            Route::get('/transactions',            [PosDeviceController::class, 'transactions']);
+            Route::post('/lock', [PosDeviceController::class, 'lock']);
+            Route::get('/menu', [PosDeviceController::class, 'menu']);
+            Route::post('/checkout', [PosDeviceController::class, 'checkout']);
+            Route::get('/spoilage', [SpoilageController::class, 'deviceIndex']);
+            Route::post('/spoilage', [SpoilageController::class, 'deviceStore']);
+            Route::get('/transactions', [PosDeviceController::class, 'transactions']);
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
-            Route::get('/approving-managers',             [PosDeviceController::class, 'approvingManagers']);
+            Route::get('/approving-managers', [PosDeviceController::class, 'approvingManagers']);
             Route::post('/transactions/{transactionUuid}/refund', [PosDeviceController::class, 'refund'])->middleware('throttle:pos-unlock');
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.
         Route::middleware(['pos.device', 'plan.feature:reservations'])->prefix('device')->group(function () {
-            Route::get('/floor-plan',                  [PosFloorPlanController::class, 'floorPlan']);
+            Route::get('/floor-plan', [PosFloorPlanController::class, 'floorPlan']);
             Route::patch('/tables/{tableUuid}/status', [PosFloorPlanController::class, 'tableStatus']);
-            Route::get('/reservations',                                [PosFloorPlanController::class, 'reservations']);
-            Route::patch('/reservations/{reservationUuid}/status',     [PosFloorPlanController::class, 'reservationStatus']);
+            Route::get('/reservations', [PosFloorPlanController::class, 'reservations']);
+            Route::patch('/reservations/{reservationUuid}/status', [PosFloorPlanController::class, 'reservationStatus']);
         });
     });
 
@@ -299,8 +299,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     // Admin and Cafe Owner shared
     Route::middleware('role:Admin,Cafe Owner')->group(function () {
         Route::get('/documents/user/{userDocId}/{side?}', [DocumentController::class, 'userDocument']);
-        Route::get('/documents/cafe/{cafeDocId}',      [DocumentController::class, 'cafeDocument']);
-        Route::get('/documents/branch/{branchDocId}',  [DocumentController::class, 'branchDocument']);
+        Route::get('/documents/cafe/{cafeDocId}', [DocumentController::class, 'cafeDocument']);
+        Route::get('/documents/branch/{branchDocId}', [DocumentController::class, 'branchDocument']);
     });
 
     // Public Webhooks (Moved outside auth middleware)
