@@ -149,6 +149,12 @@ class BranchStaffService
             return $this->forbidden('Only the owner can change an employee\'s role.');
         }
 
+        // A manager runs exactly one branch.
+        if ($newRole === 'Manager' && $target->roleName() !== 'Manager'
+            && $this->repo->countActiveAssignments($target->user_id) > 1) {
+            return ['success' => false, 'http' => 422, 'message' => 'A manager can only be assigned to one branch. End this employee\'s other branch assignments first.'];
+        }
+
         $assignment = $target->staffAssignments->first();
 
         if ($assignment->employment_status === CafeStaff::STATUS_TERMINATED) {

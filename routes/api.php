@@ -239,7 +239,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     // Manager only
     Route::middleware('role:Manager')->prefix('manager')->group(function () use ($branchScopedRoutes) {
-        Route::get('/branches', [ManagerAccountController::class, 'branches']); // branch switcher
+        Route::get('/branches', [ManagerAccountController::class, 'branches']); // the manager's one assigned branch
         Route::get('/branches/{branchUuid}', [ManagerAccountController::class, 'branch'])->middleware('branch.access'); // Cafe Management
         Route::put('/pin', [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
 

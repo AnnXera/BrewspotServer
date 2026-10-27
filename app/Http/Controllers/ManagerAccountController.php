@@ -17,7 +17,7 @@ class ManagerAccountController extends Controller
     ) {}
 
     /**
-     * GET /api/manager/branches — branch switcher.
+     * GET /api/manager/branches — the manager's assigned branch (a manager runs exactly one).
      */
     public function branches(Request $request): JsonResponse
     {

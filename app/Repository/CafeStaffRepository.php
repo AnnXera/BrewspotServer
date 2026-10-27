@@ -229,6 +229,11 @@ class CafeStaffRepository
         return CafeStaff::where('user_id', $userId)->active()->exists();
     }
 
+    public function countActiveAssignments(int $userId): int
+    {
+        return CafeStaff::where('user_id', $userId)->active()->count();
+    }
+
     /**
      * Replaces the whole weekly schedule for one branch assignment.
      *
