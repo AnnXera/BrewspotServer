@@ -41,7 +41,7 @@ class MenuItemService
         }
 
         $sizes   = $payload['sizes'] ?? [];
-        $payload = $this->applySizePrice($payload, $sizes);
+        $payload = $this->applySizePrice($payload, $sizes, $payload['is_hot_and_iced'] ?? false);
         $recipes = $this->recipeResolver->resolve($cafe->cafe_id, $payload['recipes'], array_column($sizes, 'name'));
 
         if (isset($recipes['errors'])) {
@@ -116,7 +116,7 @@ class MenuItemService
 
         // Absent = unchanged; [] = the item no longer comes in sizes.
         $sizes   = array_key_exists('sizes', $payload) ? ($payload['sizes'] ?? []) : null;
-        $payload = $this->applySizePrice($payload, $sizes);
+        $payload = $this->applySizePrice($payload, $sizes, $payload['is_hot_and_iced'] ?? $item->is_hot_and_iced);
         $recipes = null;
 
         if (isset($payload['recipes'])) {
@@ -174,12 +174,16 @@ class MenuItemService
 
     /**
      * Sizes replace the single price: base_price becomes the lowest size
-     * price, which menus show as the starting price.
+     * price (hot or iced), which menus show as the starting price.
      */
-    private function applySizePrice(array $payload, ?array $sizes): array
+    private function applySizePrice(array $payload, ?array $sizes, bool $hotAndIced): array
     {
         if ($sizes) {
-            $payload['base_price'] = min(array_map('floatval', array_column($sizes, 'price')));
+            $prices = array_column($sizes, 'price');
+            if ($hotAndIced) {
+                $prices = [...$prices, ...array_column($sizes, 'iced_price')];
+            }
+            $payload['base_price'] = min(array_map('floatval', $prices));
         }
 
         return $payload;

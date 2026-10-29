@@ -16,6 +16,7 @@ use App\Models\TransactionItem;
 use App\Models\User;
 use App\Services\StaffPinService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -254,7 +255,120 @@ class SizesAndAddonsTest extends TestCase
         $this->assertEquals(115, TransactionItem::sole()->unit_price); // 95 + 20
     }
 
+    // ── Hot and iced ─────────────────────────────────────────────────────
+
+    public function test_hot_and_iced_item_needs_an_iced_price_per_size(): void
+    {
+        $this->api('POST', '/api/owner/menu-items', [
+            'menu_name'       => 'Coffee',
+            'is_hot_and_iced' => true,
+            'sizes'           => [['name' => 'Small', 'price' => 150], ['name' => 'Large', 'price' => 160, 'iced_price' => 180]],
+            'recipes'         => [['ingredient_name' => 'Espresso', 'quantity' => 1, 'unit' => 'shots']],
+        ])->assertStatus(422)->assertJsonValidationErrors('sizes.0.iced_price');
+
+        $this->api('POST', '/api/owner/menu-items', [
+            'menu_name'       => 'Americano',
+            'is_hot_and_iced' => '1', // as form data sends it
+            'base_price'      => 100,
+            'recipes'         => [['ingredient_name' => 'Espresso', 'quantity' => 1, 'unit' => 'shots']],
+        ])->assertStatus(422)->assertJsonValidationErrors('iced_price');
+
+        $item = $this->createCoffee()
+            ->assertCreated()
+            ->assertJsonPath('item.is_hot_and_iced', true)
+            ->assertJsonPath('item.base_price', '150.00')
+            ->assertJsonPath('item.sizes.0.iced_price', '170.00')
+            ->assertJsonPath('item.sizes.1.iced_price', '180.00')
+            ->json('item');
+
+        // Turning it off drops the iced prices.
+        $this->api('PATCH', "/api/owner/menu-items/{$item['uuid']}", [
+            'is_hot_and_iced' => false,
+            'sizes'           => collect($item['sizes'])->map(fn ($s) => ['uuid' => $s['uuid'], 'name' => $s['name'], 'price' => $s['price'], 'iced_price' => $s['iced_price']])->all(),
+        ])->assertOk()
+            ->assertJsonPath('item.is_hot_and_iced', false)
+            ->assertJsonPath('item.sizes.0.iced_price', null);
+    }
+
+    public function test_checkout_prices_hot_and_iced_but_uses_the_same_ingredients(): void
+    {
+        $item  = $this->createCoffee()->json('item');
+        $latte = $this->createIcedCaramel()->json('item');
+        $this->stock($item['uuid'], 10);
+        $this->stock($latte['uuid'], 10);
+
+        $device = $this->unlockedDevice();
+        [$small, $large] = array_column($item['sizes'], 'uuid');
+
+        $menuItem = collect($this->deviceApi('GET', '/api/pos/device/menu', $device)->json('items'))->firstWhere('uuid', $item['uuid']);
+        $this->assertTrue($menuItem['is_hot_and_iced']);
+        $this->assertSame(170.0, (float) $menuItem['sizes'][0]['iced_price']);
+
+        $checkout = fn (array $lines) => $this->deviceApi('POST', '/api/pos/device/checkout', $device, [
+            'items' => $lines, 'payment_method' => 'cash', 'amount_tendered' => 1000,
+        ]);
+
+        $checkout([['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $small]])
+            ->assertStatus(422)->assertJsonPath('message', 'Pick hot or iced for Coffee.');
+
+        $checkout([
+            ['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $small, 'temperature' => 'hot'],
+            ['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $large, 'temperature' => 'hot'],
+            ['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $small, 'temperature' => 'iced'],
+            ['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $large, 'temperature' => 'iced'],
+        ])->assertOk();
+
+        $lines = TransactionItem::orderBy('transaction_item_id')->get();
+        $this->assertSame([150.0, 160.0, 170.0, 180.0], $lines->map(fn ($l) => (float) $l->unit_price)->all());
+        $this->assertSame(['hot', 'hot', 'iced', 'iced'], $lines->pluck('temperature')->all());
+
+        // Ingredients follow the size only: Small 150ml, Large 220ml, hot or iced.
+        $milk = IngredientConsumptionLog::where('ingredient_name', 'Milk')->sum('quantity_consumed');
+        $this->assertEquals(150 + 220 + 150 + 220, $milk);
+
+        // An item not sold both ways refuses a temperature.
+        $checkout([['uuid' => $latte['uuid'], 'quantity' => 1, 'size_uuid' => $latte['sizes'][0]['uuid'], 'temperature' => 'iced']])
+            ->assertStatus(422);
+    }
+
+    public function test_hot_and_iced_item_without_sizes(): void
+    {
+        $item = $this->api('POST', '/api/owner/menu-items', [
+            'menu_name'       => 'Americano',
+            'is_hot_and_iced' => true,
+            'base_price'      => 100,
+            'iced_price'      => 115,
+            'recipes'         => [['ingredient_name' => 'Espresso', 'quantity' => 2, 'unit' => 'shots']],
+        ])->assertCreated()->assertJsonPath('item.iced_price', '115.00')->json('item');
+        $this->stock($item['uuid'], 10);
+
+        $this->deviceApi('POST', '/api/pos/device/checkout', $this->unlockedDevice(), [
+            'items'           => [['uuid' => $item['uuid'], 'quantity' => 2, 'temperature' => 'iced']],
+            'payment_method'  => 'cash',
+            'amount_tendered' => 230,
+        ])->assertOk();
+
+        $this->assertEquals(115, TransactionItem::sole()->unit_price);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private function createCoffee(): TestResponse
+    {
+        return $this->api('POST', '/api/owner/menu-items', [
+            'menu_name'       => 'Coffee',
+            'is_hot_and_iced' => true,
+            'sizes'           => [
+                ['name' => 'Small', 'price' => 150, 'iced_price' => 170],
+                ['name' => 'Large', 'price' => 160, 'iced_price' => 180],
+            ],
+            'recipes'         => [
+                ['ingredient_name' => 'Espresso', 'quantity' => 1, 'unit' => 'shots'],
+                ['ingredient_name' => 'Milk', 'quantity' => 150, 'unit' => 'ml', 'size_index' => 0],
+                ['ingredient_name' => 'Milk', 'quantity' => 220, 'unit' => 'ml', 'size_index' => 1],
+            ],
+        ]);
+    }
 
     private function createOreo(): TestResponse
     {
@@ -282,12 +396,16 @@ class SizesAndAddonsTest extends TestCase
 
     private function stock(string $itemUuid, int $servings): void
     {
-        InventoryServing::create([
+        $serving = InventoryServing::create([
             'men_item_id'       => MenuItem::where('uuid', $itemUuid)->value('men_item_id'),
             'branch_id'         => $this->branch->branch_id,
             'date'              => today()->toDateString(),
             'expected_servings' => $servings,
         ]);
+
+        // SQLite keeps the date cast as "Y-m-d 00:00:00", which checkout's
+        // firstOrCreate on a plain date doesn't match. MySQL's DATE column does.
+        DB::table('inventory_servings')->where($serving->getKeyName(), $serving->getKey())->update(['date' => today()->toDateString()]);
     }
 
     private function unlockedDevice(): string

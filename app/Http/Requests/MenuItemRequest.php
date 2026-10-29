@@ -25,6 +25,11 @@ class MenuItemRequest extends FormRequest
                 $this->merge([$field => json_decode($this->input($field), true)]);
             }
         }
+
+        // Form data sends "1"/"0"; the iced price rules below compare to a real boolean.
+        if ($this->has('is_hot_and_iced')) {
+            $this->merge(['is_hot_and_iced' => filter_var($this->input('is_hot_and_iced'), FILTER_VALIDATE_BOOLEAN)]);
+        }
     }
 
     public function rules(): array
@@ -38,6 +43,10 @@ class MenuItemRequest extends FormRequest
             // With sizes, the price comes from the sizes (lowest one).
             'base_price'    => [$isUpdate ? 'sometimes' : 'required_without:sizes', 'nullable', 'numeric', 'min:0'],
             'is_available'  => ['sometimes', 'boolean'],
+            // Sold hot or iced: base_price (or each size's price) is the hot
+            // price, and the iced price is set next to it. Off = no iced prices.
+            'is_hot_and_iced' => ['sometimes', 'boolean'],
+            'iced_price'      => ['exclude_unless:is_hot_and_iced,true', 'required_without:sizes', 'nullable', 'numeric', 'min:0'],
             'picture'       => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp', 'max:2048'],
             
             'recipes'                     => [$isUpdate ? 'sometimes' : 'required', 'array', 'min:1'],
@@ -60,6 +69,7 @@ class MenuItemRequest extends FormRequest
             'sizes.*.uuid'  => ['nullable', 'string'],
             'sizes.*.name'  => ['required', 'string', 'max:50', 'distinct:ignore_case'],
             'sizes.*.price' => ['required', 'numeric', 'min:0'],
+            'sizes.*.iced_price' => ['exclude_unless:is_hot_and_iced,true', 'required', 'numeric', 'min:0'],
 
             'addon_uuids'   => ['sometimes', 'nullable', 'array'],
             'addon_uuids.*' => ['string', 'distinct'],
@@ -80,6 +90,8 @@ class MenuItemRequest extends FormRequest
             'sizes.*.name.required'              => 'Size name is required.',
             'sizes.*.name.distinct'              => 'Two sizes have the same name.',
             'sizes.*.price.required'             => 'Size price is required.',
+            'sizes.*.iced_price.required'        => 'Iced price is required.',
+            'iced_price.required_without'        => 'Iced price is required.',
         ];
     }
 

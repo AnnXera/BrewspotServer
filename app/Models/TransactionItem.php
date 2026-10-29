@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 
 class TransactionItem extends Model
 {
+    public const TEMPERATURES = ['hot', 'iced'];
+
     protected $primaryKey = 'transaction_item_id';
 
     public function getRouteKeyName(): string
@@ -22,6 +24,7 @@ class TransactionItem extends Model
         'men_item_id',
         'men_size_id',
         'size_name', // snapshot at time of sale
+        'temperature', // hot or iced, on items sold both ways
         'quantity',
         'unit_price',
     ];
