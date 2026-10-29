@@ -32,7 +32,7 @@ class MenuItemRepository
     }
 
     /**
-     * @param array<int, array{uuid?: ?string, name: string, price: mixed}> $sizes In display order; [] = no sizes.
+     * @param array<int, array{uuid?: ?string, name: string, price: mixed, iced_price?: mixed}> $sizes In display order; [] = no sizes.
      * @param array<int, array{ingredient: ?Ingredient, name: string, quantity: mixed, unit: string, size_index: ?int}> $recipes
      *        Already resolved by RecipeResolver.
      * @param array<int, int> $addonIds
@@ -46,6 +46,8 @@ class MenuItemRepository
                 'menu_name'       => $payload['menu_name'],
                 'description'     => $payload['description'] ?? null,
                 'base_price'      => $payload['base_price'],
+                'is_hot_and_iced' => $payload['is_hot_and_iced'] ?? false,
+                'iced_price'      => ($payload['is_hot_and_iced'] ?? false) && !$sizes ? $payload['iced_price'] : null,
                 'is_available'    => true, // automatically true when created
                 'picture'         => $payload['picture'] ?? null,
             ]);
@@ -83,6 +85,13 @@ class MenuItemRepository
             // Null is meaningful here (uncategorized), so it can't go through the filter above.
             if (array_key_exists('men_category_id', $payload)) {
                 $updateData['men_category_id'] = $payload['men_category_id'];
+            }
+
+            // Turning hot and iced off clears the iced price. With sizes, each
+            // size keeps its own iced price instead.
+            if (array_key_exists('is_hot_and_iced', $payload)) {
+                $updateData['is_hot_and_iced'] = $payload['is_hot_and_iced'];
+                $updateData['iced_price']      = $payload['is_hot_and_iced'] ? ($payload['iced_price'] ?? null) : null;
             }
 
             if (!empty($updateData)) {
@@ -137,7 +146,7 @@ class MenuItemRepository
         $saved    = [];
 
         foreach (array_values($sizes) as $i => $row) {
-            $attributes = ['name' => trim($row['name']), 'price' => $row['price'], 'sort_order' => $i];
+            $attributes = ['name' => trim($row['name']), 'price' => $row['price'], 'iced_price' => $row['iced_price'] ?? null, 'sort_order' => $i];
             $size       = $existing->get($row['uuid'] ?? '');
 
             if ($size) {

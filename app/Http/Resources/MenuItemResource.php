@@ -30,6 +30,9 @@ class MenuItemResource extends JsonResource
             'menu_name'               => $this->menu_name,
             'description'             => $this->description,
             'base_price'              => $this->base_price,
+            // Sold hot or iced: base_price (or each size's price) is the hot price.
+            'is_hot_and_iced'         => $this->is_hot_and_iced,
+            'iced_price'              => $this->iced_price,
             'is_available'            => $this->is_available,
             'picture'                 => $this->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->picture) : null,
             'recipes_preview'         => $recipesPreview,
@@ -40,6 +43,7 @@ class MenuItemResource extends JsonResource
                 'uuid'  => $size->uuid,
                 'name'  => $size->name,
                 'price' => $size->price,
+                'iced_price' => $size->iced_price,
             ])->values()),
             'addons'                  => $this->whenLoaded('addons', fn () => $this->addons->map(fn ($addon) => [
                 'uuid'         => $addon->uuid,

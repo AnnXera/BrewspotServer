@@ -8,7 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
- * One size of a menu item (Small, Large) with its own price.
+ * One size of a menu item (Small, Large) with its own price. On an item sold
+ * hot and iced, price is the hot price and iced_price the iced one.
  */
 class MenuItemSize extends Model
 {
@@ -24,11 +25,13 @@ class MenuItemSize extends Model
         'men_item_id',
         'name',
         'price',
+        'iced_price',
         'sort_order',
     ];
 
     protected $casts = [
         'price'      => 'decimal:2',
+        'iced_price' => 'decimal:2',
         'sort_order' => 'integer',
     ];
 

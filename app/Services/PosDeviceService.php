@@ -299,6 +299,9 @@ class PosDeviceService
                 'menu_name' => $i->menu_name,
                 'description' => $i->description,
                 'base_price' => (float) $i->base_price,
+                // Hot or iced is picked at the register; base_price / size price is the hot price.
+                'is_hot_and_iced' => (bool) $i->is_hot_and_iced,
+                'iced_price' => $i->iced_price !== null ? (float) $i->iced_price : null,
                 'picture' => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
                 'available_stock' => $stock->get($i->men_item_id, 0),
                 'sold_out' => $stock->get($i->men_item_id, 0) <= 0,
@@ -307,6 +310,7 @@ class PosDeviceService
                     'uuid' => $s->uuid,
                     'name' => $s->name,
                     'price' => (float) $s->price,
+                    'iced_price' => $s->iced_price !== null ? (float) $s->iced_price : null,
                 ])->values(),
                 'addons' => $i->addons->map(fn($a) => [
                     'uuid' => $a->uuid,
@@ -325,14 +329,24 @@ class PosDeviceService
 
     /**
      * Price of one drink: the chosen size (or base price when the item has no
-     * sizes) plus each add-on x its quantity. Add-ons must be offered on the
-     * item, available, and within their per-drink limit.
+     * sizes), at its iced price when served iced, plus each add-on x its
+     * quantity. Add-ons must be offered on the item, available, and within
+     * their per-drink limit. Temperature changes only the price, never the
+     * ingredients used.
      *
      * @param array<int, array{uuid: string, quantity: int}> $addons
-     * @return array{unit_price: float, size: ?\App\Models\MenuItemSize, addons: array}|array{message: string}
+     * @return array{unit_price: float, size: ?\App\Models\MenuItemSize, temperature: ?string, addons: array}|array{message: string}
      */
-    private function priceLine(\App\Models\MenuItem $menuItem, ?string $sizeUuid, array $addons): array
+    private function priceLine(\App\Models\MenuItem $menuItem, ?string $sizeUuid, ?string $temperature, array $addons): array
     {
+        if ($menuItem->is_hot_and_iced && !$temperature) {
+            return ['message' => "Pick hot or iced for {$menuItem->menu_name}."];
+        }
+
+        if (!$menuItem->is_hot_and_iced && $temperature) {
+            return ['message' => "{$menuItem->menu_name} is not sold hot and iced. Remove it and add it again."];
+        }
+
         $size = null;
 
         if ($menuItem->sizes->isNotEmpty()) {
@@ -345,7 +359,15 @@ class PosDeviceService
             return ['message' => "{$menuItem->menu_name} does not come in sizes. Remove it and add it again."];
         }
 
-        $unitPrice = (float) ($size?->price ?? $menuItem->base_price);
+        $unitPrice = $temperature === 'iced'
+            ? ($size ? $size->iced_price : $menuItem->iced_price)
+            : ($size?->price ?? $menuItem->base_price);
+
+        if ($unitPrice === null) {
+            return ['message' => "{$menuItem->menu_name} has no iced price yet. Ask the owner to set it."];
+        }
+
+        $unitPrice = (float) $unitPrice;
         $lines = [];
 
         foreach ($addons as $row) {
@@ -369,7 +391,7 @@ class PosDeviceService
             $unitPrice += (float) $addon->price * $quantity;
         }
 
-        return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'addons' => array_values($lines)];
+        return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'temperature' => $temperature, 'addons' => array_values($lines)];
     }
 
     public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0): array
@@ -408,7 +430,7 @@ class PosDeviceService
             }
 
             // Prices always come from the menu, never from the register.
-            $line = $this->priceLine($menuItem, $itemData['size_uuid'] ?? null, $itemData['addons'] ?? []);
+            $line = $this->priceLine($menuItem, $itemData['size_uuid'] ?? null, $itemData['temperature'] ?? null, $itemData['addons'] ?? []);
             if (isset($line['message'])) {
                 return ['success' => false, 'http' => 422, 'message' => $line['message']];
             }
@@ -420,6 +442,7 @@ class PosDeviceService
                     'men_item_id' => $menuItem->men_item_id,
                     'men_size_id' => $line['size']?->men_size_id,
                     'size_name' => $line['size']?->name,
+                    'temperature' => $line['temperature'],
                     'quantity' => $quantity,
                     'unit_price' => $line['unit_price'],
                 ],
@@ -639,6 +662,7 @@ class PosDeviceService
                     'uuid' => $i->uuid,
                     'menu_name' => $i->menuItem?->menu_name ?? ('Item #' . $i->men_item_id),
                     'size_name' => $i->size_name,
+                    'temperature' => $i->temperature,
                     'quantity' => $i->quantity,
                     'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),

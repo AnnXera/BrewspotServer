@@ -113,6 +113,7 @@ class PosDeviceController extends Controller
             'items.*.uuid' => 'required|string',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.size_uuid' => 'nullable|string',
+            'items.*.temperature' => ['nullable', \Illuminate\Validation\Rule::in(\App\Models\TransactionItem::TEMPERATURES)],
             'items.*.addons' => 'nullable|array',
             'items.*.addons.*.uuid' => 'required|string',
             'items.*.addons.*.quantity' => 'required|integer|min:1',

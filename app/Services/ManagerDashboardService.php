@@ -382,6 +382,7 @@ class ManagerDashboardService
                     'uuid'       => $i->uuid,
                     'menu_name'  => $i->menuItem?->menu_name ?? ('Item #' . $i->men_item_id),
                     'size_name'  => $i->size_name,
+                    'temperature' => $i->temperature,
                     'quantity'   => $i->quantity,
                     'unit_price' => (float) $i->unit_price,
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),

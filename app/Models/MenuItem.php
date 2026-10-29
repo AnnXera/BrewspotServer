@@ -26,13 +26,17 @@ class MenuItem extends Model
         'men_category_id',
         'menu_name',
         'description',
-        'base_price',
+        'base_price', // the hot price when is_hot_and_iced
+        'is_hot_and_iced',
+        'iced_price', // items without sizes; sizes keep their own
         'is_available',
         'picture',
     ];
 
     protected $casts = [
         'base_price' => 'decimal:2',
+        'is_hot_and_iced' => 'boolean',
+        'iced_price' => 'decimal:2',
         'is_available' => 'boolean',
     ];
 
