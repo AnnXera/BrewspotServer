@@ -120,7 +120,7 @@ class PosDeviceController extends Controller
             'payment_method' => 'required|string',
             'amount_tendered' => 'required|numeric|min:0',
             'reference_number' => 'nullable|string',
-            'discount_type' => 'nullable|string|in:none,PWD,Senior,VIP',
+            'discount_type' => 'nullable|string|in:none,PWD,Senior',
             'discount_amount' => 'nullable|numeric|min:0',
         ]);
 
