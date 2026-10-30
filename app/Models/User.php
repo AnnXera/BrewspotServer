@@ -53,6 +53,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'welcomed_at'       => 'datetime',
         'pin_locked_at'      => 'datetime',
         'pin_must_change'    => 'boolean',
         'created_at'         => 'datetime',

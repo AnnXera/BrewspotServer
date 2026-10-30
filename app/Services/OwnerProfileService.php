@@ -22,6 +22,18 @@ class OwnerProfileService
         private readonly \App\Repository\PaymentRepository $paymentRepo
     ) {}
 
+    /**
+     * Records that the owner dismissed the first-login welcome modal.
+     */
+    public function markWelcomed(User $owner): array
+    {
+        if ($owner->welcomed_at === null) {
+            $owner->forceFill(['welcomed_at' => now()])->save();
+        }
+
+        return ['success' => true];
+    }
+
     public function getProfile(User $owner): array
     {
         $owner = $this->repo->findOwnerWithRole($owner->user_id);
