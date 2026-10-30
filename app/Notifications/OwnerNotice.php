@@ -68,24 +68,34 @@ class OwnerNotice extends AppNotice
             $fromGateway ? "cancelled:{$subscriptionUuid}:{$endDate}" : null);
     }
 
-    public static function subscriptionExpiring(string $subscriptionUuid, string $planName, string $endDate, int $daysRemaining): self
-    {
+    /**
+     * $window is the reminder (7, 3 or 1 days out) and keeps each one its own bell entry.
+     * $renewPlanName is null for a trial with no plan booked, which has nothing to renew.
+     */
+    public static function subscriptionExpiring(
+        string $subscriptionUuid,
+        string $planName,
+        string $endDate,
+        int $daysRemaining,
+        int $window,
+        bool $renewalOpen,
+        ?string $renewPlanName,
+    ): self {
         $when = match (true) {
             $daysRemaining <= 0 => 'today',
             $daysRemaining === 1 => 'tomorrow',
             default => "in {$daysRemaining} days",
         };
 
-        return new self('subscription_expiring', 'Subscription ending soon',
-            "Your {$planName} ends {$when} ({$endDate}). Renew to keep your branches running.", '/owner/subscription',
-            "expiring:{$subscriptionUuid}:{$endDate}");
-    }
+        $action = match (true) {
+            $renewPlanName === null => 'Choose a plan to keep your branches running.',
+            $renewalOpen            => 'Renewal is open, so you can pay now to keep your branches running.',
+            default                 => 'Renew to keep your branches running.',
+        };
 
-    public static function renewalOpen(string $subscriptionUuid, string $planName, string $endDate): self
-    {
-        return new self('renewal_open', 'You can renew now',
-            "Pay for your next term of the {$planName} any time before {$endDate}.", '/owner/subscription',
-            "renewal_open:{$subscriptionUuid}:{$endDate}");
+        return new self('subscription_expiring', 'Subscription ending soon',
+            "Your {$planName} ends {$when} ({$endDate}). {$action}", '/owner/subscription',
+            "expiring:{$subscriptionUuid}:{$endDate}:{$window}d");
     }
 
     public static function subscriptionExpired(string $subscriptionUuid, string $planName, string $endedOn): self

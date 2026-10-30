@@ -5,8 +5,8 @@ namespace App\Services;
 use App\Jobs\SendSubscriptionNotice;
 use App\Mail\SubscriptionExpiredMail;
 use App\Mail\SubscriptionExpiringMail;
-use App\Mail\SubscriptionRenewalOpenMail;
 use App\Models\Subscription;
+use App\Models\SubscriptionNotice;
 use App\Models\SubscriptionPlan;
 use App\Notifications\OwnerNotice;
 use App\Repository\SubscriptionRepository;
@@ -26,61 +26,57 @@ class SubscriptionReminderService
     ) {}
 
     /**
-     * Early heads-up, a few days before the term ends.
+     * "Ending soon" reminders at 7, 3 and 1 day(s) before the term ends.
+     *
+     * Each term is only offered the reminder for the window it is in now (end_date after the
+     * next-smaller window), so a term that is already 2 days out gets the 3-day reminder
+     * alone, never a late 7-day one alongside it. With GRACE_DAYS at 1 the 1-day reminder
+     * goes out as renewal opens, so it also tells the owner they can pay now.
      */
-    public function sendExpirationReminders(int $withinDays = 3): int
+    public function sendExpirationReminders(): int
     {
         $count = 0;
+        $after = Carbon::now();
 
-        foreach ($this->subscriptionRepo->findExpiringWithinDays($withinDays) as $subscription) {
-            $daysRemaining = max(0, (int) Carbon::now()->startOfDay()->diffInDays($subscription->end_date->startOfDay(), false));
-            $renewPlan     = $this->renewPlan($subscription);
+        foreach (SubscriptionNotice::EXPIRING_DAYS as $window) {
+            $until = Carbon::now()->addDays($window);
+            $kind  = SubscriptionNotice::expiringKind($window);
 
-            $sent = $this->queue($subscription, 'expiration_reminder_sent_at', fn ($owner) => new SubscriptionExpiringMail(
-                ownerName: $this->ownerName($owner),
-                planName: $subscription->plan->sub_name,
-                endDate: $subscription->end_date->format('F j, Y'),
-                daysRemaining: $daysRemaining,
-                renewUrl: $this->buildRenewUrl($subscription),
-                renewPlanName: $renewPlan?->sub_name ?? $subscription->plan->sub_name,
-                renewalOpensOn: $subscription->renewalOpensAt()?->format('F j, Y'),
-            ), OwnerNotice::subscriptionExpiring(
-                $subscription->uuid,
-                $subscription->plan->sub_name,
-                $subscription->end_date->format('F j, Y'),
-                $daysRemaining,
-            ));
+            foreach ($this->subscriptionRepo->findExpiringBetween($after, $until, $kind) as $subscription) {
+                $count += (int) $this->sendExpiring($subscription, $kind, $window);
+            }
 
-            $count += (int) $sent;
+            $after = $until;
         }
 
         return $count;
     }
 
-    /**
-     * The owner can pay for their next term (or booked plan change) from now on.
-     */
-    public function sendRenewalOpenReminders(): int
+    private function sendExpiring(Subscription $subscription, string $kind, int $window): bool
     {
-        $count = 0;
+        $daysRemaining = max(0, (int) Carbon::now()->startOfDay()->diffInDays($subscription->end_date->startOfDay(), false));
+        $renewPlanName = $this->renewPlan($subscription)?->sub_name;
+        $renewalOpen   = $subscription->isRenewalOpen();
+        $endDate       = $subscription->end_date->format('F j, Y');
 
-        foreach ($this->subscriptionRepo->findRenewalOpenUnnotified() as $subscription) {
-            $sent = $this->queue($subscription, 'renewal_open_reminder_sent_at', fn ($owner) => new SubscriptionRenewalOpenMail(
-                ownerName: $this->ownerName($owner),
-                planName: $subscription->plan->sub_name,
-                renewPlanName: $this->renewPlan($subscription)?->sub_name,
-                endDate: $subscription->end_date->format('F j, Y'),
-                renewUrl: $this->buildRenewUrl($subscription),
-            ), OwnerNotice::renewalOpen(
-                $subscription->uuid,
-                $this->renewPlan($subscription)?->sub_name ?? $subscription->plan->sub_name,
-                $subscription->end_date->format('F j, Y'),
-            ));
-
-            $count += (int) $sent;
-        }
-
-        return $count;
+        return $this->queue($subscription, $kind, fn ($owner) => new SubscriptionExpiringMail(
+            ownerName: $this->ownerName($owner),
+            planName: $subscription->plan->sub_name,
+            endDate: $endDate,
+            daysRemaining: $daysRemaining,
+            renewUrl: $this->buildRenewUrl($subscription),
+            renewPlanName: $renewPlanName,
+            renewalOpensOn: $subscription->renewalOpensAt()?->format('F j, Y'),
+            renewalOpen: $renewalOpen,
+        ), OwnerNotice::subscriptionExpiring(
+            $subscription->uuid,
+            $subscription->plan->sub_name,
+            $endDate,
+            $daysRemaining,
+            $window,
+            $renewalOpen,
+            $renewPlanName,
+        ));
     }
 
     /**
@@ -91,7 +87,7 @@ class SubscriptionReminderService
         $count = 0;
 
         foreach ($this->subscriptionRepo->findRecentlyExpiredUnnotified(self::EXPIRED_NOTICE_WINDOW_DAYS) as $subscription) {
-            $sent = $this->queue($subscription, 'expired_notice_sent_at', fn ($owner) => new SubscriptionExpiredMail(
+            $sent = $this->queue($subscription, SubscriptionNotice::KIND_EXPIRED, fn ($owner) => new SubscriptionExpiredMail(
                 ownerName: $this->ownerName($owner),
                 planName: $subscription->plan->sub_name,
                 renewPlanName: $this->renewPlan($subscription)?->sub_name,
@@ -114,11 +110,11 @@ class SubscriptionReminderService
      * the claim if sending ultimately fails; the bell notice's dedupe key keeps that retry
      * from posting it twice.
      */
-    private function queue(Subscription $subscription, string $marker, callable $buildMail, OwnerNotice $notice): bool
+    private function queue(Subscription $subscription, string $kind, callable $buildMail, OwnerNotice $notice): bool
     {
         $owner = $subscription->user;
 
-        if (! $owner || ! $this->subscriptionRepo->claimNotice($subscription, $marker)) {
+        if (! $owner || ! $this->subscriptionRepo->claimNotice($subscription, $kind)) {
             return false;
         }
 
@@ -127,12 +123,12 @@ class SubscriptionReminderService
         /** @var Mailable $mail */
         $mail = $buildMail($owner);
 
-        SendSubscriptionNotice::dispatch($subscription->sub_id, $marker, $owner->email, $mail);
+        SendSubscriptionNotice::dispatch($subscription->sub_id, $kind, $owner->email, $mail);
 
         Log::channel('owner')->info('Subscription notice queued.', [
             'owner_uuid'        => $owner->uuid,
             'subscription_uuid' => $subscription->uuid,
-            'notice'            => $marker,
+            'notice'            => $kind,
             'end_date'          => $subscription->end_date?->toDateString(),
         ]);
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Support\Carbon;
@@ -37,19 +38,13 @@ class Subscription extends Model
         'status',
         'billing_cycle',
         'cancel_at_period_end',
-        'expiration_reminder_sent_at',
-        'renewal_open_reminder_sent_at',
-        'expired_notice_sent_at',
         'gateway_subscription_id',
     ];
 
     protected $casts = [
-        'start_date'                    => 'datetime',
-        'end_date'                      => 'datetime',
-        'cancel_at_period_end'          => 'boolean',
-        'expiration_reminder_sent_at'   => 'datetime',
-        'renewal_open_reminder_sent_at' => 'datetime',
-        'expired_notice_sent_at'        => 'datetime',
+        'start_date'           => 'datetime',
+        'end_date'             => 'datetime',
+        'cancel_at_period_end' => 'boolean',
     ];
 
     protected static function booted(): void
@@ -92,6 +87,11 @@ class Subscription extends Model
     public function pendingPlan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class, 'pending_sub_plan_id', 'sub_plan_id');
+    }
+
+    public function notices(): HasMany
+    {
+        return $this->hasMany(SubscriptionNotice::class, 'sub_id', 'sub_id');
     }
 
     public function payments(): MorphMany

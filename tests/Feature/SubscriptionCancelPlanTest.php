@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Mail\SubscriptionCancelledMail;
 use App\Models\Subscription;
+use App\Models\SubscriptionNotice;
 use App\Models\SubscriptionPlan;
 use App\Repository\SubscriptionRepository;
 use Illuminate\Support\Carbon;
@@ -155,13 +156,13 @@ class SubscriptionCancelPlanTest extends FloorPlanTestCase
         $this->subscription->update(['end_date' => now()->addHours(12)]);
         $repo = app(SubscriptionRepository::class);
 
-        $this->assertCount(1, $repo->findRenewalOpenUnnotified());
-        $this->assertCount(1, $repo->findExpiringWithinDays(3));
+        $due  = fn () => $repo->findExpiringBetween(now(), now()->addDay(), SubscriptionNotice::expiringKind(1));
+
+        $this->assertCount(1, $due());
 
         $this->cancelPlan('current')->assertOk();
 
-        $this->assertCount(0, $repo->findRenewalOpenUnnotified());
-        $this->assertCount(0, $repo->findExpiringWithinDays(3));
+        $this->assertCount(0, $due());
     }
 
     public function test_other_roles_cannot_cancel(): void

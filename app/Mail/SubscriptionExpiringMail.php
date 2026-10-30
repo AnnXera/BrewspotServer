@@ -19,17 +19,23 @@ class SubscriptionExpiringMail extends Mailable
         public readonly string $endDate,
         public readonly int $daysRemaining,
         public readonly ?string $renewUrl = null,
-        /** The plan the owner will renew into — differs from $planName when a change is booked. */
+        /** The plan the owner will renew into: the booked change if any; null for a trial with nothing booked. */
         public readonly ?string $renewPlanName = null,
-        /** When payment for the next term opens — the day the owner's paid days run out. */
+        /** When payment for the next term opens: the day the owner's paid days run out. */
         public readonly ?string $renewalOpensOn = null,
+        /** Payment for the next term is already open, so the owner can renew right now. */
+        public readonly bool $renewalOpen = false,
     ) {}
 
     public function envelope(): Envelope
     {
-        return new Envelope(
-            subject: 'BrewSpot — Notice of Upcoming Subscription Expiration',
-        );
+        $subject = match (true) {
+            $this->renewPlanName === null => 'BrewSpot: Your trial is ending soon, choose a plan',
+            $this->renewalOpen            => 'BrewSpot: Your subscription is ending, renew now',
+            default                       => 'BrewSpot: Notice of Upcoming Subscription Expiration',
+        };
+
+        return new Envelope(subject: $subject);
     }
 
     public function content(): Content
@@ -37,13 +43,14 @@ class SubscriptionExpiringMail extends Mailable
         return new Content(
             view: 'emails.subscription-expiring',
             with: [
-                'ownerName'     => $this->ownerName,
-                'planName'      => $this->planName,
-                'endDate'       => $this->endDate,
-                'daysRemaining' => $this->daysRemaining,
-                'renewUrl'      => $this->renewUrl,
-                'renewPlanName' => $this->renewPlanName ?? $this->planName,
+                'ownerName'      => $this->ownerName,
+                'planName'       => $this->planName,
+                'endDate'        => $this->endDate,
+                'daysRemaining'  => $this->daysRemaining,
+                'renewUrl'       => $this->renewUrl,
+                'renewPlanName'  => $this->renewPlanName,
                 'renewalOpensOn' => $this->renewalOpensOn,
+                'renewalOpen'    => $this->renewalOpen,
             ],
         );
     }

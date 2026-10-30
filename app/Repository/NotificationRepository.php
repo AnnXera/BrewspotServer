@@ -51,12 +51,16 @@ class NotificationRepository
         ])->save();
     }
 
-    /** `data` is a JSON text column, so match the encoded key/value pair. */
+    /**
+     * `data` is a JSON text column, so match the encoded key/value pair. The escape character
+     * is explicit because SQLite has no default one (MySQL defaults to a backslash).
+     */
     private function whereDedupeKey(User $user, string $key)
     {
         $needle = substr(json_encode(['dedupe_key' => $key]), 1, -1);
+        $needle = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $needle);
 
-        return $user->notifications()->where('data', 'like', '%' . addcslashes($needle, '%_\\') . '%');
+        return $user->notifications()->whereRaw("data like ? escape '!'", ['%' . $needle . '%']);
     }
 
     /** Users with an active Manager assignment at the branch (who run it day to day). */
