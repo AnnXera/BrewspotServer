@@ -9,7 +9,7 @@ class SendSubscriptionExpirationReminders extends Command
 {
     protected $signature = 'subscriptions:send-expiration-reminders';
 
-    protected $description = 'Email owners whose subscription expires within 3 days, whose renewal payment has opened, or whose subscription just expired.';
+    protected $description = 'Email and notify owners whose subscription expires in 7, 3 or 1 day(s), or whose subscription just expired.';
 
     public function __construct(
         private readonly SubscriptionReminderService $service
@@ -19,11 +19,10 @@ class SendSubscriptionExpirationReminders extends Command
 
     public function handle(): int
     {
-        $expiring    = $this->service->sendExpirationReminders();
-        $renewalOpen = $this->service->sendRenewalOpenReminders();
-        $expired     = $this->service->sendExpiredNotices();
+        $expiring = $this->service->sendExpirationReminders();
+        $expired  = $this->service->sendExpiredNotices();
 
-        $this->info("Queued {$expiring} expiring, {$renewalOpen} renewal-open and {$expired} expired notice(s).");
+        $this->info("Queued {$expiring} expiring and {$expired} expired notice(s).");
 
         return self::SUCCESS;
     }

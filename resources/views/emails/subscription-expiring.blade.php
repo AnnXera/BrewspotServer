@@ -33,7 +33,7 @@
                                 Dear {{ $ownerName }},
                             </p>
                             <p style="font-size: 15px; line-height: 1.6; margin-bottom: 24px; color: #4a382d;">
-                                This notice is to inform you that your active BrewSpot subscription plan is scheduled to expire in <strong>{{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }}</strong>.@if ($renewalOpensOn) Renewal opens on <strong>{{ $renewalOpensOn }}</strong>, the day your paid period runs out — paying then keeps your access unbroken, and your final day carries over to the new term.@else To ensure uninterrupted access to your business operations and management tools, please renew your subscription prior to the scheduled expiration date.@endif
+                                This notice is to inform you that your active BrewSpot subscription plan is scheduled to expire in <strong>{{ $daysRemaining }} {{ $daysRemaining === 1 ? 'day' : 'days' }}</strong>.@if ($renewPlanName === null) Choose a plan before then to keep your branches, menu and staff running without interruption.@elseif ($renewalOpen) Renewal is now open, so you can pay for your next term today. Any days left on your current term carry over to the new one.@elseif ($renewalOpensOn) Renewal opens on <strong>{{ $renewalOpensOn }}</strong>, the day your paid period runs out — paying then keeps your access unbroken, and your final day carries over to the new term.@else To ensure uninterrupted access to your business operations and management tools, please renew your subscription prior to the scheduled expiration date.@endif
                             </p>
 
                             <!-- Subscription Details Card -->
@@ -52,10 +52,10 @@
                                                 <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Expiration Date:</td>
                                                 <td style="color: #26160e; font-weight: 600;">{{ $endDate }}</td>
                                             </tr>
-                                            @if ($renewalOpensOn)
+                                            @if ($renewPlanName !== null && $renewalOpensOn)
                                             <tr>
                                                 <td style="color: #786050; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Renewal Opens:</td>
-                                                <td style="color: #26160e; font-weight: 600;">{{ $renewalOpensOn }}</td>
+                                                <td style="color: #26160e; font-weight: 600;">{{ $renewalOpen ? 'Open now' : $renewalOpensOn }}</td>
                                             </tr>
                                             @endif
                                             <tr>
@@ -86,19 +86,27 @@
                                     <tr>
                                         <td align="center">
                                             <a href="{{ $renewUrl }}" style="display: inline-block; background-color: #2b1810; color: #f5ede4; font-size: 14px; font-weight: 600; letter-spacing: 0.3px; text-decoration: none; padding: 13px 34px; border-radius: 5px;">
-                                                @if ($renewPlanName !== $planName)
+                                                @if ($renewPlanName === null)
+                                                    Choose a Plan
+                                                @elseif ($renewPlanName !== $planName)
                                                     Switch to {{ $renewPlanName }}
                                                 @else
                                                     Renew {{ $planName }}
                                                 @endif
                                             </a>
-                                            @if ($renewPlanName !== $planName)
+                                            @if ($renewPlanName === null)
+                                                <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
+                                                    You will be asked to sign in first. You are not charged automatically.
+                                                </p>
+                                            @elseif ($renewPlanName !== $planName)
                                                 <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
                                                     You scheduled a change to the {{ $renewPlanName }}. Completing this payment moves you onto it.
                                                 </p>
                                             @else
                                                 <p style="margin: 12px 0 0 0; font-size: 12px; line-height: 1.5; color: #8c7668;">
-                                                    @if ($renewalOpensOn)
+                                                    @if ($renewalOpen)
+                                                        Payment is open now. Any days remaining on your current term are carried over to the renewed period.
+                                                    @elseif ($renewalOpensOn)
                                                         Payment opens on {{ $renewalOpensOn }}. Any days remaining on your current term are carried over to the renewed period, so nothing is lost by waiting until then.
                                                     @else
                                                         Any days remaining on your current term are carried over to the renewed period.

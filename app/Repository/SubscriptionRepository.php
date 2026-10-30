@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Models\Subscription;
+use App\Models\SubscriptionNotice;
 use App\Models\SubscriptionPlan;
 use Illuminate\Support\Carbon;
 
@@ -229,27 +230,17 @@ class SubscriptionRepository
             ->where('cancel_at_period_end', false);
     }
 
-    public function findExpiringWithinDays(int $days)
-    {
-        return $this->manuallyRenewed()
-            ->where('status', 'active')
-            ->whereNotNull('end_date')
-            ->whereNull('expiration_reminder_sent_at')
-            ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays($days)])
-            ->with(['plan', 'pendingPlan', 'user'])
-            ->get();
-    }
-
     /**
-     * Active terms whose renewal window (the grace days before end_date) has opened.
+     * Active terms ending after $after and no later than $until that haven't had the $kind notice.
      */
-    public function findRenewalOpenUnnotified()
+    public function findExpiringBetween(Carbon $after, Carbon $until, string $kind)
     {
         return $this->manuallyRenewed()
             ->where('status', 'active')
             ->whereNotNull('end_date')
-            ->whereNull('renewal_open_reminder_sent_at')
-            ->whereBetween('end_date', [Carbon::now(), Carbon::now()->addDays(Subscription::GRACE_DAYS)])
+            ->where('end_date', '>', $after)
+            ->where('end_date', '<=', $until)
+            ->whereDoesntHave('notices', fn ($q) => $q->where('kind', $kind))
             ->with(['plan', 'pendingPlan', 'user'])
             ->get();
     }
@@ -263,7 +254,7 @@ class SubscriptionRepository
     {
         return Subscription::where('status', 'expired')
             ->where('cancel_at_period_end', false)
-            ->whereNull('expired_notice_sent_at')
+            ->whereDoesntHave('notices', fn ($q) => $q->where('kind', SubscriptionNotice::KIND_EXPIRED))
             ->where('end_date', '>=', Carbon::now()->subDays($withinDays))
             ->whereDoesntHave('user.subscriptions', fn ($q) => $q->where('status', 'active'))
             ->with(['plan', 'pendingPlan', 'user'])
@@ -273,11 +264,25 @@ class SubscriptionRepository
     /**
      * Claims a notice for sending. Returns false if another run already claimed it.
      */
-    public function claimNotice(Subscription $subscription, string $marker): bool
+    public function claimNotice(Subscription $subscription, string $kind): bool
     {
-        return Subscription::whereKey($subscription->sub_id)
-            ->whereNull($marker)
-            ->update([$marker => Carbon::now()]) === 1;
+        $now = Carbon::now();
+
+        return SubscriptionNotice::insertOrIgnore([
+            'sub_id'     => $subscription->sub_id,
+            'kind'       => $kind,
+            'sent_at'    => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]) === 1;
+    }
+
+    /**
+     * Gives a claimed notice back so the next scheduler run sends it again.
+     */
+    public function releaseNotice(int $subscriptionId, string $kind): void
+    {
+        SubscriptionNotice::where('sub_id', $subscriptionId)->where('kind', $kind)->delete();
     }
 
     public function listSubscribers(int $perPage = 15)
