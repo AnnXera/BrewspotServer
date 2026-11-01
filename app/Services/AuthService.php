@@ -238,6 +238,51 @@ class AuthService
         ];
     }
 
+    /**
+     * Request a temporary password sent to user's email (Gmail/SMTP).
+     */
+    public function forgotPassword(string $email): array
+    {
+        $user = $this->repo->findByEmail($email);
+
+        if (! $user) {
+            Log::channel('auth')->warning('Forgot password failed — email not found.', ['email' => $email]);
+            return [
+                'success' => false,
+                'message' => 'No account found with this email address.',
+            ];
+        }
+
+        // Generate a clean, secure temporary password (e.g. Brew@748291)
+        $tempPassword = 'Brew@' . random_int(100000, 999999);
+        $user->password_hash = Hash::make($tempPassword);
+        $user->save();
+
+        try {
+            $this->mailer->sendMailable(
+                $user->email,
+                new \App\Mail\ForgotPasswordMail($tempPassword, $user->email, $user->firstname ?? 'User')
+            );
+        } catch (\Throwable $e) {
+            Log::channel('auth')->error('Failed to send forgot password email.', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Could not send the password email. Please verify your mail configuration.',
+            ];
+        }
+
+        Log::channel('auth')->info('Temporary password generated and emailed.', ['email' => $email]);
+
+        return [
+            'success' => true,
+            'message' => 'A temporary password has been sent to your email. Please check your inbox and use it to sign in.',
+        ];
+    }
+
     private function redirectPath(string $roleName): string
     {
         return match($roleName) {
