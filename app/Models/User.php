@@ -7,6 +7,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -63,6 +64,19 @@ class User extends Authenticatable
     public function getAuthPassword(): string
     {
         return $this->password_hash;
+    }
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        $extensions = ['jpg', 'jpeg', 'png', 'webp'];
+        foreach ($extensions as $ext) {
+            $path = "user_photos/{$this->uuid}.{$ext}";
+            if (Storage::disk('public')->exists($path)) {
+                $v = Storage::disk('public')->lastModified($path);
+                return url("/api/user-photo/{$this->uuid}?v={$v}");
+            }
+        }
+        return null;
     }
 
     protected static function booted(): void

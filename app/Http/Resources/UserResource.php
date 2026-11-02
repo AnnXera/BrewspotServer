@@ -18,6 +18,7 @@ class UserResource extends JsonResource
             'email'             => $this->email,
             'phone_number'      => $this->phone_number,
             'address'           => $this->address,
+            'photo_url'         => $this->photo_url,
             'status'            => $this->status,
             // Lets the manager dashboard prompt "Set your PIN" after login.
             'pin_set'           => $this->hasPin(),

@@ -36,6 +36,7 @@ use App\Http\Controllers\SpoilageController;
 
 use App\Http\Controllers\TempUploadController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\UserProfileController;
 
 // Employees tab, registers and today's servings of one branch. Mounted under /owner and /manager,
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
@@ -109,6 +110,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']); // login 2FA code
     Route::post('/resend-login-code', [AuthController::class, 'resendLoginCode']); // resend login 2FA code
     Route::post('/verify-login-code', [AuthController::class, 'verifyLoginCode']); // login 2FA code
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']); // reset/temporary password request
 });
 
 Route::post('/upload/temp', [TempUploadController::class, 'upload']);
@@ -118,6 +120,13 @@ Route::post('/upload/temp', [TempUploadController::class, 'upload']);
 Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Authenticated user profile, photo, and password management
+    Route::get('/user/profile', [UserProfileController::class, 'show']);
+    Route::put('/user/profile', [UserProfileController::class, 'update']);
+    Route::post('/user/profile-photo', [UserProfileController::class, 'uploadPhoto']);
+    Route::delete('/user/profile-photo', [UserProfileController::class, 'deletePhoto']);
+    Route::put('/user/change-password', [UserProfileController::class, 'changePassword']);
 
     // In-app notifications (navbar bell) for the signed-in user
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -308,6 +317,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 });
 
 Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture']);
+Route::get('/user-photo/{uuid}', [UserProfileController::class, 'photo']);
 
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);
 // CI deploy hook: run pending migrations on hosts without SSH (see deploy/hostinger/README.md).

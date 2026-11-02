@@ -54,6 +54,20 @@ class AuthController extends Controller
     }
 
     /**
+     * POST /api/auth/forgot-password
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $result = $this->service->forgotPassword($request->input('email'));
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
      * POST /api/auth/logout
      */
     public function logout(Request $request): JsonResponse
