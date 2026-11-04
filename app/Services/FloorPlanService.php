@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\BranchTableResource;
 use App\Http\Resources\FloorPlanResource;
+use App\Models\BranchTable;
 use App\Models\CafeBranch;
 use App\Models\FloorPlan;
 use App\Models\User;
@@ -204,7 +205,9 @@ class FloorPlanService
         foreach ($rows as $i => $row) {
             if (! empty($row['uuid'])) {
                 $table = $existing->get($row['uuid']) ?? throw new \DomainException("tables.$i.uuid does not belong to this floor plan.", 422);
-                $table->update($this->tableAttributes($row, false));
+                $table->fill($this->tableAttributes($row, false));
+                $this->ensureSeatsForBookings($table);
+                $table->save();
                 $kept[] = $table->uuid;
             } else {
                 $kept[] = $plan->tables()->create($this->tableAttributes($row, true))->uuid;
@@ -248,6 +251,29 @@ class FloorPlanService
         }
 
         $plan->elements()->whereNotIn('uuid', $kept)->delete();
+    }
+
+    /**
+     * A table can't lose seats (or stop being shared seating) below the guests
+     * already booked on it from now on. Past bookings don't count.
+     */
+    private function ensureSeatsForBookings(BranchTable $table): void
+    {
+        if (! $table->isDirty(['capacity', 'asset_key'])) {
+            return;
+        }
+
+        $needed = $this->reservations->seatsNeededFromNow($table->table_id, $table->isShared());
+
+        if ($table->capacity < $needed) {
+            $name = trim($table->table_name);
+
+            throw new \DomainException(
+                "\"{$name}\" has upcoming reservations for {$needed} " . ($needed === 1 ? 'guest' : 'guests')
+                . ", so it needs at least {$needed} " . ($needed === 1 ? 'seat' : 'seats') . '. Move or cancel those reservations first.',
+                409
+            );
+        }
     }
 
     /** Status is only set on create here; later changes go through updateTableStatus(). */

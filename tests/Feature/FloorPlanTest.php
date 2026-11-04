@@ -330,6 +330,46 @@ class FloorPlanTest extends FloorPlanTestCase
         $this->assertSame(['T1'], $plan->tables()->pluck('table_name')->all());
     }
 
+    public function test_table_seats_cannot_drop_below_an_upcoming_party(): void
+    {
+        $plan  = $this->makePlan($this->mainBranch);
+        $table = $this->makeTable($plan, 'T1', 4);
+        $this->makeReservation($table, '2026-10-06 10:00:00', '2026-10-06 11:00:00')->update(['party_size' => 4]);
+        $this->makeReservation($table, '2026-10-01 10:00:00', '2026-10-01 11:00:00', 'completed')->update(['party_size' => 6]); // past: doesn't count
+
+        $save = fn (int $capacity) => $this->api('PUT', $this->base('manager') . "/floor-plans/{$plan->uuid}/layout", $this->tokenFor($this->manager), [
+            'tables'   => [['uuid' => $table->uuid, 'table_name' => 'T1', 'capacity' => $capacity, 'asset_key' => 'table_sqr_4', 'x_location' => 100, 'y_location' => 100]],
+            'elements' => [],
+        ]);
+
+        $save(2)->assertStatus(409)
+            ->assertJsonPath('message', '"T1" has upcoming reservations for 4 guests, so it needs at least 4 seats. Move or cancel those reservations first.');
+        $this->assertSame(4, $table->fresh()->capacity);
+
+        $save(4)->assertOk();
+    }
+
+    public function test_counter_seats_cannot_drop_below_the_busiest_moment(): void
+    {
+        $plan = $this->makePlan($this->mainBranch);
+        $bar  = $this->makeTable($plan, 'Bar 1', 8);
+        $bar->update(['asset_key' => 'table_bar_8']);
+
+        // 3 + 3 sit together from 10:00, then 4 from 11:00: at most 6 at once.
+        foreach ([[3, '10:00', '11:00'], [3, '10:00', '11:00'], [4, '11:00', '12:00']] as [$party, $from, $to]) {
+            $this->makeReservation($bar, "2026-10-06 {$from}:00", "2026-10-06 {$to}:00")->update(['party_size' => $party]);
+        }
+
+        $save = fn (int $capacity) => $this->api('PUT', $this->base('manager') . "/floor-plans/{$plan->uuid}/layout", $this->tokenFor($this->manager), [
+            'tables'   => [['uuid' => $bar->uuid, 'table_name' => 'Bar 1', 'capacity' => $capacity, 'asset_key' => 'table_bar_8', 'x_location' => 100, 'y_location' => 100]],
+            'elements' => [],
+        ]);
+
+        $save(5)->assertStatus(409)->assertJsonPath('message', fn (string $m) => str_contains($m, 'needs at least 6 seats'));
+        $save(6)->assertOk();
+        $this->assertSame(6, $bar->fresh()->capacity);
+    }
+
     public function test_removed_tables_keep_their_reservation_history(): void
     {
         $plan  = $this->makePlan($this->mainBranch);
