@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\IngredientResource;
+use App\Models\Ingredient;
 use App\Models\User;
 use App\Repository\IngredientRepository;
 use App\Repository\MenuItemRepository;
@@ -83,14 +84,7 @@ class IngredientService
             return $this->nameTaken($clash->name, $clash->is_active);
         }
 
-        $usedBy = array_filter([
-            $ingredient->recipes_count       ? $ingredient->recipes_count . ' ' . Str::plural('menu item', $ingredient->recipes_count) : null,
-            $ingredient->addon_recipes_count ? $ingredient->addon_recipes_count . ' ' . Str::plural('add-on', $ingredient->addon_recipes_count) : null,
-        ]);
-
-        if (isset($data['unit']) && $data['unit'] !== $ingredient->unit && $usedBy) {
-            $items = implode(' and ', $usedBy);
-
+        if (isset($data['unit']) && $data['unit'] !== $ingredient->unit && ($items = $this->usedBy($ingredient))) {
             return [
                 'success' => false,
                 'http'    => 422,
@@ -116,6 +110,58 @@ class IngredientService
             },
             'ingredient' => new IngredientResource($ingredient),
         ];
+    }
+
+    /**
+     * Permanent delete, only while no menu item or add-on uses the ingredient;
+     * otherwise the owner removes it from those recipes or retires it instead.
+     * Past sales keep the ingredient's name in their consumption logs.
+     */
+    public function deleteIngredient(User $owner, string $uuid): array
+    {
+        $cafe = $this->menuRepo->findCafeByOwner($owner->user_id);
+
+        if (! $cafe) {
+            return ['success' => false, 'http' => 404, 'message' => 'No cafe found for this account.'];
+        }
+
+        $ingredient = $this->repo->findByUuidForCafe($uuid, $cafe->cafe_id);
+
+        if (! $ingredient) {
+            return ['success' => false, 'http' => 404, 'message' => 'Ingredient not found.'];
+        }
+
+        if ($items = $this->usedBy($ingredient)) {
+            return [
+                'success' => false,
+                'http'    => 422,
+                'message' => "{$ingredient->name} is used in {$items}. Remove it from those recipes first, or retire it instead.",
+            ];
+        }
+
+        $this->repo->delete($ingredient);
+
+        Log::channel('owner')->info('Ingredient deleted.', [
+            'owner_uuid'      => $owner->uuid,
+            'ingredient_uuid' => $uuid,
+            'name'            => $ingredient->name,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => "{$ingredient->name} deleted.",
+        ];
+    }
+
+    /** "2 menu items and 1 add-on", or null when nothing uses it. Needs the usage counts loaded. */
+    private function usedBy(Ingredient $ingredient): ?string
+    {
+        $parts = array_filter([
+            $ingredient->recipes_count       ? $ingredient->recipes_count . ' ' . Str::plural('menu item', $ingredient->recipes_count) : null,
+            $ingredient->addon_recipes_count ? $ingredient->addon_recipes_count . ' ' . Str::plural('add-on', $ingredient->addon_recipes_count) : null,
+        ]);
+
+        return $parts ? implode(' and ', $parts) : null;
     }
 
     private function nameTaken(string $existingName, bool $isActive): array

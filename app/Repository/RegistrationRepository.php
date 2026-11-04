@@ -12,6 +12,11 @@ use App\Models\UserDocument;
 
 class RegistrationRepository
 {
+    public function findUserByUuid(string $uuid): ?User
+    {
+        return User::where('uuid', $uuid)->first();
+    }
+
     public function updateUserProfile(User $user, array $payload): User
     {
         $user->update([

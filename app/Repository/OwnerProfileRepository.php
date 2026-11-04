@@ -14,6 +14,11 @@ class OwnerProfileRepository
         return User::with('role')->findOrFail($userId);
     }
 
+    public function markWelcomed(User $owner): void
+    {
+        $owner->forceFill(['welcomed_at' => now()])->save();
+    }
+
     public function findCafesByOwner(int $userId)
     {
         return Cafe::where('user_id', $userId)

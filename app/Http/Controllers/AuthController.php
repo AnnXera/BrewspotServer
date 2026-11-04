@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\VerifyLoginCodeRequest;
 use App\Http\Requests\ResendCodeRequest;
@@ -56,13 +57,9 @@ class AuthController extends Controller
     /**
      * POST /api/auth/forgot-password
      */
-    public function forgotPassword(Request $request): JsonResponse
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
-        $request->validate([
-            'email' => 'required|email',
-        ]);
-
-        $result = $this->service->forgotPassword($request->input('email'));
+        $result = $this->service->forgotPassword($request->validated('email'));
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }

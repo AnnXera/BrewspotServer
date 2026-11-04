@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\DashboardRangeRequest;
+use App\Http\Requests\ManagerTransactionsRequest;
 use App\Services\ManagerDashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,36 +17,20 @@ class ManagerDashboardController extends Controller
     /**
      * GET /api/manager/branches/{branchUuid}/dashboard-stats?range=daily|weekly|monthly
      */
-    public function stats(Request $request, string $branchUuid): JsonResponse
+    public function stats(DashboardRangeRequest $request, string $branchUuid): JsonResponse
     {
-        $validated = $request->validate([
-            'range' => ['nullable', 'in:daily,weekly,monthly'],
-        ]);
-
-        $branch = $request->attributes->get('branch');
-
         return response()->json(
-            $this->service->stats($branch, $validated['range'] ?? 'daily')
+            $this->service->stats($request->attributes->get('branch'), $request->range())
         );
     }
 
     /**
      * GET /api/manager/branches/{branchUuid}/transactions?status=&search=&page=1&per_page=15
      */
-    public function transactions(Request $request, string $branchUuid): JsonResponse
+    public function transactions(ManagerTransactionsRequest $request, string $branchUuid): JsonResponse
     {
-        $validated = $request->validate([
-            'status'   => ['nullable', 'string', 'in:completed,paid,void,refunded'],
-            'search'   => ['nullable', 'string', 'max:100'],
-            'from'     => ['nullable', 'date'],
-            'to'       => ['nullable', 'date'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-        ]);
-
-        $branch = $request->attributes->get('branch');
-
         return response()->json(
-            $this->service->transactions($branch, $validated, (int) ($validated['per_page'] ?? 15))
+            $this->service->transactions($request->attributes->get('branch'), $request->validated(), $request->perPage())
         );
     }
 

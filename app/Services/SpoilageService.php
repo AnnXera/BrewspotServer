@@ -4,11 +4,10 @@ namespace App\Services;
 
 use App\Http\Resources\ServingSpoilageLogResource;
 use App\Models\CafeBranch;
-use App\Models\InventoryServing;
-use App\Models\MenuItem;
 use App\Models\PosDevice;
 use App\Models\ServingSpoilageLog;
 use App\Models\User;
+use App\Repository\SpoilageRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +27,8 @@ use Illuminate\Support\Facades\Log;
 class SpoilageService
 {
     public function __construct(
-        private readonly BranchAlertService $alerts
+        private readonly BranchAlertService $alerts,
+        private readonly SpoilageRepository $repo
     ) {}
 
     // ── On the register (device token) ───────────────────────────────────
@@ -43,10 +43,7 @@ class SpoilageService
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
         }
 
-        $item = MenuItem::where('uuid', $itemUuid)
-            ->where('cafe_id', $device->branch->cafe_id)
-            ->with('sizes')
-            ->first();
+        $item = $this->repo->findMenuItemWithSizes($itemUuid, $device->branch->cafe_id);
 
         if (! $item) {
             return ['success' => false, 'http' => 404, 'message' => 'Menu item not found.'];
@@ -68,11 +65,7 @@ class SpoilageService
         $unitValue = (float) ($size?->price ?? $item->base_price);
 
         $result = DB::transaction(function () use ($device, $itemId, $size, $unitValue, $quantity, $reason) {
-            $serving = InventoryServing::where('men_item_id', $itemId)
-                ->where('branch_id', $device->branch_id)
-                ->whereDate('date', $this->today())
-                ->lockForUpdate()
-                ->first();
+            $serving = $this->repo->lockServingForDate($itemId, $device->branch_id, $this->today());
 
             if (! $serving) {
                 return ['success' => false, 'http' => 422, 'message' => 'This item has no servings set for today.'];
@@ -90,7 +83,7 @@ class SpoilageService
                 ];
             }
 
-            $log = ServingSpoilageLog::create([
+            $log = $this->repo->createLog([
                 'servings_id' => $serving->servings_id,
                 'men_size_id' => $size?->men_size_id,
                 'size_name'   => $size?->name,
@@ -151,12 +144,7 @@ class SpoilageService
     public function void(User $actor, CafeBranch $branch, string $logUuid): array
     {
         $result = DB::transaction(function () use ($actor, $branch, $logUuid) {
-            $log = ServingSpoilageLog::where('uuid', $logUuid)
-                ->whereHas('serving', fn ($q) => $q
-                    ->where('branch_id', $branch->branch_id)
-                    ->whereDate('date', $this->today()))
-                ->lockForUpdate()
-                ->first();
+            $log = $this->repo->lockLogForDate($logUuid, $branch->branch_id, $this->today());
 
             if (! $log) {
                 return ['success' => false, 'http' => 404, 'message' => 'Spoilage entry not found for today.'];
@@ -166,7 +154,7 @@ class SpoilageService
                 return ['success' => false, 'http' => 422, 'message' => 'This entry is already voided.'];
             }
 
-            $serving = InventoryServing::whereKey($log->servings_id)->lockForUpdate()->first();
+            $serving = $this->repo->lockServing($log->servings_id);
 
             $log->update(['voided_at' => now(), 'voided_by' => $actor->user_id]);
             $serving->decrement('spoilage_qty', min($log->quantity, $serving->spoilage_qty));
@@ -198,12 +186,7 @@ class SpoilageService
 
     private function todaysLogs(int $branchId): Collection
     {
-        return ServingSpoilageLog::whereHas('serving', fn ($q) => $q
-                ->where('branch_id', $branchId)
-                ->whereDate('date', $this->today()))
-            ->with($this->displayRelations())
-            ->latest('spoilage_log_id')
-            ->get();
+        return $this->repo->listForDate($branchId, $this->today(), $this->displayRelations());
     }
 
     private function listResult(Collection $logs): array

@@ -57,7 +57,7 @@ class PaymentRepository
     public function getSubscriptionPaymentsByUserId(int $userId, int $perPage = 15)
     {
         return Payment::where('user_id', $userId)
-            ->where('payable_type', \App\Models\Subscription::class)
+            ->where('payable_type', Subscription::class)
             ->with(['payable.plan'])
             ->latest('created_at')
             ->paginate($perPage);
@@ -66,7 +66,7 @@ class PaymentRepository
     public function getAllSubscriptionPayments(int $perPage = 50)
     {
         return Payment::with(['user', 'payable.plan'])
-            ->where('payable_type', \App\Models\Subscription::class)
+            ->where('payable_type', Subscription::class)
             ->latest('created_at')
             ->paginate($perPage);
     }

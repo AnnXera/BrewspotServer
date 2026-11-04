@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Adapters\Mail\LaravelMailAdapter;
 use App\Contracts\PaymentAdapterInterface;
 use App\Contracts\MailAdapterInterface;
+use App\Services\PaymentGatewayManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -16,14 +17,12 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(MailAdapterInterface::class, LaravelMailAdapter::class);
 
-        $this->app->singleton(\App\Services\PaymentGatewayManager::class, function ($app) {
-            return new \App\Services\PaymentGatewayManager();
-        });
+        $this->app->singleton(PaymentGatewayManager::class);
 
         // Default binding for callers that type-hint the interface directly
-        $this->app->bind(PaymentAdapterInterface::class, function ($app) {
-            return $app->make(\App\Services\PaymentGatewayManager::class)->gateway('paymongo');
-        });
+        $this->app->bind(PaymentAdapterInterface::class, fn ($app) =>
+            $app->make(PaymentGatewayManager::class)->gateway('paymongo')
+        );
     }
 
     public function boot(): void

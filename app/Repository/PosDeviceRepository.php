@@ -91,6 +91,40 @@ class PosDeviceRepository
             ->first();
     }
 
+    public function findStaff(int $staffId): ?CafeStaff
+    {
+        return CafeStaff::find($staffId);
+    }
+
+    /** Active managers at the branch whose accounts aren't deactivated. */
+    public function findBranchManagers(int $branchId): Collection
+    {
+        return CafeStaff::where('branch_id', $branchId)
+            ->active()
+            ->whereHas('user', fn ($q) => $q
+                ->where('status', '!=', 'inactive')
+                ->whereHas('role', fn ($r) => $r->where('role_name', 'Manager')))
+            ->with(['user.role'])
+            ->get();
+    }
+
+    public function isActiveBranchManager(int $branchId, int $userId): bool
+    {
+        return CafeStaff::where('branch_id', $branchId)
+            ->where('user_id', $userId)
+            ->active()
+            ->whereHas('user.role', fn ($r) => $r->where('role_name', 'Manager'))
+            ->exists();
+    }
+
+    public function findActiveUserByUuid(string $uuid): ?User
+    {
+        return User::where('uuid', $uuid)
+            ->where('status', '!=', 'inactive')
+            ->with('role')
+            ->first();
+    }
+
     public function setActiveStaff(PosDevice $device, ?CafeStaff $assignment): void
     {
         $device->forceFill([

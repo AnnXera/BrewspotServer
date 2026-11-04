@@ -425,4 +425,34 @@ class SubscriptionCheckoutService
         return $plan
             && (Str::contains(strtolower($plan->sub_name), 'trial') || (float) $plan->price <= 0);
     }
+
+    /**
+     * Closes off a checkout the owner backed out of: the pending payment is marked
+     * failed, and so is its subscription if that was still waiting on it. Anything
+     * already settled is left alone.
+     */
+    public function cancelPendingCheckout(?string $sessionId): void
+    {
+        if (! $sessionId) {
+            return;
+        }
+
+        $payment = $this->paymentRepo->findByGatewayTransactionId($sessionId);
+
+        if (! $payment || $payment->status !== 'pending') {
+            return;
+        }
+
+        $this->paymentRepo->markFailed($payment, 'paymongo');
+
+        $subscription = $payment->payable;
+
+        if ($subscription instanceof Subscription && $subscription->status === 'pending') {
+            $this->subscriptionRepo->markFailed($subscription);
+        }
+
+        Log::channel('owner')->info('Cancelled pending checkout.', [
+            'checkout_session_id' => $sessionId,
+        ]);
+    }
 }

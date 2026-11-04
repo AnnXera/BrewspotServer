@@ -2,34 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CafeBranch;
-use App\Models\UserDocument;
-use App\Models\CafeDocument;
-use App\Models\BranchDocument;
+use App\Services\DocumentService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
+    public function __construct(
+        private readonly DocumentService $service
+    ) {}
+
     /**
      * GET /api/documents/user/{userDocId}/{side?}
      */
     public function userDocument(Request $request, int $userDocId, ?string $side = null): StreamedResponse
     {
-        $document = UserDocument::withTrashed()->findOrFail($userDocId);
-
-        $this->authorizeAccess($request, $document->user_id);
-
-        $targetSide = $side ?? $request->query('side', 'front');
-        $filePath = ($targetSide === 'back') ? $document->file_back : $document->file;
-
-        if (! $filePath) {
-            abort(404, 'Document file not found.');
-        }
-
-        return $this->streamFile($filePath);
+        return $this->stream($this->service->userDocument(
+            $request->user(),
+            $userDocId,
+            $side ?? $request->query('side', 'front')
+        ));
     }
 
     /**
@@ -37,17 +30,7 @@ class DocumentController extends Controller
      */
     public function cafeDocument(Request $request, int $cafeDocId): StreamedResponse
     {
-        $document = CafeDocument::withTrashed()
-            ->with(['cafe' => fn ($q) => $q->withTrashed()])
-            ->findOrFail($cafeDocId);
-
-        if (! $document->cafe) {
-            abort(404, 'Document not found.');
-        }
-
-        $this->authorizeAccess($request, $document->cafe->user_id);
-
-        return $this->streamFile($document->file);
+        return $this->stream($this->service->cafeDocument($request->user(), $cafeDocId));
     }
 
     /**
@@ -55,17 +38,7 @@ class DocumentController extends Controller
      */
     public function branchDocument(Request $request, int $branchDocId): StreamedResponse
     {
-        $document = BranchDocument::withTrashed()
-            ->with(['branch' => fn ($q) => $q->withTrashed()->with(['cafe' => fn ($q2) => $q2->withTrashed()])])
-            ->findOrFail($branchDocId);
-
-        if (! $document->branch || ! $document->branch->cafe) {
-            abort(404, 'Document not found.');
-        }
-
-        $this->authorizeAccess($request, $document->branch->cafe->user_id);
-
-        return $this->streamFile($document->file);
+        return $this->stream($this->service->branchDocument($request->user(), $branchDocId));
     }
 
     /**
@@ -74,41 +47,13 @@ class DocumentController extends Controller
      */
     public function branchPicture(string $uuid): StreamedResponse
     {
-        $branch = CafeBranch::withTrashed()->where('uuid', $uuid)->firstOrFail();
-
-        if (! $branch->cafe_picture || ! Storage::disk('public')->exists($branch->cafe_picture)) {
-            abort(404, 'Picture not found.');
-        }
-
-        return Storage::disk('public')->response($branch->cafe_picture);
+        return $this->stream($this->service->branchPicture($uuid));
     }
 
-    /**
-     * Only the document's owner or an Admin may view it.
-     */
-    private function authorizeAccess(Request $request, int $ownerUserId): void
+    private function stream(array $result): StreamedResponse
     {
-        $user = $request->user();
+        abort_unless($result['success'], $result['http'] ?? 404, $result['message'] ?? '');
 
-        $isAdmin          = $user->role->role_name === 'Admin';
-        $isOwnerOfDocument = $user->user_id === $ownerUserId;
-
-        if (! $isAdmin && ! $isOwnerOfDocument) {
-            Log::channel('admin')->warning('Unauthorized document access attempt.', [
-                'requesting_user_uuid' => $user->uuid,
-                'target_owner_user_id' => $ownerUserId,
-            ]);
-
-            abort(403, 'You do not have permission to view this document.');
-        }
-    }
-
-    private function streamFile(string $path): StreamedResponse
-    {
-        if (! Storage::disk('local')->exists($path)) {
-            abort(404, 'Document not found.');
-        }
-
-        return Storage::disk('local')->response($path);
+        return Storage::disk($result['disk'])->response($result['path']);
     }
 }

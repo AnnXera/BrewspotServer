@@ -49,4 +49,12 @@ class IngredientController extends Controller
 
         return response()->json($result, $result['success'] ? 200 : ($result['http'] ?? 400));
     }
+
+    /**
+     * DELETE /api/owner/ingredients/{uuid} — only while no item or add-on uses it.
+     */
+    public function destroy(Request $request, string $uuid): JsonResponse
+    {
+        return $this->respond($this->service->deleteIngredient($request->user(), $uuid));
+    }
 }

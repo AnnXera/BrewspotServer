@@ -4,13 +4,11 @@ namespace App\Services;
 
 use App\Models\CafeBranch;
 use App\Models\CafeStaff;
-use App\Models\Payment;
 use App\Models\Reservation;
 use App\Models\Transaction;
+use App\Repository\ManagerDashboardRepository;
 use App\Repository\OwnerAnalyticsRepository;
 use App\Repository\OwnerDashboardRepository;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -31,7 +29,8 @@ class ManagerDashboardService
 
     public function __construct(
         private readonly OwnerDashboardRepository $ownerRepo,
-        private readonly OwnerAnalyticsRepository $analyticsRepo
+        private readonly OwnerAnalyticsRepository $analyticsRepo,
+        private readonly ManagerDashboardRepository $repo
     ) {}
 
     public function stats(CafeBranch $branch, string $range): array
@@ -116,33 +115,17 @@ class ManagerDashboardService
 
     private function branchReservations(CafeBranch $branch, Carbon $now): array
     {
-        $baseQuery = Reservation::query()
-            ->whereHas('table', fn ($t) => $t->withTrashed()->whereHas(
-                'floorPlan', fn ($p) => $p->withTrashed()->where('branch_id', $branch->branch_id)
-            ));
-
+        $branchId   = $branch->branch_id;
         $todayStart = $now->copy()->startOfDay();
         $todayEnd   = $now->copy()->endOfDay();
 
-        $allRows = (clone $baseQuery)
-            ->where('reservation_date', '>=', $todayStart->copy()->subDays(1))
-            ->get(['reservation_id', 'reservation_date', 'status']);
+        $todayCount = $this->repo->reservationDatesSince($branchId, $todayStart->copy()->subDays(1))
+            ->filter(fn ($r) => $r->reservation_date >= $todayStart && $r->reservation_date <= $todayEnd)
+            ->count();
 
-        $todayCount     = $allRows->filter(fn ($r) => $r->reservation_date >= $todayStart && $r->reservation_date <= $todayEnd)->count();
-        $upcomingCount  = (clone $baseQuery)->where('reservation_date', '>=', $now)->whereIn('status', ['pending', 'confirmed'])->count();
-        $pendingCount   = (clone $baseQuery)->where('status', 'pending')->where('reservation_date', '>=', $todayStart)->count();
-        $confirmedCount = (clone $baseQuery)->where('status', 'confirmed')->where('reservation_date', '>=', $todayStart)->count();
-        $seatedCount    = (clone $baseQuery)->where('status', 'seated')->where('reservation_date', '>=', $todayStart)->count();
-        $completedCount = (clone $baseQuery)->where('status', 'completed')->where('reservation_date', '>=', $todayStart)->count();
-        $cancelledCount = (clone $baseQuery)->where('status', 'cancelled')->where('reservation_date', '>=', $todayStart)->count();
+        $byStatus = $this->repo->countReservationsByStatusSince($branchId, $todayStart);
 
-        $upcomingList = (clone $baseQuery)
-            ->with(['table' => fn ($q) => $q->withTrashed(), 'creator'])
-            ->where('reservation_date', '>=', $todayStart)
-            ->orderByDesc('created_at')
-            ->orderByDesc('reservation_id')
-            ->take(8)
-            ->get()
+        $upcomingList = $this->repo->latestReservationsSince($branchId, $todayStart, 8)
             ->map(fn (Reservation $r) => [
                 'uuid'             => $r->uuid,
                 'customer_name'    => $r->customer_name,
@@ -163,12 +146,12 @@ class ManagerDashboardService
         return [
             'summary' => [
                 'today_count'     => $todayCount,
-                'upcoming_count'  => $upcomingCount,
-                'pending_count'   => $pendingCount,
-                'confirmed_count' => $confirmedCount,
-                'seated_count'    => $seatedCount,
-                'completed_count' => $completedCount,
-                'cancelled_count' => $cancelledCount,
+                'upcoming_count'  => $this->repo->countUpcomingReservations($branchId, $now),
+                'pending_count'   => $byStatus['pending'] ?? 0,
+                'confirmed_count' => $byStatus['confirmed'] ?? 0,
+                'seated_count'    => $byStatus['seated'] ?? 0,
+                'completed_count' => $byStatus['completed'] ?? 0,
+                'cancelled_count' => $byStatus['cancelled'] ?? 0,
             ],
             'upcoming' => $upcomingList,
         ];
@@ -176,10 +159,7 @@ class ManagerDashboardService
 
     private function branchEmployees(CafeBranch $branch, Carbon $now): array
     {
-        $staffRows = CafeStaff::query()
-            ->where('branch_id', $branch->branch_id)
-            ->with(['user.role', 'schedules'])
-            ->get();
+        $staffRows = $this->repo->staffWithSchedules($branch->branch_id);
 
         $todayDayOfWeek = $now->dayOfWeek; // 0 = Sunday ... 6 = Saturday
 
@@ -242,75 +222,34 @@ class ManagerDashboardService
 
     private function recentTransactions(CafeBranch $branch): array
     {
-        $transactions = Transaction::query()
-            ->where('branch_id', $branch->branch_id)
-            ->with(['staff.user', 'payments'])
-            ->withCount('items')
-            ->orderBy('created_at', 'desc')
-            ->take(10)
-            ->get();
+        return $this->repo->recentTransactions($branch->branch_id, 10)
+            ->map(fn (Transaction $t) => $this->transactionRow($t))
+            ->values()
+            ->all();
+    }
 
-        return $transactions->map(function (Transaction $t) {
-            $payment = $t->payments->sortByDesc('created_at')->first();
-            return [
-                'uuid'            => $t->uuid,
-                'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
-                'created_at'      => $t->created_at->toISOString(),
-                'staff_name'      => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : 'POS / Admin',
-                'total_amount'    => (float) $t->total_amount,
-                'status'          => $t->status,
-                'items_count'     => $t->items_count,
-                'payment_method'  => $payment?->payment_method_type ?? 'cash',
-                'walk_in_note'    => $t->walk_in_note,
-            ];
-        })->values()->all();
+    /** One line of a transaction list (recent transactions and the history table). */
+    private function transactionRow(Transaction $t): array
+    {
+        $payment = $t->payments->sortByDesc('created_at')->first();
+
+        return [
+            'uuid'           => $t->uuid,
+            'receipt_number' => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
+            'created_at'     => $t->created_at->toISOString(),
+            'staff_name'     => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : 'POS / Admin',
+            'total_amount'   => (float) $t->total_amount,
+            'status'         => $t->status,
+            'items_count'    => $t->items_count,
+            'payment_method' => $payment?->payment_method_type ?? 'cash',
+            'walk_in_note'   => $t->walk_in_note,
+        ];
     }
 
     public function transactions(CafeBranch $branch, array $filters, int $perPage = 15): array
     {
-        $query = Transaction::query()
-            ->where('branch_id', $branch->branch_id)
-            ->with(['staff.user', 'payments'])
-            ->withCount('items')
-            ->orderBy('created_at', 'desc');
-
-        if (! empty($filters['status'])) {
-            $query->where('status', $filters['status']);
-        }
-
-        if (! empty($filters['search'])) {
-            $s = $filters['search'];
-            $query->where(function (Builder $q) use ($s) {
-                $q->where('receipt_number', 'like', "%{$s}%")
-                  ->orWhere('walk_in_note', 'like', "%{$s}%")
-                  ->orWhereHas('staff.user', function ($u) use ($s) {
-                      $u->where('firstname', 'like', "%{$s}%")
-                        ->orWhere('lastname', 'like', "%{$s}%");
-                  });
-            });
-        }
-
-        if (! empty($filters['from'])) {
-            $query->whereDate('created_at', '>=', $filters['from']);
-        }
-        if (! empty($filters['to'])) {
-            $query->whereDate('created_at', '<=', $filters['to']);
-        }
-
-        $paginator = $query->paginate($perPage);
-
-        $today = Carbon::today();
-        $todayTotals = Transaction::query()
-            ->where('branch_id', $branch->branch_id)
-            ->whereDate('created_at', $today)
-            ->selectRaw("
-                COUNT(*) as total_count,
-                SUM(CASE WHEN status IN ('completed', 'paid') THEN 1 ELSE 0 END) as completed_count,
-                SUM(CASE WHEN status = 'void' THEN 1 ELSE 0 END) as void_count,
-                SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) as refunded_count,
-                COALESCE(SUM(CASE WHEN status IN ('completed', 'paid') THEN total_amount ELSE 0 END), 0) as completed_amount
-            ")
-            ->first();
+        $paginator   = $this->repo->paginateTransactions($branch->branch_id, $filters, $perPage);
+        $todayTotals = $this->repo->dayTotals($branch->branch_id, Carbon::today());
 
         return [
             'success'      => true,
@@ -322,20 +261,7 @@ class ManagerDashboardService
                 'completed_amount' => (float) ($todayTotals->completed_amount ?? 0),
             ],
             'transactions' => [
-                'data' => $paginator->getCollection()->map(function (Transaction $t) {
-                    $payment = $t->payments->sortByDesc('created_at')->first();
-                    return [
-                        'uuid'            => $t->uuid,
-                        'receipt_number'  => $t->receipt_number ?: str_pad((string) $t->transaction_id, 6, '0', STR_PAD_LEFT),
-                        'created_at'      => $t->created_at->toISOString(),
-                        'staff_name'      => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : 'POS / Admin',
-                        'total_amount'    => (float) $t->total_amount,
-                        'status'          => $t->status,
-                        'items_count'     => $t->items_count,
-                        'payment_method'  => $payment?->payment_method_type ?? 'cash',
-                        'walk_in_note'    => $t->walk_in_note,
-                    ];
-                })->values()->all(),
+                'data'         => $paginator->getCollection()->map(fn (Transaction $t) => $this->transactionRow($t))->values()->all(),
                 'current_page' => $paginator->currentPage(),
                 'last_page'    => $paginator->lastPage(),
                 'per_page'     => $paginator->perPage(),
@@ -346,10 +272,7 @@ class ManagerDashboardService
 
     public function transaction(CafeBranch $branch, string $transactionUuid): array
     {
-        $t = Transaction::where('branch_id', $branch->branch_id)
-            ->where('uuid', $transactionUuid)
-            ->with(['staff.user', 'items.menuItem', 'items.addons', 'payments'])
-            ->first();
+        $t = $this->repo->findTransactionWithDetails($branch->branch_id, $transactionUuid);
 
         if (! $t) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];

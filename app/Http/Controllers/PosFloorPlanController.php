@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ListReservationsRequest;
+use App\Http\Requests\UpdatePosReservationStatusRequest;
 use App\Http\Requests\UpdateTableStatusRequest;
 use App\Models\PosDevice;
 use App\Services\FloorPlanService;
@@ -65,20 +66,12 @@ class PosFloorPlanController extends Controller
     /**
      * PATCH /api/pos/device/reservations/{reservationUuid}/status
      */
-    public function reservationStatus(Request $request, string $reservationUuid): JsonResponse
+    public function reservationStatus(UpdatePosReservationStatusRequest $request, string $reservationUuid): JsonResponse
     {
-        if ($locked = $this->unlocked($request)) {
-            return $locked;
-        }
-
-        $validated = $request->validate([
-            'status' => 'required|in:confirmed,seated,completed,cancelled,no_show',
-        ]);
-
-        return $this->respond($this->reservations->updateStatus(
+        return $this->unlocked($request) ?? $this->respond($this->reservations->updateStatus(
             $request->user()->branch,
             $reservationUuid,
-            $validated['status']
+            $request->validated('status')
         ));
     }
 
