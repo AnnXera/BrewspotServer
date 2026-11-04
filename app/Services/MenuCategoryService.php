@@ -37,9 +37,7 @@ class MenuCategoryService
             $category = $this->repo->create($cafe->cafe_id, $payload);
 
             if (isset($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0) {
-                \App\Models\MenuItem::where('cafe_id', $cafe->cafe_id)
-                    ->whereIn('uuid', $payload['items'])
-                    ->update(['men_category_id' => $category->men_category_id]);
+                $this->repo->assignItems($cafe->cafe_id, $category->men_category_id, $payload['items']);
             }
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
@@ -101,15 +99,10 @@ class MenuCategoryService
             $category = $this->repo->update($category, $payload);
 
             if (isset($payload['items']) && is_array($payload['items'])) {
-                // Clear existing items for this category
-                \App\Models\MenuItem::where('men_category_id', $category->men_category_id)
-                    ->update(['men_category_id' => null]);
-                
-                // Assign new items
+                $this->repo->detachItems($category->men_category_id);
+
                 if (count($payload['items']) > 0) {
-                    \App\Models\MenuItem::where('cafe_id', $cafe->cafe_id)
-                        ->whereIn('uuid', $payload['items'])
-                        ->update(['men_category_id' => $category->men_category_id]);
+                    $this->repo->assignItems($cafe->cafe_id, $category->men_category_id, $payload['items']);
                 }
             }
         } catch (QueryException $e) {
@@ -172,9 +165,7 @@ class MenuCategoryService
             Storage::disk('public')->delete($category->picture);
         }
 
-        \App\Models\MenuItem::where('men_category_id', $category->men_category_id)
-            ->update(['men_category_id' => null]);
-
+        $this->repo->detachItems($category->men_category_id);
         $this->repo->delete($category);
 
         Log::channel('owner')->info('Menu category deleted.', [

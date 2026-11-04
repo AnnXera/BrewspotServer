@@ -7,19 +7,16 @@ use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\PosDevice;
 use App\Models\User;
-use App\Models\MenuCategory;
 use App\Models\MenuItem;
-use App\Models\Transaction;
 use App\Models\TransactionEvent;
-use App\Models\TransactionItem;
-use App\Models\Payment;
-use App\Http\Resources\MenuCategoryResource;
-use App\Http\Resources\MenuItemResource;
 use App\Repository\InventoryServingRepository;
 use App\Repository\PosDeviceRepository;
-use Illuminate\Support\Facades\Log;
+use App\Repository\PosSaleRepository;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
 
 /**
@@ -45,7 +42,8 @@ class PosDeviceService
         private readonly PosDeviceRepository $repo,
         private readonly StaffPinService $pins,
         private readonly InventoryServingRepository $servings,
-        private readonly BranchAlertService $alerts
+        private readonly BranchAlertService $alerts,
+        private readonly PosSaleRepository $sales
     ) {
     }
 
@@ -257,11 +255,11 @@ class PosDeviceService
      * Remaining servings today for every item offered at the device's branch,
      * keyed by men_item_id. Items without a serving row, or switched off, are 0.
      *
-     * @return \Illuminate\Support\Collection<int, int>
+     * @return Collection<int, int>
      */
-    private function todaysStock(PosDevice $device): \Illuminate\Support\Collection
+    private function todaysStock(PosDevice $device): Collection
     {
-        $servings = $this->servings->listForDate($device->branch_id, \Illuminate\Support\Carbon::today())->keyBy('men_item_id');
+        $servings = $this->servings->listForDate($device->branch_id, Carbon::today())->keyBy('men_item_id');
 
         return $this->servings->listAvailableItemsForBranch($device->branch)
             ->mapWithKeys(function ($item) use ($servings) {
@@ -279,9 +277,7 @@ class PosDeviceService
     {
         $cafeId = $device->branch->cafe_id;
 
-        $categories = \App\Models\MenuCategory::where('cafe_id', $cafeId)
-            ->orderBy('name')
-            ->get()
+        $categories = $this->sales->categoriesForCafe($cafeId)
             ->map(fn($c) => [
                 'uuid' => $c->uuid,
                 'name' => $c->name,
@@ -302,7 +298,7 @@ class PosDeviceService
                 // Hot or iced is picked at the register; base_price / size price is the hot price.
                 'is_hot_and_iced' => (bool) $i->is_hot_and_iced,
                 'iced_price' => $i->iced_price !== null ? (float) $i->iced_price : null,
-                'picture' => $i->picture ? \Illuminate\Support\Facades\Storage::disk('public')->url($i->picture) : null,
+                'picture' => $i->picture ? Storage::disk('public')->url($i->picture) : null,
                 'available_stock' => $stock->get($i->men_item_id, 0),
                 'sold_out' => $stock->get($i->men_item_id, 0) <= 0,
                 // Empty = sold at base_price. All sizes share the item's servings.
@@ -337,7 +333,7 @@ class PosDeviceService
      * @param array<int, array{uuid: string, quantity: int}> $addons
      * @return array{unit_price: float, size: ?\App\Models\MenuItemSize, temperature: ?string, addons: array}|array{message: string}
      */
-    private function priceLine(\App\Models\MenuItem $menuItem, ?string $sizeUuid, ?string $temperature, array $addons): array
+    private function priceLine(MenuItem $menuItem, ?string $sizeUuid, ?string $temperature, array $addons): array
     {
         if ($menuItem->is_hot_and_iced && !$temperature) {
             return ['message' => "Pick hot or iced for {$menuItem->menu_name}."];
@@ -400,7 +396,7 @@ class PosDeviceService
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
         }
 
-        $staff = \App\Models\CafeStaff::find($device->active_staff_id);
+        $staff = $this->repo->findStaff($device->active_staff_id);
         $userId = $staff ? $staff->user_id : $device->registered_by;
 
         $branchId = $device->branch_id;
@@ -414,10 +410,7 @@ class PosDeviceService
         $requested = [];
 
         foreach ($items as $itemData) {
-            $menuItem = \App\Models\MenuItem::where('uuid', $itemData['uuid'])
-                ->where('cafe_id', $cafeId)
-                ->with(['sizes', 'addons' => fn($q) => $q->where('is_available', true)->with('recipes')])
-                ->first();
+            $menuItem = $this->sales->findMenuItemForSale($itemData['uuid'], $cafeId);
             if (!$menuItem || !$stock->has($menuItem->men_item_id)) {
                 return ['success' => false, 'http' => 400, 'message' => 'Invalid menu item in cart.'];
             }
@@ -459,71 +452,33 @@ class PosDeviceService
 
         $transaction = null;
         $servingChanges = []; // [serving, used before this sale], alerted on after commit
-        \Illuminate\Support\Facades\DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
-            $latestTransaction = \App\Models\Transaction::where('branch_id', $branchId)
-                ->lockForUpdate()
-                ->orderBy('transaction_id', 'desc')
-                ->first();
-
-            $nextReceiptNumber = $latestTransaction && $latestTransaction->receipt_number && is_numeric($latestTransaction->receipt_number)
-                ? str_pad((int) $latestTransaction->receipt_number + 1, 6, '0', STR_PAD_LEFT)
-                : str_pad((int) ($latestTransaction?->transaction_id ?? 0) + 1, 6, '0', STR_PAD_LEFT);
-
-            $transaction = \App\Models\Transaction::create([
+        DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
+            $transaction = $this->sales->createTransaction([
                 'branch_id' => $branchId,
                 'staff_id' => $device->active_staff_id,
                 'total_amount' => $grandTotal,
                 'discount_type' => $discountType,
                 'discount_amount' => $discountAmount,
                 'status' => 'completed',
-                'receipt_number' => $nextReceiptNumber,
+                'receipt_number' => $this->sales->nextReceiptNumber($branchId),
             ]);
 
             foreach ($transactionItemsData as ['row' => $itemData, 'addons' => $addonLines]) {
-                $txItem = \App\Models\TransactionItem::create(array_merge($itemData, [
-                    'transaction_id' => $transaction->transaction_id,
-                ]));
+                $txItem = $this->sales->createItem($transaction, $itemData);
 
-                // 1. Update Inventory Serving Tracker
-                $serving = \App\Models\InventoryServing::firstOrCreate(
-                    [
-                        'men_item_id' => $itemData['men_item_id'],
-                        'branch_id' => $branchId,
-                        'date' => \Carbon\Carbon::today()->toDateString(),
-                    ],
-                    [
-                        'expected_servings' => 0,
-                        'servings_sold' => 0,
-                        'spoilage_qty' => 0,
-                        'servings_refunded' => 0,
-                        'is_sold_out' => false,
-                    ]
-                );
-
+                // 1. Today's serving counter
+                $serving = $this->sales->lockOrCreateServing($itemData['men_item_id'], $branchId, Carbon::today());
                 $servingChanges[] = [$serving, $serving->used()];
-                $serving->increment('servings_sold', $itemData['quantity']);
+                $this->sales->recordServingsSold($serving, $itemData['quantity']);
 
-                if ($serving->isUsedUp()) {
-                    $serving->update(['is_sold_out' => true]);
-                }
-
-                // 2. Ingredient Consumption Logs: rows for every size, plus the sold size's own rows
-                $recipes = \App\Models\MenuRecipe::where('men_item_id', $itemData['men_item_id'])
-                    ->where(fn($q) => $q->whereNull('men_size_id')->orWhere('men_size_id', $itemData['men_size_id']))
-                    ->get();
-                foreach ($recipes as $recipe) {
-                    \App\Models\IngredientConsumptionLog::create([
-                        'transaction_item_id' => $txItem->transaction_item_id,
-                        'ingredient_id' => $recipe->ingredient_id,
-                        'ingredient_name' => $recipe->ingredient_name,
-                        'quantity_consumed' => $recipe->quantity * $itemData['quantity'],
-                        'unit' => $recipe->unit,
-                    ]);
+                // 2. Ingredient usage: rows for every size, plus the sold size's own rows
+                foreach ($this->sales->recipesForSoldItem($itemData['men_item_id'], $itemData['men_size_id']) as $recipe) {
+                    $this->sales->logConsumption($txItem, $recipe, $itemData['quantity']);
                 }
 
                 // 3. Add-ons, and what they use (per drink x drinks on the line)
                 foreach ($addonLines as ['addon' => $addon, 'quantity' => $addonQty]) {
-                    $txItem->addons()->create([
+                    $this->sales->createItemAddon($txItem, [
                         'addon_id' => $addon->addon_id,
                         'addon_name' => $addon->name,
                         'price' => $addon->price,
@@ -531,22 +486,13 @@ class PosDeviceService
                     ]);
 
                     foreach ($addon->recipes as $recipe) {
-                        \App\Models\IngredientConsumptionLog::create([
-                            'transaction_item_id' => $txItem->transaction_item_id,
-                            'ingredient_id' => $recipe->ingredient_id,
-                            'ingredient_name' => $recipe->ingredient_name,
-                            'quantity_consumed' => $recipe->quantity * $addonQty * $itemData['quantity'],
-                            'unit' => $recipe->unit,
-                        ]);
+                        $this->sales->logConsumption($txItem, $recipe, $addonQty * $itemData['quantity']);
                     }
                 }
             }
 
-            // Record payment
-            \App\Models\Payment::create([
+            $this->sales->recordPayment($transaction, [
                 'user_id' => $userId,
-                'payable_type' => \App\Models\Transaction::class,
-                'payable_id' => $transaction->transaction_id,
                 'payment_method_type' => $paymentMethod,
                 'payment_instrument' => $referenceNumber,
                 'amount' => $grandTotal,
@@ -577,20 +523,11 @@ class PosDeviceService
         $branchId = $device->branch_id;
         $settled = self::SETTLED_STATUSES;
 
-        $todayTransactions = \App\Models\Transaction::where('branch_id', $branchId)
-            ->whereDate('created_at', \Carbon\Carbon::today())
-            ->with(['staff.user'])
-            ->withCount('items')
-            ->orderBy('created_at')
-            ->get();
+        $todayTransactions = $this->sales->transactionsOn($branchId, Carbon::today());
 
         [$todaySettled, $todayVoided] = $todayTransactions->partition(fn($t) => in_array($t->status, $settled, true));
 
-        $monthTotal = \App\Models\Transaction::where('branch_id', $branchId)
-            ->whereIn('status', $settled)
-            ->whereMonth('created_at', \Carbon\Carbon::now()->month)
-            ->whereYear('created_at', \Carbon\Carbon::now()->year)
-            ->sum('total_amount');
+        $monthTotal = $this->sales->monthTotal($branchId, Carbon::now(), $settled);
 
         $netTotal = (float) $todaySettled->sum('total_amount');
         $voidTotal = (float) $todayVoided->sum('total_amount');
@@ -620,10 +557,7 @@ class PosDeviceService
      */
     public function transaction(PosDevice $device, string $transactionUuid): array
     {
-        $t = \App\Models\Transaction::where('branch_id', $device->branch_id)
-            ->where('uuid', $transactionUuid)
-            ->with(['staff.user', 'items.menuItem', 'items.addons', 'payments'])
-            ->first();
+        $t = $this->sales->findWithDetails($device->branch_id, $transactionUuid);
 
         if (!$t) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
@@ -684,13 +618,7 @@ class PosDeviceService
         $branchId = $device->branch_id;
         $cafe = $device->branch?->cafe;
 
-        $staffManagers = CafeStaff::where('branch_id', $branchId)
-            ->active()
-            ->whereHas('user', fn($q) => $q
-                ->where('status', '!=', 'inactive')
-                ->whereHas('role', fn($r) => $r->where('role_name', 'Manager')))
-            ->with(['user.role'])
-            ->get()
+        $staffManagers = $this->repo->findBranchManagers($branchId)
             ->map(fn($s) => [
                 'uuid' => $s->user->uuid,
                 'name' => $s->user->firstname . ' ' . $s->user->lastname,
@@ -730,10 +658,7 @@ class PosDeviceService
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
         }
 
-        $transaction = Transaction::where('branch_id', $device->branch_id)
-            ->where('uuid', $transactionUuid)
-            ->with(['items', 'payments'])
-            ->first();
+        $transaction = $this->sales->findForRefund($device->branch_id, $transactionUuid);
 
         if (!$transaction) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
@@ -743,21 +668,14 @@ class PosDeviceService
             return ['success' => false, 'http' => 422, 'message' => "This transaction has already been {$transaction->status}."];
         }
 
-        $managerUser = User::where('uuid', $managerUuid)
-            ->where('status', '!=', 'inactive')
-            ->with('role')
-            ->first();
+        $managerUser = $this->repo->findActiveUserByUuid($managerUuid);
 
         if (!$managerUser) {
             return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
         }
 
         // Authorizing user must be an active manager at this branch or the cafe owner
-        $isBranchManager = CafeStaff::where('branch_id', $device->branch_id)
-            ->where('user_id', $managerUser->user_id)
-            ->active()
-            ->whereHas('user.role', fn($r) => $r->where('role_name', 'Manager'))
-            ->exists();
+        $isBranchManager = $this->repo->isActiveBranchManager($device->branch_id, $managerUser->user_id);
 
         $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
 
@@ -793,30 +711,19 @@ class PosDeviceService
                 $refundNote = $transaction->walk_in_note . ' | ' . $refundNote;
             }
 
-            $transaction->update([
-                'status' => 'refunded',
-                'walk_in_note' => $refundNote,
-            ]);
-
-            $transaction->events()->create([
+            // Marks the sale and its payments refunded, and records who approved it.
+            $this->sales->markRefunded($transaction, $refundNote, [
                 'event' => TransactionEvent::REFUNDED,
                 'user_id' => $managerUser->user_id,
                 'reason' => !empty($reason) ? trim($reason) : null,
                 'restocked' => $restock,
             ]);
 
-            // Update associated payments to refunded
-            $transaction->payments()->update(['status' => 'refunded']);
-
             // Take the servings off the day's sold count. Made servings can't be sold
             // again, so they move to servings_refunded and what's left stays the same;
             // servings never made go back on sale.
             foreach ($transaction->items as $item) {
-                $serving = \App\Models\InventoryServing::where('men_item_id', $item->men_item_id)
-                    ->where('branch_id', $device->branch_id)
-                    ->where('date', $transaction->created_at->toDateString())
-                    ->lockForUpdate()
-                    ->first();
+                $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
 
                 $qty = $serving ? min($serving->servings_sold, (int) $item->quantity) : 0;
                 if ($qty <= 0) {
@@ -835,7 +742,7 @@ class PosDeviceService
                     $serving->servings_refunded += $qty;
                 }
 
-                $serving->save();
+                $this->sales->saveServing($serving);
             }
         });
 

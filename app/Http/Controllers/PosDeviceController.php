@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ChangePinOnDeviceRequest;
+use App\Http\Requests\CheckoutPosRequest;
+use App\Http\Requests\RefundPosRequest;
 use App\Http\Requests\RegisterPosDeviceRequest;
 use App\Http\Requests\UnlockPosRequest;
 use App\Services\PosDeviceService;
@@ -106,32 +108,16 @@ class PosDeviceController extends Controller
     /**
      * POST /api/pos/device/checkout
      */
-    public function checkout(Request $request): JsonResponse
+    public function checkout(CheckoutPosRequest $request): JsonResponse
     {
-        $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.uuid' => 'required|string',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.size_uuid' => 'nullable|string',
-            'items.*.temperature' => ['nullable', \Illuminate\Validation\Rule::in(\App\Models\TransactionItem::TEMPERATURES)],
-            'items.*.addons' => 'nullable|array',
-            'items.*.addons.*.uuid' => 'required|string',
-            'items.*.addons.*.quantity' => 'required|integer|min:1',
-            'payment_method' => 'required|string',
-            'amount_tendered' => 'required|numeric|min:0',
-            'reference_number' => 'nullable|string',
-            'discount_type' => 'nullable|string|in:none,PWD,Senior',
-            'discount_amount' => 'nullable|numeric|min:0',
-        ]);
-
         return $this->respond($this->service->checkout(
             $request->user(),
-            $request->input('items'),
-            $request->input('payment_method'),
-            $request->input('amount_tendered'),
-            $request->input('reference_number'),
-            $request->input('discount_type'),
-            (float) $request->input('discount_amount', 0)
+            $request->validated('items'),
+            $request->validated('payment_method'),
+            (float) $request->validated('amount_tendered'),
+            $request->validated('reference_number'),
+            $request->validated('discount_type'),
+            (float) $request->validated('discount_amount', 0)
         ));
     }
 
@@ -183,21 +169,14 @@ class PosDeviceController extends Controller
     /**
      * POST /api/pos/device/transactions/{transactionUuid}/refund — refund a sale with manager PIN.
      */
-    public function refund(Request $request, string $transactionUuid): JsonResponse
+    public function refund(RefundPosRequest $request, string $transactionUuid): JsonResponse
     {
-        $request->validate([
-            'manager_uuid' => 'required|string',
-            'pin' => 'required|string',
-            'reason' => 'nullable|string|max:255',
-            'restock' => 'nullable|boolean', // true: never made, servings go back on sale
-        ]);
-
         return $this->respond($this->service->refund(
             $request->user(),
             $transactionUuid,
-            $request->input('manager_uuid'),
-            $request->input('pin'),
-            $request->input('reason'),
+            $request->validated('manager_uuid'),
+            $request->validated('pin'),
+            $request->validated('reason'),
             $request->boolean('restock')
         ));
     }

@@ -43,8 +43,6 @@ served by Laravel through the public disk's `'serve' => true`.
 Check the file is gone afterwards. Later deploys with new migrations: re-upload it and use `?run=1`
 (re-running `AdminSeeder` resets the admin's UUID and password).
 
-Do **not** run `config:cache`: `PayPalSubscriptionController` reads `env()` directly, which returns null once config is cached.
-
 The admin seeded by `AdminSeeder` uses the password from the seeder file. Log in and change it immediately.
 
 ## 5. Permanent cron jobs (Custom, every minute)

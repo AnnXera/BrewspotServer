@@ -20,6 +20,24 @@ class RegistrationService
         private readonly NotificationService $notifications
     ) {}
 
+    /**
+     * Registration links carry the user's UUID; a missing user means a dead link.
+     */
+    public function registerByUuid(string $uuid, array $payload): array
+    {
+        $user = $this->repo->findUserByUuid($uuid);
+
+        if (! $user) {
+            return [
+                'success' => false,
+                'http'    => 404,
+                'message' => 'Invalid or expired registration link. No account found for this UUID.',
+            ];
+        }
+
+        return $this->register($user, $payload);
+    }
+
     public function register(User $user, array $payload): array
     {
         if ($user->status !== 'filling_application') {
@@ -171,7 +189,7 @@ class RegistrationService
      */
     public function getApplicationDetails(string $uuid): array
     {
-        $user = User::where('uuid', $uuid)->first();
+        $user = $this->repo->findUserByUuid($uuid);
 
         if (! $user) {
             return [

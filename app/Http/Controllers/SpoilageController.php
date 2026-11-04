@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ServingSpoilageLog;
+use App\Http\Requests\LogSpoilageRequest;
 use App\Services\SpoilageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 /**
  * Spoiled servings.
@@ -32,14 +31,9 @@ class SpoilageController extends Controller
     /**
      * POST /api/pos/device/spoilage
      */
-    public function deviceStore(Request $request): JsonResponse
+    public function deviceStore(LogSpoilageRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'menu_item_uuid' => ['required', 'string'],
-            'size_uuid'      => ['nullable', 'string'], // required for items that come in sizes
-            'quantity'       => ['required', 'integer', 'min:1', 'max:1000'],
-            'reason'         => ['nullable', 'string', Rule::in(ServingSpoilageLog::REASONS)],
-        ]);
+        $data = $request->validated();
 
         return $this->respond($this->service->logOnDevice(
             $request->user(),

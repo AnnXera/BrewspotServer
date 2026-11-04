@@ -3,15 +3,18 @@
 namespace App\Services;
 
 use App\Http\Resources\AdminSubscriberResource;
-use App\Http\Resources\SubscriptionResource;
+use App\Http\Resources\PaymentResource;
+use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionRepository;
+use App\Repository\UserProfileRepository;
 use Illuminate\Support\Facades\Log;
 
 class SubscriptionService
 {
     public function __construct(
         private readonly SubscriptionRepository $subscriptionRepository,
-        private readonly \App\Repository\PaymentRepository $paymentRepository
+        private readonly PaymentRepository $paymentRepository,
+        private readonly UserProfileRepository $users
     ) {}
 
     /**
@@ -36,9 +39,9 @@ class SubscriptionService
             'per_page'   => $perPage,
         ]);
 
-        $owner = \App\Models\User::where('uuid', $ownerUuid)->firstOrFail();
+        $owner = $this->users->findByUuidOrFail($ownerUuid);
         $history = $this->paymentRepository->getSubscriptionPaymentsByUserId($owner->user_id, $perPage);
 
-        return $history->through(fn ($payment) => new \App\Http\Resources\PaymentResource($payment));
+        return $history->through(fn ($payment) => new PaymentResource($payment));
     }
 }

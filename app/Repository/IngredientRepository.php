@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Models\Ingredient;
+use App\Models\IngredientConsumptionLog;
 use App\Models\MenuAddonRecipe;
 use App\Models\MenuRecipe;
 use Illuminate\Database\Eloquent\Collection;
@@ -12,13 +13,14 @@ class IngredientRepository
 {
     /**
      * An item with sizes has one recipe row per size, so items are counted
-     * once each. Add-ons have one row per ingredient.
+     * once each. Add-ons have one row per ingredient. Deleted (soft-deleted)
+     * items and add-ons keep their recipe rows but don't count as uses.
      */
     private function usageCounts(): array
     {
         return [
-            'recipes as recipes_count' => fn ($q) => $q->select(DB::raw('count(distinct men_item_id)')),
-            'addonRecipes',
+            'recipes as recipes_count' => fn ($q) => $q->whereHas('item')->select(DB::raw('count(distinct men_item_id)')),
+            'addonRecipes as addon_recipes_count' => fn ($q) => $q->whereHas('addon'),
         ];
     }
 
@@ -74,6 +76,27 @@ class IngredientRepository
         }
 
         return $ingredient->loadCount($this->usageCounts());
+    }
+
+    /**
+     * Deletes an ingredient no live item or add-on uses. Recipe rows left on
+     * deleted items and add-ons go with it. Consumption logs stay as sales
+     * history: their ingredient_id is cleared and they keep the name snapshot.
+     */
+    public function delete(Ingredient $ingredient): void
+    {
+        DB::transaction(function () use ($ingredient) {
+            MenuRecipe::where('ingredient_id', $ingredient->ingredient_id)
+                ->whereDoesntHave('item')
+                ->delete();
+            MenuAddonRecipe::where('ingredient_id', $ingredient->ingredient_id)
+                ->whereDoesntHave('addon')
+                ->delete();
+            IngredientConsumptionLog::where('ingredient_id', $ingredient->ingredient_id)
+                ->update(['ingredient_id' => null]);
+
+            $ingredient->delete();
+        });
     }
 
     /** @param array<int, string> $uuids */

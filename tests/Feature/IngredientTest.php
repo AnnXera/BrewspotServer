@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\Cafe;
+use App\Models\CafeBranch;
 use App\Models\Feature;
 use App\Models\Ingredient;
+use App\Models\IngredientConsumptionLog;
 use App\Models\MenuItem;
 use App\Models\Role;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
+use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -211,6 +215,81 @@ class IngredientTest extends TestCase
 
         $this->api('PATCH', "/api/owner/ingredients/{$theirs->uuid}", ['name' => 'Mine now'])->assertNotFound();
         $this->assertSame('Milk', $theirs->fresh()->name);
+    }
+
+    public function test_owner_deletes_an_unused_ingredient(): void
+    {
+        $sugar = Ingredient::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Sugar', 'unit' => 'g']);
+        [, $otherCafe] = $this->makeOwnerWithCafe('other@test.local');
+        $theirs = Ingredient::create(['cafe_id' => $otherCafe->cafe_id, 'name' => 'Milk', 'unit' => 'ml']);
+
+        $this->api('DELETE', "/api/owner/ingredients/{$sugar->uuid}")
+            ->assertOk()
+            ->assertJsonPath('message', 'Sugar deleted.');
+
+        $this->assertNull($sugar->fresh());
+        $this->api('DELETE', "/api/owner/ingredients/{$sugar->uuid}")->assertNotFound();
+
+        // Another cafe's ingredient can't be deleted.
+        $this->api('DELETE', "/api/owner/ingredients/{$theirs->uuid}")->assertNotFound();
+        $this->assertNotNull($theirs->fresh());
+    }
+
+    public function test_an_ingredient_in_use_is_not_deleted_until_its_items_are(): void
+    {
+        $itemUuid = $this->createItem('Latte', [['ingredient_name' => 'Milk', 'quantity' => 200, 'unit' => 'ml']])
+            ->assertCreated()
+            ->json('item.uuid');
+        $milk = Ingredient::where('name', 'Milk')->first();
+
+        $this->api('DELETE', "/api/owner/ingredients/{$milk->uuid}")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Milk is used in 1 menu item. Remove it from those recipes first, or retire it instead.');
+        $this->assertNotNull($milk->fresh());
+
+        // A deleted menu item no longer counts as a use, and its leftover recipe rows go with the ingredient.
+        $this->api('DELETE', "/api/owner/menu-items/{$itemUuid}")->assertOk();
+        $this->api('GET', '/api/owner/ingredients?include_retired=1')->assertJsonPath('ingredients.0.used_in', 0);
+
+        $this->api('DELETE', "/api/owner/ingredients/{$milk->uuid}")->assertOk();
+        $this->assertNull($milk->fresh());
+        $this->assertSame(0, DB::table('menu_recipes')->where('ingredient_id', $milk->ingredient_id)->count());
+    }
+
+    public function test_deleting_an_ingredient_keeps_past_sales_consumption(): void
+    {
+        $milk = Ingredient::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Milk', 'unit' => 'ml']);
+        $branch = CafeBranch::create([
+            'cafe_id'          => $this->cafe->cafe_id,
+            'branch_name'      => 'Main',
+            'cafe_email'       => 'main@test.local',
+            'cafe_phonenumber' => '+639170000000',
+            'address'          => 'Somewhere',
+            'branch_type'      => 'main',
+            'status'           => 'active',
+        ]);
+        $item = MenuItem::create(['cafe_id' => $this->cafe->cafe_id, 'menu_name' => 'Old Latte', 'base_price' => 120]);
+        $tx   = Transaction::create(['branch_id' => $branch->branch_id, 'total_amount' => 120]);
+        $line = TransactionItem::create([
+            'transaction_id' => $tx->transaction_id,
+            'men_item_id'    => $item->men_item_id,
+            'quantity'       => 1,
+            'unit_price'     => 120,
+        ]);
+        $log = IngredientConsumptionLog::create([
+            'transaction_item_id' => $line->transaction_item_id,
+            'ingredient_id'       => $milk->ingredient_id,
+            'ingredient_name'     => 'Milk',
+            'quantity_consumed'   => 200,
+            'unit'                => 'ml',
+        ]);
+
+        $this->api('DELETE', "/api/owner/ingredients/{$milk->uuid}")->assertOk();
+
+        $log->refresh();
+        $this->assertNull($log->ingredient_id);
+        $this->assertSame('Milk', $log->ingredient_name);
+        $this->assertEquals(200, $log->quantity_consumed);
     }
 
     public function test_migration_moves_existing_recipe_names_into_the_ingredient_list(): void

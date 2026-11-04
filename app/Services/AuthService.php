@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\ForgotPasswordMail;
 use App\Mail\LoginCodeMail;
 use App\Models\User;
 
@@ -261,7 +262,7 @@ class AuthService
         try {
             $this->mailer->sendMailable(
                 $user->email,
-                new \App\Mail\ForgotPasswordMail($tempPassword, $user->email, $user->firstname ?? 'User')
+                new ForgotPasswordMail($tempPassword, $user->email, $user->firstname ?? 'User')
             );
         } catch (\Throwable $e) {
             Log::channel('auth')->error('Failed to send forgot password email.', [

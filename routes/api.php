@@ -226,6 +226,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/ingredients', [IngredientController::class, 'index']); // picker + Ingredients page
             Route::post('/ingredients', [IngredientController::class, 'store']);
             Route::patch('/ingredients/{uuid}', [IngredientController::class, 'update']); // rename, unit, retire/restore
+            Route::delete('/ingredients/{uuid}', [IngredientController::class, 'destroy']); // only while unused
 
             Route::get('/menu-items', [MenuItemController::class, 'index']);
             Route::get('/menu-items/{uuid}', [MenuItemController::class, 'show']);
