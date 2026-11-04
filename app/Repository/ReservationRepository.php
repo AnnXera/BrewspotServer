@@ -85,6 +85,25 @@ class ReservationRepository
     }
 
     /**
+     * Fewest seats the table needs for the bookings it still holds (from now on).
+     * A shared table needs the most guests seated at any one moment; any other
+     * table holds one party at a time, so it needs the largest party.
+     */
+    public function seatsNeededFromNow(int $tableId, bool $shared): int
+    {
+        $now      = Carbon::now();
+        $upcoming = Reservation::blocking()->where('table_id', $tableId)->where('reservation_end', '>', $now);
+
+        if (! $shared) {
+            return (int) $upcoming->max('party_size');
+        }
+
+        $latestEnd = $upcoming->max('reservation_end');
+
+        return $latestEnd ? $this->peakSeatsTaken($tableId, $now, Carbon::parse($latestEnd)) : 0;
+    }
+
+    /**
      * Seats held right now (booked windows that include this moment), per shared table of a plan.
      *
      * @return Collection<int, int> keyed by table_id
