@@ -195,6 +195,48 @@ class User extends Authenticatable
         return $this->hasMany(Reservation::class, 'created_by', 'user_id');
     }
 
+    /** The owner's term that is active and not past its end date, if any. */
+    public function runningSubscription(): ?Subscription
+    {
+        return $this->subscriptions()
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                      ->orWhere('end_date', '>=', now());
+            })
+            ->with('plan.features')
+            ->latest('start_date')
+            ->first();
+    }
+
+    /**
+     * Why this user cannot use a feature, or null when they can.
+     *
+     * 'subscription_expired' — the owner had a term but none is running now (renew).
+     * 'no_subscription'      — the owner never subscribed, or staff have no cafe.
+     * 'feature_not_in_plan'  — a term is running but its plan lacks the feature (upgrade).
+     */
+    public function featureDenialReason(string $featureKey): ?string
+    {
+        if ($this->canAccessFeature($featureKey)) {
+            return null;
+        }
+
+        $owner = $this->featureOwner();
+
+        if (! $owner) {
+            return 'no_subscription';
+        }
+
+        if ($owner->runningSubscription()) {
+            return 'feature_not_in_plan';
+        }
+
+        return $owner->subscriptions()->whereIn('status', ['active', 'expired', 'cancelled', 'past_due'])->exists()
+            ? 'subscription_expired'
+            : 'no_subscription';
+    }
+
     public function canAccessFeature(string $featureKey): bool
     {
         // Admin has full access to all features
@@ -208,16 +250,7 @@ class User extends Authenticatable
             return false;
         }
 
-        // Check active subscription plan
-        $activeSubscription = $owner->subscriptions()
-            ->where('status', 'active')
-            ->where(function ($query) {
-                $query->whereNull('end_date')
-                      ->orWhere('end_date', '>=', now());
-            })
-            ->with('plan.features')
-            ->latest('start_date')
-            ->first();
+        $activeSubscription = $owner->runningSubscription();
 
         if (! $activeSubscription || ! $activeSubscription->plan) {
             return false;

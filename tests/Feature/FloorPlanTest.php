@@ -22,7 +22,33 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $this->api('GET', $this->base('owner') . '/floor-plans', $token)
             ->assertForbidden()
-            ->assertJsonPath('required_feature', 'reservations');
+            ->assertJsonPath('required_feature', 'reservations')
+            ->assertJsonPath('code', 'PLAN_FEATURE_LOCKED')
+            ->assertJsonPath('reason', 'feature_not_in_plan');
+    }
+
+    public function test_lapsed_subscription_is_reported_as_expired(): void
+    {
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', $this->base('owner') . '/floor-plans', $this->tokenFor($this->owner))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+
+        // Staff are pointed at the owner instead.
+        $response = $this->api('GET', $this->base('manager') . '/floor-plans', $this->tokenFor($this->manager))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+        $this->assertStringContainsString('Ask the cafe owner', $response->json('message'));
+    }
+
+    public function test_owner_who_never_subscribed_is_reported_as_unsubscribed(): void
+    {
+        $this->owner->subscriptions()->delete();
+
+        $this->api('GET', $this->base('owner') . '/floor-plans', $this->tokenFor($this->owner))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'no_subscription');
     }
 
     public function test_manager_only_reaches_plans_of_their_own_branch(): void

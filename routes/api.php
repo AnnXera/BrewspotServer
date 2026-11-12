@@ -216,8 +216,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);
         });
 
-        // Feature-Gated: Menu Management
-        Route::middleware('plan.feature:menu_management')->group(function () {
+        // Feature-Gated: Menu Management. Owners can still view the menu without the feature or
+        // after the subscription lapses; only adding, editing and deleting are blocked.
+        Route::middleware('plan.feature:menu_management,writes')->group(function () {
             Route::get('/menu-categories', [MenuCategoryController::class, 'index']);
             Route::post('/menu-categories', [MenuCategoryController::class, 'store']);
             Route::patch('/menu-categories/{uuid}', [MenuCategoryController::class, 'update']);

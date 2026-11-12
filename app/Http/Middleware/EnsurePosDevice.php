@@ -37,12 +37,11 @@ class EnsurePosDevice
             ], 403);
         }
 
-        if (! $branch->cafe?->owner?->canAccessFeature('pos_system')) {
-            return response()->json([
-                'success'          => false,
-                'message'          => 'Your cafe\'s subscription plan does not include the POS system.',
-                'required_feature' => 'pos_system',
-            ], 403);
+        $owner = $branch->cafe?->owner;
+        $reason = $owner ? $owner->featureDenialReason('pos_system') : 'no_subscription';
+
+        if ($reason !== null) {
+            return EnsurePlanHasFeature::deny('pos_system', $reason, true);
         }
 
         $device->forceFill(['last_used_at' => Carbon::now()])->saveQuietly();
