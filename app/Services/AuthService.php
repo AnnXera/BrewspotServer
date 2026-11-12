@@ -22,7 +22,8 @@ class AuthService
     public function __construct(
         private readonly AuthRepository $repo,
         private readonly VerificationCodeRepository $codeRepo,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly ActivityLogService $activity
     ) {}
 
     /**
@@ -213,6 +214,8 @@ class AuthService
             'role'    => $user->role->role_name,
         ]);
 
+        $this->activity->login($user);
+
         return [
             'success'    => true,
             'message'    => 'Login successful.',
@@ -227,6 +230,8 @@ class AuthService
     public function logout(User $user): array
     {
         $user->tokens()->delete();
+
+        $this->activity->logout($user);
 
         Log::channel('auth')->info('Logout successful.', [
             'user_id' => $user->user_id,

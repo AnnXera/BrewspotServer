@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Repository\ItemBranchRepository;
 use App\Repository\MenuItemRepository;
@@ -11,7 +12,8 @@ class ItemBranchService
 {
     public function __construct(
         private readonly ItemBranchRepository $repo,
-        private readonly MenuItemRepository $itemRepo
+        private readonly MenuItemRepository $itemRepo,
+        private readonly ActivityLogService $activity
     ) {}
 
     public function setBranchAvailability(User $owner, string $itemUuid, string $branchUuid, bool $isAvailable): array
@@ -52,6 +54,11 @@ class ItemBranchService
             'branch_uuid'  => $branch->uuid,
             'is_available' => $isAvailable,
         ]);
+
+        $this->activity->menu($owner, $cafe->cafe_id, $branch, ActivityLog::MENU_ITEM_AVAILABILITY,
+            "Made menu item \"{$item->menu_name}\" " . ($isAvailable ? 'available' : 'unavailable') . " at {$branch->branch_name}",
+            ['item' => $item->menu_name, 'is_available' => $isAvailable]
+        );
 
         return [
             'success' => true,

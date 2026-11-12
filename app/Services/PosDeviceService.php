@@ -43,7 +43,8 @@ class PosDeviceService
         private readonly StaffPinService $pins,
         private readonly InventoryServingRepository $servings,
         private readonly BranchAlertService $alerts,
-        private readonly PosSaleRepository $sales
+        private readonly PosSaleRepository $sales,
+        private readonly ActivityLogService $activity
     ) {
     }
 
@@ -216,7 +217,14 @@ class PosDeviceService
 
     private function unlockAs(PosDevice $device, CafeStaff $assignment): array
     {
+        // Someone else still signed in here is signed out by this unlock.
+        $previous = $device->activeStaff;
+        if ($previous && $previous->staff_id !== $assignment->staff_id) {
+            $this->activity->posLock($device, $previous, 'switched');
+        }
+
         $this->repo->setActiveStaff($device, $assignment);
+        $this->activity->posUnlock($device, $assignment);
 
         Log::channel('auth')->info('POS unlocked.', [
             'device_uuid' => $device->uuid,
@@ -237,7 +245,13 @@ class PosDeviceService
 
     public function lock(PosDevice $device): array
     {
+        $previous = $device->activeStaff;
+
         $this->repo->setActiveStaff($device, null);
+
+        if ($previous) {
+            $this->activity->posLock($device, $previous);
+        }
 
         return ['success' => true, 'message' => 'Register locked.'];
     }

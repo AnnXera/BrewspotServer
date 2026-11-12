@@ -179,6 +179,40 @@ class FloorPlanTest extends FloorPlanTestCase
         ])->assertStatus(422)->assertJsonValidationErrors(['canvas_width', 'boundary_points.0.y']);
     }
 
+    public function test_floor_plan_changes_are_logged_for_the_owner(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $base  = $this->base('manager') . '/floor-plans';
+
+        $uuid = $this->api('POST', $base, $token, ['floorplan_name' => 'Indoor', 'canvas_width' => 1000, 'canvas_height' => 800])
+            ->assertCreated()->json('floor_plan.uuid');
+        $this->api('PATCH', "$base/$uuid", $token, ['floorplan_name' => 'Ground Floor'])->assertOk();
+        $this->api('PATCH', "$base/$uuid", $token, ['floorplan_name' => 'Ground Floor'])->assertOk(); // no change: not logged
+        $this->api('PUT', "$base/$uuid/layout", $token, [
+            'tables'   => [['table_name' => 'T1', 'capacity' => 2, 'asset_key' => 'table_sqr_2', 'x_location' => 100, 'y_location' => 100]],
+            'elements' => [],
+        ])->assertOk();
+        $this->api('POST', "$base/$uuid/deactivate", $token)->assertOk();
+        $this->api('POST', "$base/$uuid/activate", $token)->assertOk();
+        $this->api('DELETE', "$base/$uuid", $token)->assertOk();
+
+        $logs = \App\Models\ActivityLog::orderBy('activity_log_id')->get();
+        $this->assertSame([
+            'floor_plan.created', 'floor_plan.updated', 'floor_plan.layout_saved',
+            'floor_plan.deactivated', 'floor_plan.activated', 'floor_plan.deleted',
+        ], $logs->pluck('action')->all());
+        $this->assertSame('Renamed floor plan "Indoor" to "Ground Floor"', $logs[1]->description);
+        $this->assertSame('Saved the layout of "Ground Floor" (1 table, 0 decor items)', $logs[2]->description);
+        $this->assertSame(['tables' => 0, 'elements' => 0], $logs[2]->meta['before']);
+        $this->assertTrue($logs->every(fn ($l) => $l->user_id === $this->manager->user_id && $l->actor_role === 'Manager'));
+
+        $this->api('GET', '/api/owner/activity-logs?from=2026-10-05&to=2026-10-05&category=floor_plans', $this->tokenFor($this->owner))
+            ->assertOk()
+            ->assertJsonPath('counts.floor_plans', 6)
+            ->assertJsonCount(6, 'logs')
+            ->assertJsonPath('logs.0.action', 'floor_plan.deleted');
+    }
+
     public function test_canvas_cannot_shrink_below_existing_items(): void
     {
         $plan = $this->makePlan($this->mainBranch);
