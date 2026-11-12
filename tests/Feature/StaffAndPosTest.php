@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Mail\StaffAccountCreatedMail;
+use App\Models\ActivityLog;
 use App\Models\BranchDocument;
 use App\Models\Cafe;
 use App\Models\CafeBranch;
@@ -471,6 +472,42 @@ class StaffAndPosTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_manager_adding_and_editing_employees_is_logged_for_the_owner(): void
+    {
+        $token = $this->tokenFor($this->manager);
+        $url   = "/api/manager/branches/{$this->mainBranch->uuid}/staff";
+
+        $uuid = $this->api('POST', $url, $token, [
+            'firstname' => 'Lia', 'lastname' => 'Santos', 'email' => 'lia@test.local', 'role' => 'Cashier', 'pin' => '111111', ...$this->contact(),
+        ])->assertCreated()->json('staff.uuid');
+
+        $this->api('PATCH', "$url/$uuid", $token, ['employment_status' => 'suspended', ...$this->contact()])->assertOk();
+        $this->api('PATCH', "$url/$uuid", $token, ['firstname' => 'Lia'])->assertOk(); // no change: not logged
+
+        $week = [['day_of_week' => 1, 'is_day_off' => false, 'start_time' => '08:00', 'end_time' => '17:00']];
+        $this->api('PUT', "$url/$uuid/schedule", $token, ['schedule' => $week])->assertOk();
+        $this->api('PUT', "$url/$uuid/schedule", $token, ['schedule' => $week])->assertOk(); // same schedule: not logged
+
+        $this->api('PUT', "$url/$uuid/pin", $token, ['pin' => '222222'])->assertOk();
+
+        $logs = ActivityLog::where('category', ActivityLog::CATEGORY_EMPLOYEES)->orderBy('activity_log_id')->get();
+        $this->assertSame([
+            ActivityLog::EMPLOYEE_CREATED, ActivityLog::EMPLOYEE_UPDATED, ActivityLog::EMPLOYEE_SCHEDULE_UPDATED, ActivityLog::EMPLOYEE_PIN_RESET,
+        ], $logs->pluck('action')->all());
+        $this->assertSame('Added Lia Santos (Cashier)', $logs[0]->description);
+        // contact() gives a new phone number but the same address, so only the phone is listed.
+        $this->assertSame('Edited Lia Santos (Cashier): phone number, status active to suspended', $logs[1]->description);
+        $this->assertSame(['Monday' => '08:00-17:00'], $logs[2]->meta['after']);
+        $this->assertStringNotContainsString('222222', json_encode($logs[3]->toArray()));
+        $this->assertTrue($logs->every(fn ($l) => $l->user_id === $this->manager->user_id && $l->meta['employee']['uuid'] === $uuid));
+
+        $this->api('GET', '/api/owner/activity-logs?category=employees&search=Lia', $this->tokenFor($this->owner))
+            ->assertOk()
+            ->assertJsonPath('counts.employees', 4)
+            ->assertJsonPath('logs.0.action', ActivityLog::EMPLOYEE_PIN_RESET)
+            ->assertJsonPath('logs.0.actor.role', 'Manager');
+    }
+
     // ── Managers vs managers ─────────────────────────────────────────────
 
     public function test_manager_sees_other_managers_read_only(): void
@@ -550,12 +587,27 @@ class StaffAndPosTest extends TestCase
 
     // ── Terminate ────────────────────────────────────────────────────────
 
-    public function test_manager_terminates_cashier_which_revokes_access_and_ends_pos_session(): void
+    public function test_manager_can_edit_but_not_terminate_a_cashier(): void
+    {
+        $url   = "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}";
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('GET', $url, $token)->assertOk()->assertJsonPath('staff.can_manage', true);
+        $this->api('PATCH', $url, $token, ['firstname' => 'Renamed'])->assertOk();
+        $this->assertSame('Renamed', $this->cashier->fresh()->firstname);
+
+        $this->api('POST', "$url/terminate", $token)
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Only the owner can terminate an employee.');
+        $this->assertSame('active', CafeStaff::where('user_id', $this->cashier->user_id)->value('employment_status'));
+    }
+
+    public function test_owner_terminates_cashier_which_revokes_access_and_ends_pos_session(): void
     {
         $device = $this->registerDevice($this->manager, $this->mainBranch);
         $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
 
-        $this->api('POST', "/api/manager/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/terminate", $this->tokenFor($this->manager))
+        $this->api('POST', "/api/owner/branches/{$this->mainBranch->uuid}/staff/{$this->cashier->uuid}/terminate", $this->tokenFor($this->owner))
             ->assertOk();
 
         $assignment = CafeStaff::where('user_id', $this->cashier->user_id)->first();
@@ -658,6 +710,67 @@ class StaffAndPosTest extends TestCase
 
         $this->api('POST', '/api/pos/device/lock', $device)->assertOk();
         $this->api('GET', '/api/pos/device', $device)->assertJsonPath('device.active_staff', null);
+    }
+
+    // ── Activity log ─────────────────────────────────────────────────────
+
+    public function test_register_unlock_lock_and_switch_are_logged_for_the_owner(): void
+    {
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+        $this->api('POST', "/api/pos/device/staff/{$this->manager->uuid}/unlock", $device, ['pin' => '9999'])->assertOk(); // switches
+        $this->api('POST', '/api/pos/device/lock', $device)->assertOk();
+        $this->api('POST', '/api/pos/device/lock', $device)->assertOk(); // already locked: nothing logged
+
+        $logs = ActivityLog::orderBy('activity_log_id')->get();
+        $this->assertSame(
+            [ActivityLog::POS_UNLOCK, ActivityLog::POS_LOCK, ActivityLog::POS_UNLOCK, ActivityLog::POS_LOCK],
+            $logs->pluck('action')->all()
+        );
+        $this->assertSame(
+            [$this->cashier->user_id, $this->cashier->user_id, $this->manager->user_id, $this->manager->user_id],
+            $logs->pluck('user_id')->all()
+        );
+        $this->assertSame('switched', $logs[1]->meta['reason']);
+        $this->assertSame('Cashier', $logs[0]->actor_role);
+        $this->assertSame($this->mainBranch->branch_id, $logs[0]->branch_id);
+
+        $owner = $this->tokenFor($this->owner);
+        $this->api('GET', '/api/owner/activity-logs', $owner)
+            ->assertOk()
+            ->assertJsonPath('counts.all', 4)
+            ->assertJsonPath('counts.pos', 4)
+            ->assertJsonPath('logs.0.action', ActivityLog::POS_LOCK) // newest first
+            ->assertJsonPath('logs.0.device', 'Front Counter')
+            ->assertJsonPath('logs.0.branch', 'Main Branch');
+
+        $this->api('GET', '/api/owner/activity-logs?role=cashier', $owner)->assertJsonCount(2, 'logs');
+        $this->api('GET', "/api/owner/activity-logs?branch={$this->otherBranch->uuid}", $owner)->assertJsonCount(0, 'logs');
+        $this->api('GET', '/api/owner/activity-logs?category=nope', $owner)->assertStatus(422);
+    }
+
+    public function test_dashboard_sign_in_and_out_are_logged_and_only_the_owner_sees_their_cafe(): void
+    {
+        app(\App\Repository\VerificationCodeRepository::class)->createLoginCode($this->manager->user_id, '123123');
+
+        $token = $this->postJson('/api/auth/verify-login-code', ['email' => 'manager@test.local', 'code' => '123123'])
+            ->assertOk()->json('token');
+        $this->api('POST', '/api/auth/logout', $token)->assertOk();
+
+        $this->assertSame(
+            [ActivityLog::AUTH_LOGIN, ActivityLog::AUTH_LOGOUT],
+            ActivityLog::orderBy('activity_log_id')->pluck('action')->all()
+        );
+
+        $this->api('GET', '/api/owner/activity-logs?category=auth', $this->tokenFor($this->owner))
+            ->assertOk()->assertJsonCount(2, 'logs')->assertJsonPath('logs.0.actor.role', 'Manager');
+
+        $stranger = $this->makeUser('Cafe Owner', ['email' => 'other@test.local']);
+        Cafe::create(['user_id' => $stranger->user_id, 'cafe_name' => 'Other Cafe']);
+        $this->api('GET', '/api/owner/activity-logs', $this->tokenFor($stranger))->assertOk()->assertJsonCount(0, 'logs');
+
+        $this->api('GET', '/api/owner/activity-logs', $this->tokenFor($this->manager))->assertForbidden();
     }
 
     public function test_cashier_from_another_branch_cannot_unlock(): void

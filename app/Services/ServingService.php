@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\InventoryServingResource;
+use App\Models\ActivityLog;
 use App\Models\CafeBranch;
 use App\Models\InventoryServing;
 use App\Models\MenuItem;
@@ -25,7 +26,8 @@ class ServingService
 {
     public function __construct(
         private readonly InventoryServingRepository $repo,
-        private readonly BranchAlertService $alerts
+        private readonly BranchAlertService $alerts,
+        private readonly ActivityLogService $activity
     ) {}
 
     public function listToday(CafeBranch $branch): array
@@ -101,6 +103,11 @@ class ServingService
             'expected_servings' => $expectedServings,
         ]);
 
+        $this->activity->serving($actor, $branch, ActivityLog::SERVING_CREATED,
+            "Added {$item->menu_name} to today's servings ({$expectedServings} servings)",
+            ['item' => $item->menu_name, 'expected_servings' => $expectedServings]
+        );
+
         return [
             'success' => true,
             'message' => 'Menu item added to today\'s servings.',
@@ -130,8 +137,12 @@ class ServingService
             ];
         }
 
+        $before = ['expected_servings' => (int) $serving->expected_servings, 'is_sold_out' => (bool) $serving->is_sold_out];
+
         $serving = $this->repo->update($serving, $payload);
         $this->alerts->evaluateServingState($serving);
+
+        $this->logServingUpdate($actor, $branch, $serving, $before);
 
         Log::channel('owner')->info('Serving updated.', [
             'actor_uuid'   => $actor->uuid,
@@ -215,6 +226,9 @@ class ServingService
             return ['success' => false, 'http' => 422, 'message' => 'Some changes could not be saved.', 'errors' => $errors];
         }
 
+        // Read before saving: the saves overwrite the servings' current values.
+        $changes = $this->categoryChanges($plan);
+
         try {
             DB::transaction(function () use ($plan, $branch) {
                 foreach ($plan as ['item' => $item, 'serving' => $serving, 'limit' => $limit, 'enabled' => $enabled]) {
@@ -253,6 +267,16 @@ class ServingService
             'rows'          => count($plan),
         ]);
 
+        if ($changes) {
+            $categoryName = $category?->name ?? 'Uncategorized';
+            $count        = count($changes);
+
+            $this->activity->serving($actor, $branch, ActivityLog::SERVING_CATEGORY_SAVED,
+                "Updated servings in {$categoryName} ({$count} " . ($count === 1 ? 'item' : 'items') . ')',
+                ['category' => $categoryName, 'items' => $changes]
+            );
+        }
+
         return ['success' => true, 'message' => 'Servings saved.'];
     }
 
@@ -280,7 +304,63 @@ class ServingService
             'serving_uuid' => $serving->uuid,
         ]);
 
+        $name = $serving->menuItem?->menu_name ?? 'A menu item';
+        $this->activity->serving($actor, $branch, ActivityLog::SERVING_DELETED,
+            "Removed {$name} from today's servings",
+            ['item' => $name, 'expected_servings' => $serving->expected_servings]
+        );
+
         return ['success' => true, 'message' => 'Menu item removed from today\'s servings.'];
+    }
+
+    /** @param  array{expected_servings: int, is_sold_out: bool}  $before */
+    private function logServingUpdate(User $actor, CafeBranch $branch, InventoryServing $serving, array $before): void
+    {
+        $after = ['expected_servings' => (int) $serving->expected_servings, 'is_sold_out' => (bool) $serving->is_sold_out];
+
+        if ($after == $before) {
+            return;
+        }
+
+        $name  = $serving->menuItem?->menu_name ?? 'A menu item';
+        $parts = [];
+
+        if ($after['expected_servings'] !== (int) $before['expected_servings']) {
+            $parts[] = "servings {$before['expected_servings']} to {$after['expected_servings']}";
+        }
+        if ($after['is_sold_out'] !== $before['is_sold_out']) {
+            $parts[] = $after['is_sold_out'] ? 'marked sold out' : 'back on sale';
+        }
+
+        $this->activity->serving($actor, $branch, ActivityLog::SERVING_UPDATED,
+            "Updated {$name}: " . implode(', ', $parts),
+            ['item' => $name, 'before' => $before, 'after' => $after]
+        );
+    }
+
+    /**
+     * What a category save actually changed, one entry per item, for the audit log.
+     * Rows saved with the values they already had are left out.
+     */
+    private function categoryChanges(array $plan): array
+    {
+        $changes = [];
+
+        foreach ($plan as ['item' => $item, 'serving' => $serving, 'limit' => $limit, 'enabled' => $enabled]) {
+            $before = $serving
+                ? ['daily_limit' => (int) $serving->expected_servings, 'enabled' => ! $serving->is_sold_out]
+                : ['daily_limit' => 0, 'enabled' => true]; // no row: on, no limit
+
+            $after = ($limit === 0 && $enabled) ? ['daily_limit' => 0, 'enabled' => true] : ['daily_limit' => $limit, 'enabled' => $enabled];
+
+            if ($before == $after) {
+                continue;
+            }
+
+            $changes[] = ['item' => $item->menu_name, 'before' => $before, 'after' => $after];
+        }
+
+        return $changes;
     }
 
     /** "3 sold, 1 spoiled, 1 refunded", leaving out the zeros. */

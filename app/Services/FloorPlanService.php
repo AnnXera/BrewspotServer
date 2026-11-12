@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\BranchTableResource;
 use App\Http\Resources\FloorPlanResource;
+use App\Models\ActivityLog;
 use App\Models\BranchTable;
 use App\Models\CafeBranch;
 use App\Models\FloorPlan;
@@ -26,7 +27,8 @@ class FloorPlanService
 {
     public function __construct(
         private readonly FloorPlanRepository $repo,
-        private readonly ReservationRepository $reservations
+        private readonly ReservationRepository $reservations,
+        private readonly ActivityLogService $activity
     ) {}
 
     // ── Catalog ──────────────────────────────────────────────────────────
@@ -71,13 +73,18 @@ class FloorPlanService
         return ['success' => true, 'floor_plan' => $this->detail($plan)];
     }
 
-    public function create(CafeBranch $branch, array $data): array
+    public function create(User $actor, CafeBranch $branch, array $data): array
     {
         if ($this->pointsOutside($data['boundary_points'] ?? null, (float) $data['canvas_width'], (float) $data['canvas_height'])) {
             return $this->invalid('boundary_points', 'Boundary points must be inside the canvas.');
         }
 
         $plan = $this->repo->create($branch->branch_id, $data);
+
+        $this->activity->floorPlan($actor, $branch, ActivityLog::FLOOR_PLAN_CREATED,
+            "Created floor plan \"{$plan->floorplan_name}\"",
+            ['floor_plan' => $plan->floorplan_name]
+        );
 
         return [
             'success'    => true,
@@ -87,7 +94,7 @@ class FloorPlanService
         ];
     }
 
-    public function update(CafeBranch $branch, string $planUuid, array $data): array
+    public function update(User $actor, CafeBranch $branch, string $planUuid, array $data): array
     {
         $plan = $this->repo->findForBranch($planUuid, $branch->branch_id);
 
@@ -109,7 +116,23 @@ class FloorPlanService
             return $this->invalid('boundary_points', 'Boundary points must be inside the canvas.');
         }
 
+        $oldName = $plan->floorplan_name;
+        $before  = $plan->only(array_keys($data));
+
         $this->repo->update($plan, $data);
+
+        $changed = array_keys(array_filter($data, fn ($v, $k) => $v != ($before[$k] ?? null), ARRAY_FILTER_USE_BOTH));
+
+        if ($changed) {
+            $description = in_array('floorplan_name', $changed, true)
+                ? "Renamed floor plan \"{$oldName}\" to \"{$plan->floorplan_name}\""
+                : "Edited floor plan \"{$plan->floorplan_name}\" (size or boundary)";
+
+            $this->activity->floorPlan($actor, $branch, ActivityLog::FLOOR_PLAN_UPDATED, $description, [
+                'floor_plan' => $plan->floorplan_name,
+                'changed'    => $changed,
+            ]);
+        }
 
         return ['success' => true, 'message' => 'Floor plan updated.', 'floor_plan' => $this->detail($plan)];
     }
@@ -129,6 +152,11 @@ class FloorPlanService
         $this->repo->delete($plan);
 
         Log::info('Floor plan deleted.', ['plan_uuid' => $plan->uuid, 'branch_uuid' => $branch->uuid, 'by_uuid' => $actor->uuid]);
+
+        $this->activity->floorPlan($actor, $branch, ActivityLog::FLOOR_PLAN_DELETED,
+            "Deleted floor plan \"{$plan->floorplan_name}\"",
+            ['floor_plan' => $plan->floorplan_name]
+        );
 
         return ['success' => true, 'message' => "Floor plan \"{$plan->floorplan_name}\" deleted."];
     }
@@ -157,6 +185,12 @@ class FloorPlanService
 
         Log::info($active ? 'Floor plan activated.' : 'Floor plan deactivated.', ['plan_uuid' => $plan->uuid, 'branch_uuid' => $branch->uuid, 'by_uuid' => $actor->uuid]);
 
+        $this->activity->floorPlan($actor, $branch,
+            $active ? ActivityLog::FLOOR_PLAN_ACTIVATED : ActivityLog::FLOOR_PLAN_DEACTIVATED,
+            $active ? "Showed floor plan \"{$plan->floorplan_name}\" on the register" : "Hid floor plan \"{$plan->floorplan_name}\" from the register",
+            ['floor_plan' => $plan->floorplan_name]
+        );
+
         return [
             'success'    => true,
             'message'    => $active ? "\"{$plan->floorplan_name}\" is now shown on the register." : "\"{$plan->floorplan_name}\" is no longer shown on the register.",
@@ -171,7 +205,7 @@ class FloorPlanService
      * rows without one, remove the rest. Tables are soft deleted and can't be
      * removed while they hold an upcoming reservation.
      */
-    public function saveLayout(CafeBranch $branch, string $planUuid, array $tables, array $elements): array
+    public function saveLayout(User $actor, CafeBranch $branch, string $planUuid, array $tables, array $elements): array
     {
         $plan = $this->repo->findForBranch($planUuid, $branch->branch_id);
 
@@ -185,6 +219,8 @@ class FloorPlanService
             return ['success' => false, 'http' => 422, 'message' => 'Validation failed.', 'errors' => $errors];
         }
 
+        $before = ['tables' => $plan->tables()->count(), 'elements' => $plan->elements()->count()];
+
         try {
             DB::transaction(function () use ($plan, $tables, $elements) {
                 $this->syncTables($plan, $tables);
@@ -193,6 +229,14 @@ class FloorPlanService
         } catch (\DomainException $e) {
             return ['success' => false, 'http' => $e->getCode(), 'message' => $e->getMessage()];
         }
+
+        $after = ['tables' => count($tables), 'elements' => count($elements)];
+        $plural = fn (int $n, string $word) => "{$n} {$word}" . ($n === 1 ? '' : 's');
+
+        $this->activity->floorPlan($actor, $branch, ActivityLog::FLOOR_PLAN_LAYOUT_SAVED,
+            "Saved the layout of \"{$plan->floorplan_name}\" ({$plural($after['tables'], 'table')}, {$plural($after['elements'], 'decor item')})",
+            ['floor_plan' => $plan->floorplan_name, 'before' => $before, 'after' => $after]
+        );
 
         return ['success' => true, 'message' => 'Layout saved.', 'floor_plan' => $this->detail($plan)];
     }

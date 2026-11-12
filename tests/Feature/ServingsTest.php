@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\Cafe;
 use App\Models\CafeBranch;
 use App\Models\CafeStaff;
@@ -477,6 +478,35 @@ class ServingsTest extends TestCase
             ->assertNotFound();
 
         $this->assertSame(10, InventoryServing::first()->expected_servings);
+    }
+
+    public function test_servings_changes_are_logged_with_who_and_what_changed(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $uuid = $this->api('POST', $this->url(), $token, ['menu_item_uuid' => $this->latte->uuid, 'expected_servings' => 30])
+            ->assertCreated()->json('serving.uuid');
+        $this->api('PATCH', $this->url("/{$uuid}"), $token, ['expected_servings' => 40, 'is_sold_out' => true])->assertOk();
+        $this->api('PATCH', $this->url("/{$uuid}"), $token, ['expected_servings' => 40])->assertOk(); // no change: not logged
+
+        $items = fn (int $limit, bool $on) => ['items' => [['menu_item_uuid' => $this->latte->uuid, 'daily_limit' => $limit, 'enabled' => $on]]];
+        $this->api('PUT', $this->url("/categories/{$this->category->uuid}/items"), $token, $items(40, false))->assertOk(); // same values
+        $this->api('PUT', $this->url("/categories/{$this->category->uuid}/items"), $token, $items(25, true))->assertOk();
+
+        $logs = ActivityLog::orderBy('activity_log_id')->get();
+        $this->assertSame(
+            [ActivityLog::SERVING_CREATED, ActivityLog::SERVING_UPDATED, ActivityLog::SERVING_CATEGORY_SAVED],
+            $logs->pluck('action')->all()
+        );
+        $this->assertSame('Updated Latte: servings 30 to 40, marked sold out', $logs[1]->description);
+        $this->assertSame(
+            [['item' => 'Latte', 'before' => ['daily_limit' => 40, 'enabled' => false], 'after' => ['daily_limit' => 25, 'enabled' => true]]],
+            $logs[2]->meta['items']
+        );
+        $this->assertSame($this->manager->user_id, $logs[0]->user_id);
+
+        $this->api('DELETE', $this->url("/{$uuid}"), $token)->assertOk();
+        $this->assertSame('Removed Latte from today\'s servings', ActivityLog::latest('activity_log_id')->value('description'));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

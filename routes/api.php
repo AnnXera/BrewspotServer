@@ -41,6 +41,9 @@ use App\Http\Controllers\UserProfileController;
 // Employees tab, registers and today's servings of one branch. Mounted under /owner and /manager,
 // always behind `branch.access`, which resolves {branchUuid} for the controller.
 $branchScopedRoutes = function () {
+    // This branch's activity log, plus cafe-wide menu changes (?from=&to=&category=&role=&search=)
+    Route::get('/activity-logs', [\App\Http\Controllers\BranchActivityLogController::class, 'index']);
+
     Route::middleware('plan.feature:staff_management')->group(function () {
         Route::get('/staff', [BranchStaffController::class, 'index']);
         Route::get('/staff/stats', [BranchStaffController::class, 'stats']); // before {userUuid}
@@ -210,6 +213,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
         // Branch-scoped employees + registers (same endpoints as the manager dashboard)
         Route::prefix('branches/{branchUuid}')->middleware('branch.access')->group($branchScopedRoutes);
+
+        // Audit log of staff sign-ins, register unlocks and servings changes (?from=&to=&branch=&category=&role=&search=)
+        Route::get('/activity-logs', [\App\Http\Controllers\OwnerActivityLogController::class, 'index']);
 
         // Feature-Gated: Analytics (one call per tab; ?from=&to=&branch=)
         Route::middleware('plan.feature:advanced_analytics')->prefix('analytics')->group(function () {

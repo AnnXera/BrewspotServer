@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\CategoryBranchResource;
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Repository\CategoryBranchRepository;
 use App\Repository\MenuCategoryRepository;
@@ -12,7 +13,8 @@ class CategoryBranchService
 {
     public function __construct(
         private readonly CategoryBranchRepository $repo,
-        private readonly MenuCategoryRepository $categoryRepo
+        private readonly MenuCategoryRepository $categoryRepo,
+        private readonly ActivityLogService $activity
     ) {}
 
     public function setBranchAvailability(User $owner, string $categoryUuid, string $branchUuid, bool $isAvailable): array
@@ -53,6 +55,11 @@ class CategoryBranchService
             'branch_uuid'   => $branch->uuid,
             'is_available'  => $isAvailable,
         ]);
+
+        $this->activity->menu($owner, $cafe->cafe_id, $branch, ActivityLog::MENU_CATEGORY_AVAILABILITY,
+            "Made category \"{$category->name}\" " . ($isAvailable ? 'available' : 'unavailable') . " at {$branch->branch_name}",
+            ['category' => $category->name, 'is_available' => $isAvailable]
+        );
 
         return [
             'success' => true,
