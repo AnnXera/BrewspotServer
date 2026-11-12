@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\RespondsWithFirstJsonError;
+use App\Models\Transaction;
 use App\Models\TransactionItem;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -30,6 +31,7 @@ class CheckoutPosRequest extends FormRequest
             'reference_number'          => ['nullable', 'string'],
             'discount_type'             => ['nullable', 'string', 'in:none,PWD,Senior'],
             'discount_amount'           => ['nullable', 'numeric', 'min:0'],
+            'order_type'                => ['nullable', 'string', Rule::in(Transaction::ORDER_TYPES)],
         ];
     }
 }

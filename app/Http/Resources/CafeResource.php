@@ -10,9 +10,10 @@ class CafeResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'uuid'       => $this->uuid,
-            'cafe_name'  => $this->cafe_name,
-            'documents'  => $this->whenLoaded('documents', fn () =>
+            'uuid'                        => $this->uuid,
+            'cafe_name'                   => $this->cafe_name,
+            'low_stock_threshold_percent' => $this->lowStockThresholdPercent(),
+            'documents'                   => $this->whenLoaded('documents', fn () =>
                 $this->documents->map(fn ($doc) => [
                     'cafe_doc_id'   => $doc->cafe_doc_id,
                     'doc_type'      => $doc->doc_type,

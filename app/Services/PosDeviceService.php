@@ -404,11 +404,13 @@ class PosDeviceService
         return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'temperature' => $temperature, 'addons' => array_values($lines)];
     }
 
-    public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0): array
+    public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0, ?string $orderType = 'dine_in'): array
     {
         if (!$device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
         }
+
+        $orderType = in_array($orderType, ['dine_in', 'take_out', 'delivery'], true) ? $orderType : 'dine_in';
 
         $staff = $this->repo->findStaff($device->active_staff_id);
         $userId = $staff ? $staff->user_id : $device->registered_by;
@@ -466,7 +468,7 @@ class PosDeviceService
 
         $transaction = null;
         $servingChanges = []; // [serving, used before this sale], alerted on after commit
-        DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount) {
+        DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount, $orderType) {
             $transaction = $this->sales->createTransaction([
                 'branch_id' => $branchId,
                 'staff_id' => $device->active_staff_id,
@@ -474,6 +476,7 @@ class PosDeviceService
                 'discount_type' => $discountType,
                 'discount_amount' => $discountAmount,
                 'status' => 'completed',
+                'order_type' => $orderType,
                 'receipt_number' => $this->sales->nextReceiptNumber($branchId),
             ]);
 
@@ -525,6 +528,7 @@ class PosDeviceService
             'message' => 'Checkout successful.',
             'transaction_uuid' => $transaction->uuid,
             'receipt_number' => $transaction->receipt_number,
+            'order_type' => $transaction->order_type ?: 'dine_in',
         ];
     }
 
@@ -561,6 +565,7 @@ class PosDeviceService
                 'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
                 'total_amount' => (float) $t->total_amount,
                 'status' => $t->status,
+                'order_type' => $t->order_type ?: 'dine_in',
                 'items_count' => $t->items_count,
             ])->values(),
         ];
@@ -595,6 +600,7 @@ class PosDeviceService
                 'created_at' => $t->created_at->toISOString(),
                 'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
                 'status' => $t->status,
+                'order_type' => $t->order_type ?: 'dine_in',
                 'walk_in_note' => $t->walk_in_note,
                 'subtotal' => round($subtotal, 2),
                 'discount_type' => $t->discount_type,

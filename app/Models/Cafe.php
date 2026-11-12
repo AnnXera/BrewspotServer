@@ -24,7 +24,23 @@ class Cafe extends Model
         'uuid',
         'user_id',
         'cafe_name',
+        'low_stock_threshold_percent',
     ];
+
+    protected $casts = [
+        'low_stock_threshold_percent' => 'integer',
+    ];
+
+    public function lowStockThresholdPercent(): ?int
+    {
+        $val = $this->low_stock_threshold_percent;
+
+        if ($val === null || (int) $val <= 0) {
+            return null;
+        }
+
+        return min(99, max(1, (int) $val));
+    }
 
     protected static function booted(): void
     {

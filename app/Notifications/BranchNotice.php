@@ -10,21 +10,71 @@ class BranchNotice extends AppNotice
 {
     // ---- Today's servings ----
 
-    /** Fires once per item per day (the serving row is per day). */
-    public static function servingsLow(string $branchUuid, string $servingUuid, string $itemName, int $remaining, int $expected): self
-    {
-        return new self('servings_low', "{$itemName} is running low",
-            "{$remaining} of {$expected} servings left today. Raise the limit in Servings if you expect more orders.",
+    /** Fires once per item per day per threshold (the serving row is per day). */
+    public static function servingsLow(
+        string $branchUuid,
+        string $servingUuid,
+        string $itemName,
+        int $remaining,
+        int $expected,
+        int $thresholdPercent = 0,
+        ?string $branchName = null,
+        bool $forOwner = false
+    ): self {
+        $remainingPercent = $expected > 0 ? (int) round(($remaining / $expected) * 100) : 0;
+        $limitCopy = $thresholdPercent > 0 ? ", low-stock limit: {$thresholdPercent}%" : '';
+        $dedupeKey = $thresholdPercent > 0
+            ? "servings_low:{$servingUuid}:{$thresholdPercent}"
+            : "servings_low:{$servingUuid}";
+
+        if ($forOwner) {
+            $where = $branchName ? " at {$branchName}" : '';
+
+            return new self(
+                'servings_low',
+                "{$itemName} is running low{$where}",
+                "{$remaining} of {$expected} servings left today{$where} ({$remainingPercent}% remaining{$limitCopy}).",
+                "/owner/branches/{$branchUuid}",
+                $dedupeKey
+            );
+        }
+
+        return new self(
+            'servings_low',
+            "{$itemName} is running low ({$remainingPercent}% left)",
+            "{$remaining} of {$expected} servings left today ({$remainingPercent}% remaining{$limitCopy}). Raise the limit in Servings if you expect more orders.",
             "/manager/servings?branch={$branchUuid}",
-            "servings_low:{$servingUuid}");
+            $dedupeKey
+        );
     }
 
-    public static function soldOut(string $branchUuid, string $servingUuid, string $itemName, int $expected): self
-    {
-        return new self('sold_out', "{$itemName} is sold out",
+    public static function soldOut(
+        string $branchUuid,
+        string $servingUuid,
+        string $itemName,
+        int $expected,
+        ?string $branchName = null,
+        bool $forOwner = false
+    ): self {
+        if ($forOwner) {
+            $where = $branchName ? " at {$branchName}" : '';
+
+            return new self(
+                'sold_out',
+                "{$itemName} is sold out{$where}",
+                "All {$expected} servings for today{$where} are used, so the register can't sell it.",
+                "/owner/branches/{$branchUuid}",
+                "sold_out:{$servingUuid}"
+            );
+        }
+
+        return new self(
+            'sold_out',
+            "{$itemName} is sold out",
             "All {$expected} servings for today are used, so the register can't sell it. Raise the limit in Servings to keep selling.",
             "/manager/servings?branch={$branchUuid}",
-            "sold_out:{$servingUuid}");
+            "sold_out:{$servingUuid}"
+        );
     }
 
     // ---- Register ----

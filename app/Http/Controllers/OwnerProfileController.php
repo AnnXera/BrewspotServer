@@ -31,6 +31,23 @@ class OwnerProfileController extends Controller
         return response()->json($result);
     }
 
+    public function lowStockThreshold(Request $request): JsonResponse
+    {
+        return $this->respond($this->service->getLowStockThreshold($request->user()));
+    }
+
+    public function updateLowStockThreshold(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'low_stock_threshold_percent' => ['required', 'integer', 'min:1', 'max:99'],
+        ]);
+
+        return $this->respond($this->service->updateLowStockThreshold(
+            $request->user(),
+            (int) $validated['low_stock_threshold_percent']
+        ));
+    }
+
     public function branches(Request $request): JsonResponse
     {
         $result = $this->service->getBranches(

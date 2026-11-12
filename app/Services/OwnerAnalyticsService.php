@@ -172,6 +172,7 @@ class OwnerAnalyticsService
             'cashier'         => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : null,
             'items'           => (int) $t->items_quantity,
             'payment_method'  => $payment?->payment_method_type,
+            'order_type'      => $t->order_type ?: 'dine_in',
             'discount_type'   => (float) $t->discount_amount > 0 ? $t->discount_type : null,
             'discount_amount' => round((float) $t->discount_amount, 2),
             'total_amount'    => round((float) $t->total_amount, 2),

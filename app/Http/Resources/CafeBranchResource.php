@@ -17,8 +17,9 @@ class CafeBranchResource extends JsonResource
             'cafe_picture_url' => $this->cafe_picture
                 ? Storage::disk('public')->url($this->cafe_picture)
                 : null,
-            'cafe_name'        => $this->whenLoaded('cafe', fn () => $this->cafe?->cafe_name),
-            'cafe_email'       => $this->cafe_email,
+            'cafe_name'                   => $this->whenLoaded('cafe', fn () => $this->cafe?->cafe_name),
+            'low_stock_threshold_percent' => $this->whenLoaded('cafe', fn () => $this->cafe?->lowStockThresholdPercent()),
+            'cafe_email'                  => $this->cafe_email,
             'cafe_phonenumber' => $this->cafe_phonenumber,
             'address'          => $this->address,
             'branch_type'      => $this->branch_type,

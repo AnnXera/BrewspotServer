@@ -117,7 +117,8 @@ class PosDeviceController extends Controller
             (float) $request->validated('amount_tendered'),
             $request->validated('reference_number'),
             $request->validated('discount_type'),
-            (float) $request->validated('discount_amount', 0)
+            (float) $request->validated('discount_amount', 0),
+            $request->validated('order_type') ?? 'dine_in'
         ));
     }
 

@@ -26,6 +26,7 @@ class ServingService
 {
     public function __construct(
         private readonly InventoryServingRepository $repo,
+        private readonly BranchAlertService $alerts,
         private readonly ActivityLogService $activity
     ) {}
 
@@ -139,6 +140,7 @@ class ServingService
         $before = ['expected_servings' => (int) $serving->expected_servings, 'is_sold_out' => (bool) $serving->is_sold_out];
 
         $serving = $this->repo->update($serving, $payload);
+        $this->alerts->evaluateServingState($serving);
 
         $this->logServingUpdate($actor, $branch, $serving, $before);
 
@@ -252,6 +254,10 @@ class ServingService
             });
         } catch (UniqueConstraintViolationException) {
             return ['success' => false, 'http' => 422, 'message' => 'Servings changed while saving. Reload and try again.'];
+        }
+
+        if ($branch->cafe) {
+            $this->alerts->evaluateCafeTodayServings($branch->cafe);
         }
 
         Log::channel('owner')->info('Category servings saved.', [
