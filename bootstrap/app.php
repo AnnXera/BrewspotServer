@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'plan.feature' => \App\Http\Middleware\EnsurePlanHasFeature::class,
             'branch.access' => \App\Http\Middleware\EnsureBranchAccess::class,
             'pos.device'   => \App\Http\Middleware\EnsurePosDevice::class,
+            'subscription.active' => \App\Http\Middleware\EnsureActiveSubscription::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

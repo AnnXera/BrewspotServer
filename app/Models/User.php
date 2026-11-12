@@ -232,7 +232,32 @@ class User extends Authenticatable
             return 'feature_not_in_plan';
         }
 
-        return $owner->subscriptions()->whereIn('status', ['active', 'expired', 'cancelled', 'past_due'])->exists()
+        return $owner->lapsedReason();
+    }
+
+    /**
+     * Why this user's cafe has no running subscription at all, or null when it has one.
+     * Admins are never blocked. Same reasons as featureDenialReason().
+     */
+    public function subscriptionDenialReason(): ?string
+    {
+        if ($this->role && strtolower($this->role->role_name) === 'admin') {
+            return null;
+        }
+
+        $owner = $this->featureOwner();
+
+        if (! $owner) {
+            return 'no_subscription';
+        }
+
+        return $owner->runningSubscription() ? null : $owner->lapsedReason();
+    }
+
+    /** For an owner with no running term: did they have one before (expired) or never? */
+    private function lapsedReason(): string
+    {
+        return $this->subscriptions()->whereIn('status', ['active', 'expired', 'cancelled', 'past_due'])->exists()
             ? 'subscription_expired'
             : 'no_subscription';
     }

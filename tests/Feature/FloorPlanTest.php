@@ -42,6 +42,42 @@ class FloorPlanTest extends FloorPlanTestCase
         $this->assertStringContainsString('Ask the cafe owner', $response->json('message'));
     }
 
+    public function test_plan_access_lists_what_the_cafe_can_use_for_owner_and_manager(): void
+    {
+        Feature::create(['key' => 'staff_management', 'name' => 'Staff Management', 'is_active' => true]);
+
+        foreach ([$this->owner, $this->manager] as $user) {
+            $this->api('GET', '/api/plan-access', $this->tokenFor($user))
+                ->assertOk()
+                ->assertJsonPath('features.reservations.reason', null)
+                ->assertJsonPath('features.staff_management.reason', 'feature_not_in_plan')
+                ->assertJsonPath('features.staff_management.name', 'Staff Management');
+        }
+
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', '/api/plan-access', $this->tokenFor($this->manager))
+            ->assertOk()
+            ->assertJsonPath('features.reservations.reason', 'subscription_expired')
+            ->assertJsonPath('features.staff_management.reason', 'subscription_expired');
+    }
+
+    public function test_manager_dashboard_is_hidden_once_the_cafe_subscription_lapses(): void
+    {
+        $url   = "/api/manager/branches/{$this->mainBranch->uuid}/dashboard-stats?range=daily";
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('GET', $url, $token)->assertOk();
+
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $response = $this->api('GET', $url, $token)
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+        $this->assertStringContainsString('Ask the cafe owner', $response->json('message'));
+        $this->api('GET', "/api/manager/branches/{$this->mainBranch->uuid}/transactions", $token)->assertForbidden();
+    }
+
     public function test_owner_who_never_subscribed_is_reported_as_unsubscribed(): void
     {
         $this->owner->subscriptions()->delete();
