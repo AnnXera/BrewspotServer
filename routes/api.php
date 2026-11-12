@@ -177,6 +177,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/welcome/dismiss', [OwnerProfileController::class, 'dismissWelcome']); // first-login welcome modal seen
         Route::get('/dashboard-stats', [\App\Http\Controllers\OwnerDashboardController::class, 'stats'])->middleware('subscription.active'); // totals + income series, all branches; needs a running subscription
         Route::get('/cafes', [OwnerProfileController::class, 'cafes']);
+        Route::get('/low-stock-threshold', [OwnerProfileController::class, 'lowStockThreshold']);
+        Route::put('/low-stock-threshold', [OwnerProfileController::class, 'updateLowStockThreshold']);
         Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
         Route::put('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
         Route::get('/branches', [OwnerProfileController::class, 'branches']);

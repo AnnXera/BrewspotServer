@@ -29,6 +29,9 @@ class ServingOverviewService
      */
     public function categories(CafeBranch $branch, ?string $search, string $sort, int $page, int $perPage): array
     {
+        $branch->loadMissing('cafe');
+        $thresholdPercent = $branch->cafe?->lowStockThresholdPercent();
+
         // Deleted menu items keep their serving row (soft delete), but no longer count.
         $servings = $this->repo->listForDate($branch->branch_id, $this->today())
             ->filter(fn (InventoryServing $s) => $s->menuItem && ! $s->menuItem->trashed());
@@ -36,7 +39,7 @@ class ServingOverviewService
 
         // Every category visible at the branch gets a card, even with nothing planned today.
         $rows = $this->repo->listAvailableCategoriesForBranch($branch)
-            ->map(fn (MenuCategory $c) => $this->categoryRow($c, $byCategory->get($c->uuid, collect())));
+            ->map(fn (MenuCategory $c) => $this->categoryRow($c, $byCategory->get($c->uuid, collect()), $thresholdPercent));
 
         // Like a real category: shown whenever an item without a category is visible at the
         // branch, not only once a serving row exists for it.
@@ -44,7 +47,7 @@ class ServingOverviewService
             ->contains(fn ($item) => $item->men_category_id === null);
 
         if ($hasUncategorizedItems || $byCategory->has('uncategorized')) {
-            $rows->push($this->categoryRow(null, $byCategory->get('uncategorized', collect())));
+            $rows->push($this->categoryRow(null, $byCategory->get('uncategorized', collect()), $thresholdPercent));
         }
 
         if ($search !== null && $search !== '') {
@@ -58,9 +61,10 @@ class ServingOverviewService
         };
 
         return [
-            'success'    => true,
-            'date'       => $this->today()->toDateString(),
-            'categories' => $this->paginate($rows->values(), $page, $perPage),
+            'success'                     => true,
+            'date'                        => $this->today()->toDateString(),
+            'low_stock_threshold_percent' => $thresholdPercent,
+            'categories'                  => $this->paginate($rows->values(), $page, $perPage),
         ];
     }
 
@@ -87,11 +91,14 @@ class ServingOverviewService
             }
         }
 
+        $branch->loadMissing('cafe');
+        $thresholdPercent = $branch->cafe?->lowStockThresholdPercent();
+
         $servings     = $this->repo->listForDate($branch->branch_id, $this->today())->keyBy('men_item_id');
         $availableIds = $this->repo->listAvailableItemsForBranch($branch)->pluck('men_item_id')->flip();
 
         $rows = $this->repo->listItemsForCategory($branch->cafe_id, $category?->men_category_id)
-            ->map(function ($item) use ($servings, $availableIds) {
+            ->map(function ($item) use ($servings, $availableIds, $thresholdPercent) {
                 /** @var InventoryServing|null $serving */
                 $serving  = $servings->get($item->men_item_id);
                 $onBranch = $availableIds->has($item->men_item_id);
@@ -104,17 +111,28 @@ class ServingOverviewService
                     default                             => 'available',
                 };
 
+                $expected       = $serving?->expected_servings ?? 0;
+                $availableStock = $serving ? $this->remaining($serving) : 0;
+                $lowRemaining   = BranchAlertService::lowRemainingThreshold($expected, $thresholdPercent);
+                $isLowStock     = $status === 'available'
+                    && $expected > 0
+                    && $availableStock > 0
+                    && $lowRemaining > 0
+                    && $availableStock <= $lowRemaining;
+
                 return [
-                    'uuid'            => $item->uuid,
-                    'menu_name'       => $item->menu_name,
-                    'picture'         => $item->picture ? Storage::disk('public')->url($item->picture) : null,
-                    'status'          => $status,
-                    'daily_limit'     => $serving?->expected_servings ?? 0,
-                    'servings_sold'   => $serving?->servings_sold ?? 0,
-                    'available_stock' => $serving ? $this->remaining($serving) : 0,
+                    'uuid'                        => $item->uuid,
+                    'menu_name'                   => $item->menu_name,
+                    'picture'                     => $item->picture ? Storage::disk('public')->url($item->picture) : null,
+                    'status'                      => $status,
+                    'daily_limit'                 => $expected,
+                    'servings_sold'               => $serving?->servings_sold ?? 0,
+                    'available_stock'             => $availableStock,
+                    'is_low_stock'                => $isLowStock,
+                    'low_stock_threshold_percent' => $thresholdPercent,
                     // The eye: on for every item visible at the branch until the manager switches it off.
-                    'enabled'         => $onBranch && ! $serving?->is_sold_out,
-                    'editable'        => $onBranch,
+                    'enabled'                     => $onBranch && ! $serving?->is_sold_out,
+                    'editable'                    => $onBranch,
                 ];
             });
 
@@ -129,10 +147,11 @@ class ServingOverviewService
         };
 
         return [
-            'success'  => true,
-            'date'     => $this->today()->toDateString(),
-            'category' => ['uuid' => $category?->uuid, 'name' => $category?->name ?? 'Uncategorized'],
-            'items'    => $this->paginate($rows->values(), $page, $perPage),
+            'success'                     => true,
+            'date'                        => $this->today()->toDateString(),
+            'low_stock_threshold_percent' => $thresholdPercent,
+            'category'                    => ['uuid' => $category?->uuid, 'name' => $category?->name ?? 'Uncategorized'],
+            'items'                       => $this->paginate($rows->values(), $page, $perPage),
         ];
     }
 
@@ -200,19 +219,24 @@ class ServingOverviewService
         ];
     }
 
-    private function categoryRow(?MenuCategory $category, Collection $servings): array
+    private function categoryRow(?MenuCategory $category, Collection $servings, ?int $thresholdPercent = null): array
     {
-        $remaining = $servings->sum(fn (InventoryServing $s) => $s->is_sold_out ? 0 : $this->remaining($s));
+        $remaining    = (int) $servings->sum(fn (InventoryServing $s) => $s->is_sold_out ? 0 : $this->remaining($s));
+        $expected     = (int) $servings->sum('expected_servings');
+        $lowRemaining = BranchAlertService::lowRemainingThreshold($expected, $thresholdPercent);
+        $isLowStock   = $remaining > 0 && $expected > 0 && $lowRemaining > 0 && $remaining <= $lowRemaining;
 
         return [
-            'uuid'              => $category?->uuid,
-            'name'              => $category?->name ?? 'Uncategorized',
-            'picture'           => $category?->picture ? Storage::disk('public')->url($category->picture) : null,
-            'items'             => $servings->count(),
-            'expected_servings' => $servings->sum('expected_servings'),
-            'servings_sold'     => $servings->sum('servings_sold'),
-            'remaining'         => $remaining,
-            'status'            => $remaining > 0 ? 'available' : 'sold_out',
+            'uuid'                        => $category?->uuid,
+            'name'                        => $category?->name ?? 'Uncategorized',
+            'picture'                     => $category?->picture ? Storage::disk('public')->url($category->picture) : null,
+            'items'                       => $servings->count(),
+            'expected_servings'           => $expected,
+            'servings_sold'               => $servings->sum('servings_sold'),
+            'remaining'                   => $remaining,
+            'status'                      => $remaining > 0 ? 'available' : 'sold_out',
+            'is_low_stock'                => $isLowStock,
+            'low_stock_threshold_percent' => $thresholdPercent,
         ];
     }
 

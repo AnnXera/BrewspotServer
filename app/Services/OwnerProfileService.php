@@ -9,6 +9,7 @@ use App\Http\Resources\BranchSummaryResource;
 use App\Http\Resources\PaymentResource;
 use App\Http\Resources\SubscriptionPlanResource;
 use App\Http\Resources\SubscriptionResource;
+use App\Models\Cafe;
 use App\Models\User;
 use App\Repository\OwnerProfileRepository;
 use App\Repository\PaymentRepository;
@@ -21,7 +22,8 @@ class OwnerProfileService
     public function __construct(
         private readonly OwnerProfileRepository $repo,
         private readonly SubscriptionRepository $subscriptionRepo,
-        private readonly PaymentRepository $paymentRepo
+        private readonly PaymentRepository $paymentRepo,
+        private readonly BranchAlertService $alerts
     ) {}
 
     /**
@@ -63,15 +65,69 @@ class OwnerProfileService
     public function getBranches(User $owner, int $perPage = 6, ?string $search = null, ?string $status = null): array
     {
         $branches = $this->repo->findBranchesByOwner($owner->user_id, $perPage, $search, $status);
-        $cafeId   = $owner->cafes()->value('cafe_id');
+        $cafe     = $this->repo->findPrimaryCafeByOwner($owner->user_id);
+        $cafeId   = $cafe?->cafe_id;
         $prefix   = $cafeId ? Tin::prefix(Tin::mainBranchTin($cafeId)) : null;
 
         return [
-            'success'   => true,
-            'cafe_name' => $this->repo->findCafeNameByOwner($owner->user_id),
+            'success'                     => true,
+            'cafe_name'                   => $cafe?->cafe_name,
+            'low_stock_threshold_percent' => $cafe?->lowStockThresholdPercent(),
             // New side branches must reuse this 9-digit TIN (XXX-XXX-XXX)
-            'main_tin_prefix' => $prefix ? Tin::formatPrefix($prefix) : null,
-            'branches'  => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
+            'main_tin_prefix'             => $prefix ? Tin::formatPrefix($prefix) : null,
+            'branches'                    => $branches->through(fn ($branch) => new BranchSummaryResource($branch)),
+        ];
+    }
+
+    public function getLowStockThreshold(User $owner): array
+    {
+        $cafe = $this->repo->findPrimaryCafeByOwner($owner->user_id);
+
+        if (! $cafe) {
+            return [
+                'success' => false,
+                'http'    => 404,
+                'message' => 'Cafe not found.',
+            ];
+        }
+
+        return [
+            'success'                     => true,
+            'low_stock_threshold_percent' => $cafe->lowStockThresholdPercent(),
+        ];
+    }
+
+    public function updateLowStockThreshold(User $owner, int $percent): array
+    {
+        $cafe = $this->repo->findPrimaryCafeByOwner($owner->user_id);
+
+        if (! $cafe) {
+            return [
+                'success' => false,
+                'http'    => 404,
+                'message' => 'Cafe not found.',
+            ];
+        }
+
+        $clamped = min(99, max(1, $percent));
+
+        Cafe::where('user_id', $owner->user_id)->update([
+            'low_stock_threshold_percent' => $clamped,
+        ]);
+
+        $cafe->refresh();
+        $this->alerts->evaluateCafeTodayServings($cafe);
+
+        Log::channel('owner')->info('Cafe low stock threshold updated.', [
+            'owner_uuid'                  => $owner->uuid,
+            'cafe_uuid'                   => $cafe->uuid,
+            'low_stock_threshold_percent' => $clamped,
+        ]);
+
+        return [
+            'success'                     => true,
+            'message'                     => "Low stock alert limit set to {$clamped}% across all branches.",
+            'low_stock_threshold_percent' => $clamped,
         ];
     }
 

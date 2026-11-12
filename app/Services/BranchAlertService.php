@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Cafe;
 use App\Models\CafeBranch;
 use App\Models\InventoryServing;
 use App\Models\ServingSpoilageLog;
@@ -14,16 +15,13 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Turns what happens on a branch's registers into bell notices for the people who
- * run it: its active managers, plus the owner when only they can act.
+ * run it: its active managers and the cafe owner.
  *
  * Every method is called after the sale, refund or log is saved, and never throws:
  * a failed notice must not break the register.
  */
 class BranchAlertService
 {
-    /** "Running low" once this share of the day's servings is used. */
-    private const LOW_SHARE = 0.8;
-
     private const SPOILAGE_REASONS = [
         'expired'     => 'expired',
         'dropped'     => 'dropped or spilled',
@@ -39,8 +37,26 @@ class BranchAlertService
     ) {}
 
     /**
-     * After servings were used (sold or spoiled): notify when the item just crossed
-     * "running low" or ran out. $usedBefore is InventoryServing::used() before the change.
+     * Remaining servings count at or below which an item is considered low stock
+     * based on the cafe's configured low_stock_threshold_percent (1-99%).
+     * Returns 0 when no threshold is configured or expected <= 1.
+     */
+    public static function lowRemainingThreshold(int $expected, ?int $thresholdPercent): int
+    {
+        if ($expected <= 1 || $thresholdPercent === null || $thresholdPercent <= 0) {
+            return 0;
+        }
+
+        $percent = min(99, max(1, $thresholdPercent));
+        $lowRemaining = max(1, (int) floor($expected * ($percent / 100)));
+
+        return min($expected - 1, $lowRemaining);
+    }
+
+    /**
+     * After servings were used (sold or spoiled): notify both the branch manager(s)
+     * and the cafe owner when the item just crossed the cafe's low-stock percentage
+     * limit or ran out. $usedBefore is InventoryServing::used() before the change.
      */
     public function servingsUsed(InventoryServing $serving, int $usedBefore): void
     {
@@ -53,24 +69,182 @@ class BranchAlertService
                 return;
             }
 
-            $serving->loadMissing(['menuItem', 'branch']);
+            $serving->loadMissing(['menuItem', 'branch.cafe.owner']);
             $branch   = $serving->branch;
-            $itemName = $serving->menuItem?->menu_name ?? 'An item';
-
-            if ($usedBefore < $expected && $used >= $expected) {
-                $notice = BranchNotice::soldOut($branch->uuid, $serving->uuid, $itemName, $expected);
-            } else {
-                $lowAt = (int) ceil($expected * self::LOW_SHARE);
-
-                if (! ($usedBefore < $lowAt && $used >= $lowAt && $used < $expected)) {
-                    return;
-                }
-
-                $notice = BranchNotice::servingsLow($branch->uuid, $serving->uuid, $itemName, $expected - $used, $expected);
+            if (! $branch) {
+                return;
             }
 
-            $this->notifications->notifyUsers($this->repo->activeManagersAtBranch($branch->branch_id), $notice);
+            $cafe     = $branch->cafe;
+            $owner    = $cafe?->owner;
+            $itemName = $serving->menuItem?->menu_name ?? 'An item';
+            $managers = $this->repo->activeManagersAtBranch($branch->branch_id);
+
+            if ($usedBefore < $expected && $used >= $expected) {
+                $this->notifications->notifyUsers(
+                    $managers,
+                    BranchNotice::soldOut($branch->uuid, $serving->uuid, $itemName, $expected, $branch->branch_name, forOwner: false)
+                );
+
+                if ($owner && $owner->status !== 'inactive') {
+                    $this->notifications->notifyUser(
+                        $owner,
+                        BranchNotice::soldOut($branch->uuid, $serving->uuid, $itemName, $expected, $branch->branch_name, forOwner: true)
+                    );
+                }
+
+                return;
+            }
+
+            $thresholdPercent = $cafe?->lowStockThresholdPercent();
+            if ($thresholdPercent === null || $thresholdPercent <= 0) {
+                return;
+            }
+
+            $lowRemaining    = self::lowRemainingThreshold($expected, $thresholdPercent);
+            $remainingBefore = max(0, $expected - $usedBefore);
+            $remaining       = max(0, $expected - $used);
+
+            if (! ($lowRemaining > 0 && $remaining > 0 && $remaining <= $lowRemaining && $remainingBefore > $lowRemaining)) {
+                return;
+            }
+
+            $this->notifications->notifyUsers(
+                $managers,
+                BranchNotice::servingsLow(
+                    $branch->uuid,
+                    $serving->uuid,
+                    $itemName,
+                    $remaining,
+                    $expected,
+                    $thresholdPercent,
+                    $branch->branch_name,
+                    forOwner: false
+                )
+            );
+
+            if ($owner && $owner->status !== 'inactive') {
+                $this->notifications->notifyUser(
+                    $owner,
+                    BranchNotice::servingsLow(
+                        $branch->uuid,
+                        $serving->uuid,
+                        $itemName,
+                        $remaining,
+                        $expected,
+                        $thresholdPercent,
+                        $branch->branch_name,
+                        forOwner: true
+                    )
+                );
+            }
         });
+    }
+
+    /**
+     * When the owner updates the cafe-wide low-stock percentage in Cafe Management
+     * (or when daily limits are updated), check all active servings across the cafe's
+     * branches today and notify both branch managers and the owner for any item
+     * currently at or below the configured low-stock percentage.
+     */
+    public function evaluateCafeTodayServings(Cafe $cafe): void
+    {
+        $this->safely('servings_threshold_update', function () use ($cafe) {
+            $thresholdPercent = $cafe->lowStockThresholdPercent();
+            if ($thresholdPercent === null || $thresholdPercent <= 0) {
+                return;
+            }
+
+            $cafe->loadMissing(['owner', 'branches']);
+            $owner = $cafe->owner;
+            $branchIds = $cafe->branches->pluck('branch_id')->all();
+
+            if (empty($branchIds)) {
+                return;
+            }
+
+            $servings = InventoryServing::with(['menuItem', 'branch'])
+                ->whereIn('branch_id', $branchIds)
+                ->whereDate('date', Carbon::today())
+                ->where('is_sold_out', false)
+                ->where('expected_servings', '>', 0)
+                ->get();
+
+            foreach ($servings as $serving) {
+                $this->notifyIfCurrentlyLow($serving, $thresholdPercent, $owner);
+            }
+        });
+    }
+
+    /**
+     * Check a single serving row against its cafe's low-stock percentage right now.
+     */
+    public function evaluateServingState(InventoryServing $serving): void
+    {
+        $this->safely('serving_state', function () use ($serving) {
+            if ($serving->is_sold_out || (int) $serving->expected_servings <= 0) {
+                return;
+            }
+
+            $serving->loadMissing(['menuItem', 'branch.cafe.owner']);
+            $cafe = $serving->branch?->cafe;
+            $thresholdPercent = $cafe?->lowStockThresholdPercent();
+
+            if ($thresholdPercent === null || $thresholdPercent <= 0) {
+                return;
+            }
+
+            $this->notifyIfCurrentlyLow($serving, $thresholdPercent, $cafe?->owner);
+        });
+    }
+
+    private function notifyIfCurrentlyLow(InventoryServing $serving, int $thresholdPercent, ?User $owner): void
+    {
+        $expected  = (int) $serving->expected_servings;
+        $remaining = $serving->remaining();
+        $branch    = $serving->branch;
+
+        if (! $branch || $expected <= 0 || $remaining <= 0) {
+            return;
+        }
+
+        $lowRemaining = self::lowRemainingThreshold($expected, $thresholdPercent);
+        if ($lowRemaining <= 0 || $remaining > $lowRemaining) {
+            return;
+        }
+
+        $itemName = $serving->menuItem?->menu_name ?? 'An item';
+        $managers = $this->repo->activeManagersAtBranch($branch->branch_id);
+
+        $this->notifications->notifyUsers(
+            $managers,
+            BranchNotice::servingsLow(
+                $branch->uuid,
+                $serving->uuid,
+                $itemName,
+                $remaining,
+                $expected,
+                $thresholdPercent,
+                $branch->branch_name,
+                forOwner: false
+            )
+        );
+
+        if ($owner && $owner->status !== 'inactive') {
+            $this->notifications->notifyUser(
+                $owner,
+                BranchNotice::servingsLow(
+                    $branch->uuid,
+                    $serving->uuid,
+                    $itemName,
+                    $remaining,
+                    $expected,
+                    $thresholdPercent,
+                    $branch->branch_name,
+                    forOwner: true
+                )
+            );
+        }
     }
 
     /**

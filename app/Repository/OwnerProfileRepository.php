@@ -33,6 +33,13 @@ class OwnerProfileRepository
             ->value('cafe_name');
     }
 
+    public function findPrimaryCafeByOwner(int $userId): ?Cafe
+    {
+        return Cafe::where('user_id', $userId)
+            ->oldest('created_at')
+            ->first();
+    }
+
     /**
      * Paginated for the branch card grid — defaults to 6 per page.
      */

@@ -12,6 +12,8 @@ class Transaction extends Model
 {
     protected $primaryKey = 'transaction_id';
 
+    public const ORDER_TYPES = ['dine_in', 'take_out', 'delivery'];
+
     public function getRouteKeyName(): string
     {
         return 'uuid';
@@ -27,7 +29,7 @@ class Transaction extends Model
         'discount_amount',
         'walk_in_note',
         'status',
-        'receipt_number',
+        'order_type',
     ];
 
     protected $casts = [

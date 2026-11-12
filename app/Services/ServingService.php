@@ -24,7 +24,8 @@ use Illuminate\Support\Facades\Storage;
 class ServingService
 {
     public function __construct(
-        private readonly InventoryServingRepository $repo
+        private readonly InventoryServingRepository $repo,
+        private readonly BranchAlertService $alerts
     ) {}
 
     public function listToday(CafeBranch $branch): array
@@ -130,6 +131,7 @@ class ServingService
         }
 
         $serving = $this->repo->update($serving, $payload);
+        $this->alerts->evaluateServingState($serving);
 
         Log::channel('owner')->info('Serving updated.', [
             'actor_uuid'   => $actor->uuid,
@@ -238,6 +240,10 @@ class ServingService
             });
         } catch (UniqueConstraintViolationException) {
             return ['success' => false, 'http' => 422, 'message' => 'Servings changed while saving. Reload and try again.'];
+        }
+
+        if ($branch->cafe) {
+            $this->alerts->evaluateCafeTodayServings($branch->cafe);
         }
 
         Log::channel('owner')->info('Category servings saved.', [
