@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Contracts\MailAdapterInterface;
 use App\Http\Resources\StaffMemberResource;
 use App\Mail\StaffAccountCreatedMail;
+use App\Models\ActivityLog;
 use App\Models\CafeBranch;
 use App\Models\CafeStaff;
 use App\Models\User;
@@ -20,8 +21,22 @@ class BranchStaffService
     public function __construct(
         private readonly CafeStaffRepository $repo,
         private readonly StaffPinService $pins,
-        private readonly MailAdapterInterface $mailer
+        private readonly MailAdapterInterface $mailer,
+        private readonly ActivityLogService $activity
     ) {}
+
+    /** Field labels for the audit log, in the order the edit form shows them. */
+    private const FIELD_LABELS = [
+        'firstname'         => 'first name',
+        'middlename'        => 'middle name',
+        'lastname'          => 'last name',
+        'email'             => 'email',
+        'phone_number'      => 'phone number',
+        'address'           => 'address',
+        'hired_at'          => 'hire date',
+        'employment_status' => 'status',
+        'role'              => 'position',
+    ];
 
     /**
      * @param  array{search?: ?string, status?: ?string, role?: ?string}  $filters
@@ -118,6 +133,11 @@ class BranchStaffService
                 ];
             });
 
+            $this->logEmployee($actor, $branch, $result['staff']->resource, ActivityLog::EMPLOYEE_CREATED,
+                fn (string $who) => "Added {$who}",
+                ['hired_at' => $payload['hired_at'] ?? now()->toDateString()]
+            );
+
             return $result;
 
         } catch (\Throwable $e) {
@@ -161,6 +181,13 @@ class BranchStaffService
             return ['success' => false, 'http' => 422, 'message' => 'This employee has been terminated at this branch and can no longer be edited.'];
         }
 
+        $before = [
+            ...$target->only(['firstname', 'middlename', 'lastname', 'email', 'phone_number', 'address']),
+            'hired_at'          => $assignment->hired_at?->toDateString(),
+            'employment_status' => $assignment->employment_status,
+            'role'              => $target->roleName(),
+        ];
+
         DB::transaction(function () use ($actor, $branch, $target, $assignment, $payload, $newRole) {
             $userFields = array_intersect_key($payload, array_flip([
                 'firstname', 'middlename', 'lastname', 'email', 'phone_number', 'address',
@@ -199,6 +226,8 @@ class BranchStaffService
 
         $target = $this->repo->findStaffUserAtBranch($userUuid, $branch->branch_id);
 
+        $this->logEmployeeUpdate($actor, $branch, $target, $before, $payload);
+
         return [
             'success' => true,
             'message' => 'Employee updated.',
@@ -224,7 +253,18 @@ class BranchStaffService
             return ['success' => false, 'http' => 422, 'message' => 'This employee has been terminated at this branch.'];
         }
 
+        $beforeSchedule = $this->scheduleSummary($assignment->schedules->all());
+
         $this->repo->replaceSchedule($assignment, $days);
+
+        $afterSchedule = $this->scheduleSummary($days);
+
+        if ($beforeSchedule !== $afterSchedule) {
+            $this->logEmployee($actor, $branch, $target, ActivityLog::EMPLOYEE_SCHEDULE_UPDATED,
+                fn (string $who) => "Changed the schedule of {$who}",
+                ['before' => $beforeSchedule, 'after' => $afterSchedule]
+            );
+        }
 
         Log::channel('owner')->info('Staff schedule updated.', [
             'actor_uuid'  => $actor->uuid,
@@ -250,8 +290,9 @@ class BranchStaffService
             return $this->notFound();
         }
 
-        if (! $this->canManage($actor, $target)) {
-            return $this->forbidden('You can only terminate cashiers and staff. Ask the owner to terminate a manager.');
+        // Managers can edit cashiers and staff, but ending someone's employment is the owner's call.
+        if (! $actor->isOwner()) {
+            return $this->forbidden('Only the owner can terminate an employee.');
         }
 
         $assignment = $target->staffAssignments->first();
@@ -268,6 +309,8 @@ class BranchStaffService
                 $this->repo->revokeAccess($target);
             }
         });
+
+        $this->logEmployee($actor, $branch, $target, ActivityLog::EMPLOYEE_TERMINATED, fn (string $who) => "Terminated {$who}");
 
         Log::channel('owner')->info('Staff terminated at branch.', [
             'actor_uuid'  => $actor->uuid,
@@ -296,6 +339,12 @@ class BranchStaffService
         }
 
         $this->pins->setPinFor($target, $pin, $actor);
+
+        // Never the PIN itself.
+        $this->logEmployee($actor, $branch, $target, ActivityLog::EMPLOYEE_PIN_RESET,
+            fn (string $who) => "Set a new register PIN for {$who}",
+            ['temporary' => $target->mustChangePin()]
+        );
 
         Log::channel('owner')->info('Staff PIN set/reset.', [
             'actor_uuid'  => $actor->uuid,
@@ -326,6 +375,65 @@ class BranchStaffService
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /** @param  callable(string): string  $describe  gets "Juan Cruz (Cashier)" */
+    private function logEmployee(User $actor, CafeBranch $branch, User $employee, string $action, callable $describe, array $meta = []): void
+    {
+        $who = trim("{$employee->firstname} {$employee->lastname}") . ' (' . ($employee->roleName() ?? 'Employee') . ')';
+
+        $this->activity->employee($actor, $branch, $employee, $action, $describe($who), $meta);
+    }
+
+    /**
+     * One entry listing what an edit changed. Contact details are named but their values
+     * are left out; status, position and hire date keep before and after.
+     */
+    private function logEmployeeUpdate(User $actor, CafeBranch $branch, User $target, array $before, array $payload): void
+    {
+        $changes = [];
+
+        foreach (self::FIELD_LABELS as $field => $label) {
+            if (! array_key_exists($field, $payload) || (string) $payload[$field] === (string) ($before[$field] ?? '')) {
+                continue;
+            }
+
+            $changes[$field] = in_array($field, ['hired_at', 'employment_status', 'role'], true)
+                ? ['label' => $label, 'before' => $before[$field], 'after' => $payload[$field]]
+                : ['label' => $label];
+        }
+
+        if (! $changes) {
+            return;
+        }
+
+        $parts = collect($changes)->map(fn ($c) => isset($c['after']) ? "{$c['label']} {$c['before']} to {$c['after']}" : $c['label']);
+
+        $this->logEmployee($actor, $branch, $target, ActivityLog::EMPLOYEE_UPDATED,
+            fn (string $who) => "Edited {$who}: " . $parts->join(', '),
+            ['changes' => $changes]
+        );
+    }
+
+    /**
+     * A schedule as "Monday" => "08:00-17:00" | "Day off", Sunday first, for comparing and logging.
+     *
+     * @param  array<int, array|\App\Models\StaffSchedule>  $days
+     * @return array<string, string>
+     */
+    private function scheduleSummary(array $days): array
+    {
+        $summary = [];
+
+        foreach (collect($days)->sortBy(fn ($d) => (int) data_get($d, 'day_of_week')) as $day) {
+            $name = self::DAY_NAMES[(int) data_get($day, 'day_of_week')] ?? (string) data_get($day, 'day_of_week');
+
+            $summary[$name] = data_get($day, 'is_day_off')
+                ? 'Day off'
+                : substr((string) data_get($day, 'start_time'), 0, 5) . '-' . substr((string) data_get($day, 'end_time'), 0, 5);
+        }
+
+        return $summary;
+    }
 
     private function canManage(User $actor, User $target): bool
     {

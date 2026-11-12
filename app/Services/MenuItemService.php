@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Http\Resources\MenuItemResource;
+use App\Models\ActivityLog;
+use App\Models\MenuItem;
 use App\Models\User;
 use App\Repository\MenuAddonRepository;
 use App\Repository\MenuItemRepository;
@@ -16,7 +18,8 @@ class MenuItemService
     public function __construct(
         private readonly MenuItemRepository $repo,
         private readonly MenuAddonRepository $addons,
-        private readonly RecipeResolver $recipeResolver
+        private readonly RecipeResolver $recipeResolver,
+        private readonly ActivityLogService $activity
     ) {}
 
     public function createItem(User $owner, array $payload): array
@@ -76,6 +79,11 @@ class MenuItemService
             'menu_name'  => $item->menu_name,
         ]);
 
+        $this->activity->menu($owner, $cafe->cafe_id, null, ActivityLog::MENU_ITEM_CREATED,
+            "Added menu item \"{$item->menu_name}\"" . ($category ? " to {$category->name}" : ''),
+            ['item' => $item->menu_name, 'category' => $category?->name, 'base_price' => (float) $item->base_price]
+        );
+
         return [
             'success' => true,
             'message' => 'Menu item created successfully.',
@@ -113,6 +121,13 @@ class MenuItemService
                 $payload['men_category_id'] = $category->men_category_id;
             }
         }
+
+        $before = [
+            'menu_name'    => $item->menu_name,
+            'base_price'   => (float) $item->base_price,
+            'category'     => $item->category?->name,
+            'is_available' => (bool) $item->is_available,
+        ];
 
         // Absent = unchanged; [] = the item no longer comes in sizes.
         $sizes   = array_key_exists('sizes', $payload) ? ($payload['sizes'] ?? []) : null;
@@ -165,11 +180,66 @@ class MenuItemService
             'item_uuid'  => $item->uuid,
         ]);
 
+        $this->logItemUpdate($owner, $cafe->cafe_id, $item, $before, $payload);
+
         return [
             'success' => true,
             'message' => 'Menu item updated successfully.',
             'item'    => new MenuItemResource($item),
         ];
+    }
+
+    /**
+     * One audit log entry per edit: name, price, category and on/off keep before and after;
+     * sizes, recipe, add-ons and picture are named when the form sent them.
+     */
+    private function logItemUpdate(User $owner, int $cafeId, MenuItem $item, array $before, array $payload): void
+    {
+        $item->load('category');
+
+        $after = [
+            'menu_name'    => $item->menu_name,
+            'base_price'   => (float) $item->base_price,
+            'category'     => $item->category?->name,
+            'is_available' => (bool) $item->is_available,
+        ];
+
+        $parts   = [];
+        $changes = [];
+
+        if ($after['menu_name'] !== $before['menu_name']) {
+            $parts[] = "renamed from \"{$before['menu_name']}\"";
+        }
+        if ($after['base_price'] !== $before['base_price']) {
+            $parts[] = 'price ' . number_format($before['base_price'], 2) . ' to ' . number_format($after['base_price'], 2);
+        }
+        if ($after['category'] !== $before['category']) {
+            $parts[] = 'moved to ' . ($after['category'] ?? 'Uncategorized');
+        }
+        if ($after['is_available'] !== $before['is_available']) {
+            $parts[] = $after['is_available'] ? 'switched on' : 'switched off';
+        }
+
+        foreach (['menu_name', 'base_price', 'category', 'is_available'] as $field) {
+            if ($after[$field] !== $before[$field]) {
+                $changes[$field] = ['before' => $before[$field], 'after' => $after[$field]];
+            }
+        }
+
+        $also = array_keys(array_filter([
+            'sizes'   => array_key_exists('sizes', $payload),
+            'recipe'  => isset($payload['recipes']),
+            'add-ons' => array_key_exists('addon_uuids', $payload),
+            'picture' => isset($payload['picture']),
+        ]));
+
+        $description = "Edited menu item \"{$item->menu_name}\"" . ($parts ? ': ' . implode(', ', $parts) : '');
+
+        $this->activity->menu($owner, $cafeId, null, ActivityLog::MENU_ITEM_UPDATED, $description, [
+            'item'    => $item->menu_name,
+            'changes' => $changes ?: null,
+            'saved'   => $also ?: null,
+        ]);
     }
 
     /**
@@ -271,6 +341,11 @@ class MenuItemService
             'owner_uuid' => $owner->uuid,
             'item_uuid'  => $uuid,
         ]);
+
+        $this->activity->menu($owner, $cafe->cafe_id, null, ActivityLog::MENU_ITEM_DELETED,
+            "Deleted menu item \"{$item->menu_name}\"",
+            ['item' => $item->menu_name]
+        );
 
         return [
             'success' => true,

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\MenuCategoryResource;
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Repository\MenuCategoryRepository;
 use Illuminate\Database\QueryException;
@@ -13,7 +14,8 @@ use Illuminate\Http\UploadedFile;
 class MenuCategoryService
 {
     public function __construct(
-        private readonly MenuCategoryRepository $repo
+        private readonly MenuCategoryRepository $repo,
+        private readonly ActivityLogService $activity
     ) {}
 
     public function createCategory(User $owner, array $payload): array
@@ -61,6 +63,11 @@ class MenuCategoryService
             'is_available'  => $category->is_available,
         ]);
 
+        $this->activity->menu($owner, $cafe->cafe_id, null, ActivityLog::MENU_CATEGORY_CREATED,
+            "Added menu category \"{$category->name}\"",
+            ['category' => $category->name, 'items' => count($payload['items'] ?? [])]
+        );
+
         return [
             'success'  => true,
             'message'  => 'Menu category created successfully.',
@@ -86,6 +93,8 @@ class MenuCategoryService
 
             return ['success' => false, 'message' => 'Category not found.'];
         }
+
+        $before = ['name' => $category->name, 'is_available' => (bool) $category->is_available];
 
         try {
             if (isset($payload['picture']) && $payload['picture'] instanceof UploadedFile) {
@@ -118,6 +127,22 @@ class MenuCategoryService
             'category_uuid' => $category->uuid,
             'is_available'  => $category->is_available,
         ]);
+
+        $parts = [];
+        if ($category->name !== $before['name']) {
+            $parts[] = "renamed from \"{$before['name']}\"";
+        }
+        if ((bool) $category->is_available !== $before['is_available']) {
+            $parts[] = $category->is_available ? 'switched on' : 'switched off';
+        }
+        if (isset($payload['items']) && is_array($payload['items'])) {
+            $parts[] = 'items set to ' . count($payload['items']);
+        }
+
+        $this->activity->menu($owner, $cafe->cafe_id, null, ActivityLog::MENU_CATEGORY_UPDATED,
+            "Edited menu category \"{$category->name}\"" . ($parts ? ': ' . implode(', ', $parts) : ''),
+            ['category' => $category->name, 'before' => $before, 'after' => ['name' => $category->name, 'is_available' => (bool) $category->is_available]]
+        );
 
         return [
             'success'  => true,
@@ -172,6 +197,11 @@ class MenuCategoryService
             'owner_uuid'    => $owner->uuid,
             'category_uuid' => $uuid,
         ]);
+
+        $this->activity->menu($owner, $cafe->cafe_id, null, ActivityLog::MENU_CATEGORY_DELETED,
+            "Deleted menu category \"{$category->name}\" (its items are now uncategorized)",
+            ['category' => $category->name]
+        );
 
         return [
             'success' => true,

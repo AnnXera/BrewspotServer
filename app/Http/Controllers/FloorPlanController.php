@@ -45,6 +45,7 @@ class FloorPlanController extends Controller
     public function store(StoreFloorPlanRequest $request): JsonResponse
     {
         return $this->respond($this->service->create(
+            $request->user(),
             $request->attributes->get('branch'),
             $request->validated()
         ), 201);
@@ -64,6 +65,7 @@ class FloorPlanController extends Controller
     public function update(UpdateFloorPlanRequest $request, string $branchUuid, string $planUuid): JsonResponse
     {
         return $this->respond($this->service->update(
+            $request->user(),
             $request->attributes->get('branch'),
             $planUuid,
             $request->validated()
@@ -112,6 +114,7 @@ class FloorPlanController extends Controller
     public function saveLayout(SaveFloorPlanLayoutRequest $request, string $branchUuid, string $planUuid): JsonResponse
     {
         return $this->respond($this->service->saveLayout(
+            $request->user(),
             $request->attributes->get('branch'),
             $planUuid,
             $request->validated('tables'),
