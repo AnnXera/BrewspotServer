@@ -7,6 +7,8 @@ use App\Models\CafeBranch;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Role;
+use App\Models\Subscription;
+use App\Models\SubscriptionPlan;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
@@ -39,6 +41,17 @@ class OwnerDashboardTest extends TestCase
         $this->owner = $this->makeOwner('owner@test.local');
         $this->cafe  = Cafe::create(['user_id' => $this->owner->user_id, 'cafe_name' => 'Test Cafe']);
         $this->token = $this->owner->createToken('test')->plainTextToken;
+
+        // The dashboard needs a running subscription (any plan).
+        $plan = SubscriptionPlan::create(['sub_name' => 'Basic', 'price' => 0, 'max_branches' => 1, 'is_active' => true]);
+        Subscription::create([
+            'uuid'        => (string) Str::uuid(),
+            'user_id'     => $this->owner->user_id,
+            'sub_plan_id' => $plan->sub_plan_id,
+            'start_date'  => now()->subDay(),
+            'end_date'    => now()->addMonth(),
+            'status'      => 'active',
+        ]);
     }
 
     protected function tearDown(): void
@@ -126,6 +139,22 @@ class OwnerDashboardTest extends TestCase
     public function test_rejects_unknown_range(): void
     {
         $this->api('GET', '/api/owner/dashboard-stats?range=hourly')->assertStatus(422);
+    }
+
+    public function test_dashboard_is_hidden_without_a_running_subscription(): void
+    {
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', '/api/owner/dashboard-stats?range=daily')
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired')
+            ->assertJsonPath('required_feature', 'dashboard');
+
+        $this->owner->subscriptions()->delete();
+
+        $this->api('GET', '/api/owner/dashboard-stats?range=daily')
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'no_subscription');
     }
 
     private function makeOwner(string $email): User

@@ -61,6 +61,25 @@ class IngredientTest extends TestCase
             ->assertJsonPath('ingredients.0.unit', 'ml');
     }
 
+    public function test_lapsed_owner_can_view_the_menu_but_not_change_it(): void
+    {
+        $this->createItem('Latte', [['ingredient_name' => 'Milk', 'quantity' => 200, 'unit' => 'ml']])->assertCreated();
+
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', '/api/owner/menu-items')->assertOk();
+        $this->api('GET', '/api/owner/menu-categories')->assertOk();
+        $this->api('GET', '/api/owner/ingredients')->assertOk()->assertJsonCount(1, 'ingredients');
+
+        $this->createItem('Mocha', [['ingredient_name' => 'Milk', 'quantity' => 200, 'unit' => 'ml']])
+            ->assertForbidden()
+            ->assertJsonPath('required_feature', 'menu_management')
+            ->assertJsonPath('reason', 'subscription_expired');
+        $this->api('PATCH', '/api/owner/ingredients/' . Ingredient::first()->uuid, ['name' => 'Whole Milk'])
+            ->assertForbidden();
+        $this->assertSame(1, MenuItem::count());
+    }
+
     public function test_the_same_ingredient_twice_in_one_recipe_is_rejected(): void
     {
         $this->createItem('Latte', [

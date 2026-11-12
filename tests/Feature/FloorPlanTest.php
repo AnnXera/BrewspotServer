@@ -22,7 +22,69 @@ class FloorPlanTest extends FloorPlanTestCase
 
         $this->api('GET', $this->base('owner') . '/floor-plans', $token)
             ->assertForbidden()
-            ->assertJsonPath('required_feature', 'reservations');
+            ->assertJsonPath('required_feature', 'reservations')
+            ->assertJsonPath('code', 'PLAN_FEATURE_LOCKED')
+            ->assertJsonPath('reason', 'feature_not_in_plan');
+    }
+
+    public function test_lapsed_subscription_is_reported_as_expired(): void
+    {
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', $this->base('owner') . '/floor-plans', $this->tokenFor($this->owner))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+
+        // Staff are pointed at the owner instead.
+        $response = $this->api('GET', $this->base('manager') . '/floor-plans', $this->tokenFor($this->manager))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+        $this->assertStringContainsString('Ask the cafe owner', $response->json('message'));
+    }
+
+    public function test_plan_access_lists_what_the_cafe_can_use_for_owner_and_manager(): void
+    {
+        Feature::create(['key' => 'staff_management', 'name' => 'Staff Management', 'is_active' => true]);
+
+        foreach ([$this->owner, $this->manager] as $user) {
+            $this->api('GET', '/api/plan-access', $this->tokenFor($user))
+                ->assertOk()
+                ->assertJsonPath('features.reservations.reason', null)
+                ->assertJsonPath('features.staff_management.reason', 'feature_not_in_plan')
+                ->assertJsonPath('features.staff_management.name', 'Staff Management');
+        }
+
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $this->api('GET', '/api/plan-access', $this->tokenFor($this->manager))
+            ->assertOk()
+            ->assertJsonPath('features.reservations.reason', 'subscription_expired')
+            ->assertJsonPath('features.staff_management.reason', 'subscription_expired');
+    }
+
+    public function test_manager_dashboard_is_hidden_once_the_cafe_subscription_lapses(): void
+    {
+        $url   = "/api/manager/branches/{$this->mainBranch->uuid}/dashboard-stats?range=daily";
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('GET', $url, $token)->assertOk();
+
+        $this->owner->subscriptions()->update(['status' => 'expired', 'end_date' => now()->subDay()]);
+
+        $response = $this->api('GET', $url, $token)
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'subscription_expired');
+        $this->assertStringContainsString('Ask the cafe owner', $response->json('message'));
+        $this->api('GET', "/api/manager/branches/{$this->mainBranch->uuid}/transactions", $token)->assertForbidden();
+    }
+
+    public function test_owner_who_never_subscribed_is_reported_as_unsubscribed(): void
+    {
+        $this->owner->subscriptions()->delete();
+
+        $this->api('GET', $this->base('owner') . '/floor-plans', $this->tokenFor($this->owner))
+            ->assertForbidden()
+            ->assertJsonPath('reason', 'no_subscription');
     }
 
     public function test_manager_only_reaches_plans_of_their_own_branch(): void

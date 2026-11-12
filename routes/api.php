@@ -128,6 +128,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     Route::delete('/user/profile-photo', [UserProfileController::class, 'deletePhoto']);
     Route::put('/user/change-password', [UserProfileController::class, 'changePassword']);
 
+    // Which plan features the signed-in user's cafe can use (owner, manager or staff)
+    Route::get('/plan-access', [\App\Http\Controllers\PlanAccessController::class, 'show']);
+
     // In-app notifications (navbar bell) for the signed-in user
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
@@ -172,7 +175,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
         Route::get('/profile', [OwnerProfileController::class, 'profile']);
         Route::post('/welcome/dismiss', [OwnerProfileController::class, 'dismissWelcome']); // first-login welcome modal seen
-        Route::get('/dashboard-stats', [\App\Http\Controllers\OwnerDashboardController::class, 'stats']); // totals + income series, all branches
+        Route::get('/dashboard-stats', [\App\Http\Controllers\OwnerDashboardController::class, 'stats'])->middleware('subscription.active'); // totals + income series, all branches; needs a running subscription
         Route::get('/cafes', [OwnerProfileController::class, 'cafes']);
         Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'index']);
         Route::put('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'update']);
@@ -216,8 +219,9 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/operations', [\App\Http\Controllers\OwnerAnalyticsController::class, 'operations']);
         });
 
-        // Feature-Gated: Menu Management
-        Route::middleware('plan.feature:menu_management')->group(function () {
+        // Feature-Gated: Menu Management. Owners can still view the menu without the feature or
+        // after the subscription lapses; only adding, editing and deleting are blocked.
+        Route::middleware('plan.feature:menu_management,writes')->group(function () {
             Route::get('/menu-categories', [MenuCategoryController::class, 'index']);
             Route::post('/menu-categories', [MenuCategoryController::class, 'store']);
             Route::patch('/menu-categories/{uuid}', [MenuCategoryController::class, 'update']);
@@ -254,10 +258,12 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::get('/branches/{branchUuid}', [ManagerAccountController::class, 'branch'])->middleware('branch.access'); // Cafe Management
         Route::put('/pin', [ManagerAccountController::class, 'updatePin']); // own PIN for void/refund approval
 
-        // Manager Dashboard stats & transactions
-        Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats'])->middleware('branch.access');
-        Route::get('/branches/{branchUuid}/transactions', [ManagerDashboardController::class, 'transactions'])->middleware('branch.access');
-        Route::get('/branches/{branchUuid}/transactions/{transactionUuid}', [ManagerDashboardController::class, 'transaction'])->middleware('branch.access');
+        // Manager Dashboard stats & transactions: hidden while the cafe has no running subscription
+        Route::middleware(['branch.access', 'subscription.active'])->group(function () {
+            Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats']);
+            Route::get('/branches/{branchUuid}/transactions', [ManagerDashboardController::class, 'transactions']);
+            Route::get('/branches/{branchUuid}/transactions/{transactionUuid}', [ManagerDashboardController::class, 'transaction']);
+        });
 
         // Only branches with an active assignment (enforced by branch.access).
         // Managers can manage cashiers only (enforced in BranchStaffService).
