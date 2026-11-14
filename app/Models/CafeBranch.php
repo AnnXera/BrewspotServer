@@ -31,9 +31,36 @@ class CafeBranch extends Model
         'status',
     ];
 
+    /**
+     * Branches an admin has approved. Only these can be used: staff, POS, menu,
+     * servings, reservations, floor plans. Pending and rejected branches can be
+     * viewed but not operated. Inactive is an owner pause and stays usable.
+     */
+    public const OPERATIONAL_STATUSES = ['active', 'inactive'];
+
     protected static function booted(): void
     {
         static::creating(fn ($branch) => $branch->uuid = (string) Str::uuid());
+    }
+
+    public function isOperational(): bool
+    {
+        return in_array($this->status, self::OPERATIONAL_STATUSES, true);
+    }
+
+    public function scopeOperational($query)
+    {
+        return $query->whereIn('status', self::OPERATIONAL_STATUSES);
+    }
+
+    /** Why a non-operational branch can't be used, for API responses. */
+    public function notOperationalMessage(): string
+    {
+        return match ($this->status) {
+            'rejected'         => 'This branch was rejected by an administrator, so its features are unavailable.',
+            'pending_approval' => 'This branch is still waiting for admin approval, so its features are unavailable.',
+            default            => 'This branch is not available.',
+        };
     }
 
     public function cafe(): BelongsTo
