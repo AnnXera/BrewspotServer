@@ -275,6 +275,54 @@ class BranchAlertService
         });
     }
 
+    /**
+     * Someone changed their own PIN. Only a manager's change is reported, to the owner of
+     * each cafe they manage at; an owner's (or anyone else's) change notifies nobody.
+     */
+    public function ownPinChanged(User $user): void
+    {
+        $this->safely('pin_changed', function () use ($user) {
+            if (! $user->isManager()) {
+                return;
+            }
+
+            $name        = trim("{$user->firstname} {$user->lastname}");
+            $assignments = $user->activeStaffAssignments()->with('branch.cafe.owner')->get();
+
+            // One notice per owner, naming the first of their branches this manager runs.
+            $assignments->filter(fn ($a) => $a->branch?->cafe?->owner)
+                ->unique(fn ($a) => $a->branch->cafe->owner->user_id)
+                ->each(fn ($a) => $this->notifications->notifyUser($a->branch->cafe->owner,
+                    BranchNotice::pinChanged($a->branch->uuid, $user->uuid, $name, $a->branch->branch_name)));
+        });
+    }
+
+    /**
+     * Someone set a new PIN for a cashier: tell the branch's managers and the owner,
+     * except whoever made the change.
+     */
+    public function cashierPinChanged(CafeBranch $branch, User $cashier, User $actor): void
+    {
+        $this->safely('cashier_pin_changed', function () use ($branch, $cashier, $actor) {
+            $cashierName = trim("{$cashier->firstname} {$cashier->lastname}");
+            $actorName   = trim("{$actor->firstname} {$actor->lastname}");
+            $actorRole   = $actor->isOwner() ? 'Owner' : ($actor->roleName() ?? 'Staff');
+            $notice      = fn (bool $forOwner) => BranchNotice::cashierPinChanged(
+                $branch->uuid, $cashier->uuid, $cashierName, $actorName, $actorRole, $branch->branch_name, $forOwner);
+
+            $managers = $this->repo->activeManagersAtBranch($branch->branch_id)
+                ->reject(fn (User $u) => $u->user_id === $actor->user_id);
+
+            $this->notifications->notifyUsers($managers, $notice(false));
+
+            $owner = $branch->loadMissing('cafe.owner')->cafe?->owner;
+
+            if ($owner && $owner->user_id !== $actor->user_id) {
+                $this->notifications->notifyUser($owner, $notice(true));
+            }
+        });
+    }
+
     /** Tell the branch's other managers; the one who approved it already knows. */
     public function refundApproved(CafeBranch $branch, Transaction $transaction, User $approver, ?string $reason): void
     {

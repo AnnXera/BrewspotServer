@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
@@ -21,6 +22,11 @@ use Illuminate\Support\Facades\Log;
 class StaffPinService
 {
     public const MAX_ATTEMPTS = 5;
+
+    public function __construct(
+        private readonly BranchAlertService $alerts,
+        private readonly ActivityLogService $activity
+    ) {}
 
     public function setPin(User $user, string $plainPin, bool $temporary = false): void
     {
@@ -64,6 +70,8 @@ class StaffPinService
         $this->setPin($user, $newPin);
 
         Log::channel('auth')->info('Staff replaced PIN on register.', ['user_uuid' => $user->uuid]);
+
+        $this->reportOwnPinChange($user, 'register');
 
         return ['success' => true];
     }
@@ -129,8 +137,36 @@ class StaffPinService
 
         $this->setPin($user, $newPin);
 
-        Log::channel('auth')->info('Manager changed own PIN.', ['user_uuid' => $user->uuid]);
+        Log::channel('auth')->info('Changed own PIN.', ['user_uuid' => $user->uuid, 'role' => $user->roleName()]);
+
+        $this->reportOwnPinChange($user, 'dashboard');
 
         return ['success' => true, 'message' => 'Your PIN has been updated.'];
+    }
+
+    /**
+     * A manager's own PIN change is told to the owner (bell) and written to the activity log
+     * (Employees) at each branch they work at. An owner's change is reported nowhere.
+     *
+     * @param  string  $where  dashboard | register
+     */
+    private function reportOwnPinChange(User $user, string $where): void
+    {
+        if (! $user->isManager()) {
+            return;
+        }
+
+        $this->alerts->ownPinChanged($user);
+
+        // Never the PIN itself.
+        $user->activeStaffAssignments()->with('branch')->get()
+            ->each(fn ($assignment) => $assignment->branch && $this->activity->employee(
+                $user,
+                $assignment->branch,
+                $user,
+                ActivityLog::EMPLOYEE_PIN_CHANGED,
+                $where === 'register' ? 'Replaced their temporary register PIN on the register' : 'Changed their own register PIN',
+                ['where' => $where]
+            ));
     }
 }

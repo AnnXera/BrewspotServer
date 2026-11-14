@@ -55,8 +55,8 @@ class PasswordSetupService
     }
 
     /**
-     * Managers pick their own PIN here (it approves voids/refunds), so the
-     * owner never knows it. A promoted cashier's old, shared PIN is replaced.
+     * Owners and managers pick their own PIN here (it approves voids/refunds on the
+     * register), so nobody else knows it. A promoted cashier's old, shared PIN is replaced.
      */
     public function setupPassword(string $uuid, string $plainPassword, ?string $plainPin = null): array
     {
@@ -93,7 +93,9 @@ class PasswordSetupService
         $isManager = $account->role->role_name === 'Manager';
         $result    = [];
 
-        if ($isManager && $plainPin === null) {
+        $needsPin  = $isOwner || $isManager;
+
+        if ($needsPin && $plainPin === null) {
             return [
                 'success' => false,
                 'message' => 'Validation failed.',
@@ -102,13 +104,13 @@ class PasswordSetupService
         }
 
         try {
-            DB::transaction(function () use ($account, $plainPassword, $plainPin, $isOwner, $isManager, &$result) {
+            DB::transaction(function () use ($account, $plainPassword, $plainPin, $isOwner, $needsPin, &$result) {
 
                 $hashedPassword = Hash::make($plainPassword);
 
                 $account = $this->repo->activateOwner($account, $hashedPassword);
 
-                if ($isManager) {
+                if ($needsPin) {
                     $this->pins->setPin($account, $plainPin);
                 }
 

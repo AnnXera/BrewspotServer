@@ -39,6 +39,7 @@ class ActivityLog extends Model
     public const EMPLOYEE_UPDATED          = 'employee.updated';
     public const EMPLOYEE_SCHEDULE_UPDATED = 'employee.schedule_updated';
     public const EMPLOYEE_PIN_RESET        = 'employee.pin_reset';
+    public const EMPLOYEE_PIN_CHANGED      = 'employee.pin_changed'; // a manager changed their own PIN
     public const EMPLOYEE_TERMINATED       = 'employee.terminated';
 
     public const FLOOR_PLAN_CREATED     = 'floor_plan.created';

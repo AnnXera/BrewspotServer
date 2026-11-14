@@ -134,6 +134,11 @@ class User extends Authenticatable
         return $this->role?->role_name;
     }
 
+    public function isAdmin(): bool
+    {
+        return $this->roleName() === 'Admin';
+    }
+
     public function isOwner(): bool
     {
         return $this->roleName() === 'Cafe Owner';
