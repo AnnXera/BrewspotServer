@@ -191,15 +191,4 @@ class PosSaleRepository
         $transaction->events()->create($event);
         $transaction->payments()->update(['status' => 'refunded']);
     }
-
-    public function markVoided(Transaction $transaction, string $note, array $event): void
-    {
-        $transaction->update([
-            'status'       => 'voided',
-            'walk_in_note' => $note,
-        ]);
-
-        $transaction->events()->create($event);
-        $transaction->payments()->update(['status' => 'voided']);
-    }
 }

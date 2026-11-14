@@ -7,7 +7,6 @@ use App\Http\Requests\CheckoutPosRequest;
 use App\Http\Requests\RefundPosRequest;
 use App\Http\Requests\RegisterPosDeviceRequest;
 use App\Http\Requests\UnlockPosRequest;
-use App\Http\Requests\VoidPosRequest;
 use App\Services\PosDeviceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -119,8 +118,7 @@ class PosDeviceController extends Controller
             $request->validated('reference_number'),
             $request->validated('discount_type'),
             (float) $request->validated('discount_amount', 0),
-            $request->validated('order_type') ?? 'dine_in',
-            $request->validated('walk_in_note') ?? $request->validated('note')
+            $request->validated('order_type') ?? 'dine_in'
         ));
     }
 
@@ -181,20 +179,6 @@ class PosDeviceController extends Controller
             $request->validated('pin'),
             $request->validated('reason'),
             $request->boolean('restock')
-        ));
-    }
-
-    /**
-     * POST /api/pos/device/transactions/{transactionUuid}/void — void a sale with manager PIN.
-     */
-    public function void(VoidPosRequest $request, string $transactionUuid): JsonResponse
-    {
-        return $this->respond($this->service->void(
-            $request->user(),
-            $transactionUuid,
-            $request->validated('manager_uuid'),
-            $request->validated('pin'),
-            $request->validated('reason')
         ));
     }
 }

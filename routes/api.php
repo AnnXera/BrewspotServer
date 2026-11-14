@@ -308,7 +308,6 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/transactions/{transactionUuid}', [PosDeviceController::class, 'transaction']);
             Route::get('/approving-managers', [PosDeviceController::class, 'approvingManagers']);
             Route::post('/transactions/{transactionUuid}/refund', [PosDeviceController::class, 'refund'])->middleware('throttle:pos-unlock');
-            Route::post('/transactions/{transactionUuid}/void', [PosDeviceController::class, 'void'])->middleware('throttle:pos-unlock');
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.

@@ -404,7 +404,7 @@ class PosDeviceService
         return ['unit_price' => round($unitPrice, 2), 'size' => $size, 'temperature' => $temperature, 'addons' => array_values($lines)];
     }
 
-    public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0, ?string $orderType = 'dine_in', ?string $note = null): array
+    public function checkout(PosDevice $device, array $items, string $paymentMethod, float $amountTendered, ?string $referenceNumber = null, ?string $discountType = null, float $discountAmount = 0, ?string $orderType = 'dine_in'): array
     {
         if (!$device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
@@ -468,7 +468,7 @@ class PosDeviceService
 
         $transaction = null;
         $servingChanges = []; // [serving, used before this sale], alerted on after commit
-        DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount, $orderType, $note) {
+        DB::transaction(function () use (&$transaction, &$servingChanges, $device, $branchId, $grandTotal, $transactionItemsData, $paymentMethod, $amountTendered, $userId, $referenceNumber, $discountType, $discountAmount, $orderType) {
             $transaction = $this->sales->createTransaction([
                 'branch_id' => $branchId,
                 'staff_id' => $device->active_staff_id,
@@ -478,7 +478,6 @@ class PosDeviceService
                 'status' => 'completed',
                 'order_type' => $orderType,
                 'receipt_number' => $this->sales->nextReceiptNumber($branchId),
-                'walk_in_note' => $note,
             ]);
 
             foreach ($transactionItemsData as ['row' => $itemData, 'addons' => $addonLines]) {
@@ -782,115 +781,6 @@ class PosDeviceService
         return [
             'success' => true,
             'message' => 'Transaction successfully refunded.',
-            'transaction' => $this->transaction($device, $transaction->uuid)['transaction'] ?? null,
-        ];
-    }
-
-    /**
-     * Process a void for a transaction, requiring manager PIN authorization.
-     * Unlike refunds, voiding completely cancels/invalidates the sale (e.g. cashier mistake, cancelled order)
-     * and always restores servings back to inventory.
-     */
-    public function void(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
-    {
-        if (!$device->active_staff_id) {
-            return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
-        }
-
-        $transaction = $this->sales->findForRefund($device->branch_id, $transactionUuid);
-
-        if (!$transaction) {
-            return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
-        }
-
-        if (in_array($transaction->status, ['refunded', 'voided'], true)) {
-            return ['success' => false, 'http' => 422, 'message' => "This transaction has already been {$transaction->status}."];
-        }
-
-        $managerUser = $this->repo->findActiveUserByUuid($managerUuid);
-
-        if (!$managerUser) {
-            return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
-        }
-
-        $isBranchManager = $this->repo->isActiveBranchManager($device->branch_id, $managerUser->user_id);
-        $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
-
-        if (!$isBranchManager && !$isCafeOwner) {
-            return ['success' => false, 'http' => 403, 'message' => 'Only an authorized Manager or Cafe Owner can approve voids.'];
-        }
-
-        if ($managerUser->mustChangePin()) {
-            return ['success' => false, 'http' => 409, 'message' => 'Manager must change their temporary PIN before approving voids.'];
-        }
-
-        $check = $this->pins->verify($managerUser, $pin);
-        if (!$check['success']) {
-            if (!empty($check['just_locked'])) {
-                $this->alerts->pinLocked($device->branch, $managerUser);
-            }
-
-            return [
-                'success' => false,
-                'http' => !empty($check['locked']) ? 423 : 422,
-                'message' => $check['message'] ?? 'Incorrect manager PIN.',
-                'attempts_left' => $check['attempts_left'] ?? null,
-            ];
-        }
-
-        DB::transaction(function () use ($transaction, $device, $managerUser, $reason) {
-            $actorRole = $managerUser->roleName() ?: 'Manager';
-            $voidNote = "Voided by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
-            if (!empty($reason)) {
-                $voidNote .= ': ' . trim($reason);
-            }
-            if ($transaction->walk_in_note) {
-                $voidNote = $transaction->walk_in_note . ' | ' . $voidNote;
-            }
-
-            $this->sales->markVoided($transaction, $voidNote, [
-                'event' => TransactionEvent::VOIDED,
-                'user_id' => $managerUser->user_id,
-                'reason' => !empty($reason) ? trim($reason) : null,
-                'restocked' => true,
-            ]);
-
-            // Servings always go back on sale (restocked) on a void
-            foreach ($transaction->items as $item) {
-                $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
-
-                $qty = $serving ? min($serving->servings_sold, (int) $item->quantity) : 0;
-                if ($qty <= 0) {
-                    continue;
-                }
-
-                $ranOut = $serving->isUsedUp();
-                $serving->servings_sold -= $qty;
-
-                // Restock to available if it was sold out due to running out
-                if ($serving->is_sold_out && $ranOut && !$serving->isUsedUp()) {
-                    $serving->is_sold_out = false;
-                }
-
-                $this->sales->saveServing($serving);
-            }
-        });
-
-        $this->alerts->refundApproved($device->branch, $transaction, $managerUser, $reason ? "[VOID] {$reason}" : '[VOID]');
-
-        Log::channel('auth')->info('POS transaction voided.', [
-            'transaction_uuid' => $transaction->uuid,
-            'receipt_number' => $transaction->receipt_number,
-            'amount' => $transaction->total_amount,
-            'manager_uuid' => $managerUser->uuid,
-            'manager_name' => "{$managerUser->firstname} {$managerUser->lastname}",
-            'reason' => $reason,
-            'restocked' => true,
-        ]);
-
-        return [
-            'success' => true,
-            'message' => 'Transaction successfully voided.',
             'transaction' => $this->transaction($device, $transaction->uuid)['transaction'] ?? null,
         ];
     }

@@ -60,6 +60,8 @@ jobs:
             curl --silent --show-error --ssl-reqd --user "$FTP_USERNAME:$FTP_PASSWORD" -T /dev/null "$state"
           fi
 
+      # public/favicon.ico is excluded because it is empty: Hostinger's FTPS drops the data
+      # connection on 0-byte uploads ("tlsv1 alert decode error"). public/ is not served there.
       - uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -79,6 +81,7 @@ jobs:
             vendor/**
             .env
             .env.*
+            public/favicon.ico
 
       - name: Run migrations
         run: |
