@@ -125,6 +125,9 @@ Route::post('/upload/temp', [TempUploadController::class, 'upload']);
 Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
 
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    // QR code endpoints
+    Route::post('/qr/generate', [QrCodeController::class, 'generate']);
+    Route::get('/qr', [QrCodeController::class, 'index']);
 
     // Authenticated user profile, photo, and password management
     Route::get('/user/profile', [UserProfileController::class, 'show']);
