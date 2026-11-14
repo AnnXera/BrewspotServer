@@ -62,7 +62,8 @@ class ReservationController extends Controller
         return $this->respond($this->service->update(
             $request->attributes->get('branch'),
             $reservationUuid,
-            $request->validated()
+            $request->validated(),
+            $request->user() // logged as the editor
         ));
     }
 
@@ -74,7 +75,8 @@ class ReservationController extends Controller
         return $this->respond($this->service->updateStatus(
             $request->attributes->get('branch'),
             $reservationUuid,
-            $request->validated('status')
+            $request->validated('status'),
+            $request->user() // a cancellation is logged
         ));
     }
 }
