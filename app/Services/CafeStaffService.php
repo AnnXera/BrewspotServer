@@ -38,7 +38,7 @@ class CafeStaffService
                 'owner_uuid' => $owner->uuid,
             ]);
 
-            return ['success' => false, 'message' => 'One or more selected branches do not belong to your cafe.'];
+            return ['success' => false, 'message' => 'One or more selected branches do not belong to your cafe or are not approved yet.'];
         }
 
         $role = $this->repo->findRoleByName($payload['role']);

@@ -15,6 +15,8 @@ use Symfony\Component\HttpFoundation\Response;
  * - Owner:   the branch must belong to one of their cafes.
  * - Manager: they must have an active cafe_staff assignment at the branch.
  * - Anyone else is rejected.
+ * - The branch must be operational: a pending or rejected branch is refused
+ *   (after the ownership check, so the message never leaks other cafes' branches).
  *
  * A missing branch returns the same 403 as a forbidden one so branch UUIDs
  * can't be probed. The resolved branch is stored on the request as 'branch'.
@@ -30,6 +32,15 @@ class EnsureBranchAccess
             return response()->json([
                 'success' => false,
                 'message' => 'You do not have access to this branch.',
+            ], 403);
+        }
+
+        // Only approved branches can be operated (pending or rejected ones cannot)
+        if (! $branch->isOperational()) {
+            return response()->json([
+                'success'       => false,
+                'message'       => $branch->notOperationalMessage(),
+                'branch_status' => $branch->status,
             ], 403);
         }
 

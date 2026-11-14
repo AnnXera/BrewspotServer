@@ -12,6 +12,7 @@ class ItemBranchRepository
     {
         return CafeBranch::where('uuid', $uuid)
             ->where('cafe_id', $cafeId)
+            ->operational()
             ->first();
     }
 
@@ -48,7 +49,8 @@ class ItemBranchRepository
      */
     public function listAllBranchesWithEffectiveAvailability(int $cafeId, MenuItem $item)
     {
-        $branches = CafeBranch::where('cafe_id', $cafeId)->get();
+        // Pending and rejected branches have no menu to configure
+        $branches = CafeBranch::where('cafe_id', $cafeId)->operational()->get();
 
         $overrides = MenuBranch::where('men_item_id', $item->men_item_id)
             ->get()
