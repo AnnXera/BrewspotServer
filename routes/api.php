@@ -344,8 +344,17 @@ Route::post('/deploy/migrate', function (\Illuminate\Http\Request $request) {
     $token = config('app.deploy_token');
     abort_unless($token && hash_equals($token, (string) $request->header('X-Deploy-Token')), 404);
 
-    $code = \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+    // A failing migration throws; report it (and the migrations that did run) instead of the
+    // generic "Server Error" page, so the CI log shows what broke. Only the token holder sees it.
+    try {
+        $code = \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+        $output = \Illuminate\Support\Facades\Artisan::output();
+    } catch (\Throwable $e) {
+        $code = 1;
+        $output = \Illuminate\Support\Facades\Artisan::output()
+            . PHP_EOL . get_class($e) . ': ' . $e->getMessage() . PHP_EOL;
+    }
 
-    return response(\Illuminate\Support\Facades\Artisan::output(), $code === 0 ? 200 : 500)
+    return response($output, $code === 0 ? 200 : 500)
         ->header('Content-Type', 'text/plain');
 });
