@@ -22,13 +22,27 @@ class VerificationCodeService
     {
         $user = $this->repo->findOrCreatePendingUser($email);
 
-        // Reapplication path: same email, previously rejected. Archive the
-        // old application (never delete it outright) and let them start fresh.
+        // Reapplication path: same email, previously rejected. The rejected
+        // application stays as it is until the new one is submitted, so the
+        // form can be prefilled from it (RegistrationService archives it then).
         if ($user->status === 'rejected') {
-            $this->registrationRepo->archiveRejectedApplication($user);
+            $rejection = $this->registrationRepo->findLatestRejection($user);
+
+            if ($rejection && ! $rejection->can_resubmit) {
+                Log::channel('registration')->warning('Reapplication blocked — rejection is final.', [
+                    'user_uuid' => $user->uuid,
+                    'email'     => $email,
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'This application was closed by an administrator and cannot be resubmitted.',
+                ];
+            }
+
             $user->update(['status' => 'email_unverified']);
 
-            Log::channel('registration')->info('Rejected application archived — owner reapplying.', [
+            Log::channel('registration')->info('Owner reapplying after rejection.', [
                 'user_uuid' => $user->uuid,
                 'email'     => $email,
             ]);

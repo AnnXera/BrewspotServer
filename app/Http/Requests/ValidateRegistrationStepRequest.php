@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Http\Requests\Concerns\RespondsWithJsonErrors;
 use App\Models\User;
+use App\Repository\RegistrationRepository;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,8 +30,15 @@ class ValidateRegistrationStepRequest extends FormRequest
 
     public function rules(): array
     {
-        $userId = $this->route('uuid')
-            ? User::where('uuid', $this->route('uuid'))->value('user_id')
+        $user = $this->route('uuid')
+            ? User::where('uuid', $this->route('uuid'))->first()
+            : null;
+        $userId = $user?->user_id;
+
+        // A rejected application being resubmitted keeps its branch until submit,
+        // so its own email and phone are not "taken".
+        $oldBranchId = $user
+            ? app(RegistrationRepository::class)->findResubmittableApplication($user)?->branch_id
             : null;
 
         $rules = [];
@@ -46,21 +54,21 @@ class ValidateRegistrationStepRequest extends FormRequest
             $rules['phone_number'] = [
                 'required', 'string', 'max:20', self::PHONE_REGEX,
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
-                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
             ];
         }
 
         if ($this->sent('cafe_email')) {
             $rules['cafe_email'] = [
                 'required', 'email', 'max:255',
-                Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
             ];
         }
 
         if ($this->sent('cafe_phonenumber')) {
             $rules['cafe_phonenumber'] = [
                 'required', 'string', 'max:20', self::PHONE_REGEX,
-                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
                 ...($this->sent('phone_number') ? ['different:phone_number'] : []),
             ];

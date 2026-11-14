@@ -20,7 +20,9 @@ class UpdateOwnerStatusRequest extends FormRequest
             // admins can never set it, and per ALLOWED_TRANSITIONS, an inactive
             // owner can only be reactivated by the owner themselves, not an admin.
             'status' => ['required', 'string', 'in:approved,rejected,suspended,active'],
-            'reason' => ['nullable', 'string', 'max:1000'],
+            'reason' => ['nullable', 'required_if:status,rejected', 'string', 'max:1000'],
+            // Rejections only: false makes the rejection final (no edit-and-resubmit).
+            'allow_resubmit' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -29,6 +31,7 @@ class UpdateOwnerStatusRequest extends FormRequest
         return [
             'status.required' => 'Status is required.',
             'status.in'       => 'Status must be one of: approved, rejected, suspended, active.',
+            'reason.required_if' => 'A reason is required when rejecting an application.',
         ];
     }
 

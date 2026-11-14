@@ -9,7 +9,7 @@ use Illuminate\Validation\Rule;
 /**
  * GET /api/owner/activity-logs
  *   from, to, branch: as every analytics call (default: the last 30 days, every branch)
- *   category:         auth | pos | servings | floor_plans | employees | menu (default: every category)
+ *   category:         auth | pos | servings | floor_plans | employees | menu | reservations (default: every category)
  *   role:             owner | manager | cashier (default: everyone)
  *   search:           person's name or what they did
  *   page, per_page:   paging (default 20 per page, at most 100)

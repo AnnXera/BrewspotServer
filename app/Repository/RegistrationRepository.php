@@ -97,6 +97,38 @@ class RegistrationRepository
     }
 
     /**
+     * The owner's latest approval entry, when it is a rejection.
+     */
+    public function findLatestRejection(User $user): ?ApprovalList
+    {
+        $approval = ApprovalList::where('user_id', $user->user_id)->latest('approval_id')->first();
+
+        return $approval?->status === 'rejected' ? $approval : null;
+    }
+
+    /**
+     * The rejected application the owner can edit and resubmit: their latest
+     * approval is a rejection that allows resubmission and its cafe has not been
+     * archived yet. Comes with the cafe, main branch and every document loaded.
+     */
+    public function findResubmittableApplication(User $user): ?ApprovalList
+    {
+        $approval = $this->findLatestRejection($user);
+
+        if (! $approval || ! $approval->can_resubmit) {
+            return null;
+        }
+
+        $approval->load(['cafe.documents', 'branch.documents']);
+
+        if (! $approval->cafe || ! $approval->branch) {
+            return null;
+        }
+
+        return $approval;
+    }
+
+    /**
      * Archives (soft-deletes) the owner's most recent rejected application —
      * cafe, branches, and every associated document. The user_documents and
      * approval_lists rows are left untouched so the audit trail survives.

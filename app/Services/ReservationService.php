@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\ReservationResource;
+use App\Models\ActivityLog;
 use App\Models\BranchTable;
 use App\Models\CafeBranch;
 use App\Models\Reservation;
@@ -24,6 +25,9 @@ use Illuminate\Support\Facades\DB;
  *   occupied, completing it marks the table cleaning, and cancelling or a no-show
  *   turns a reserved table back to available.
  *
+ * Booking, editing and cancelling from the owner or manager dashboard is written to the
+ * activity log; status changes made on the register are not.
+ *
  * Results carry an `http` key that the controller turns into the status code.
  */
 class ReservationService
@@ -33,7 +37,8 @@ class ReservationService
 
     public function __construct(
         private readonly ReservationRepository $repo,
-        private readonly FloorPlanRepository $plans
+        private readonly FloorPlanRepository $plans,
+        private readonly ActivityLogService $activity
     ) {}
 
     // ── Read ─────────────────────────────────────────────────────────────
@@ -93,6 +98,10 @@ class ReservationService
                 'notes'            => $data['notes'] ?? null,
             ]);
 
+            $this->activity->reservation($actor, $branch, ActivityLog::RESERVATION_CREATED,
+                "Booked {$this->tableLabel($table)} for {$reservation->customer_name}, party of {$reservation->party_size}, on {$this->when($start, $end)}",
+                $this->logMeta($reservation, $table));
+
             return [
                 'success'     => true,
                 'http'        => 201,
@@ -102,7 +111,7 @@ class ReservationService
         });
     }
 
-    public function update(CafeBranch $branch, string $reservationUuid, array $data): array
+    public function update(CafeBranch $branch, string $reservationUuid, array $data, ?User $actor = null): array
     {
         $reservation = $this->repo->findForBranch($reservationUuid, $branch->branch_id);
 
@@ -128,7 +137,7 @@ class ReservationService
             return ['success' => false, 'http' => 409, 'message' => 'This table was removed. Move the reservation to another table.'];
         }
 
-        return DB::transaction(function () use ($branch, $reservation, $table, $data) {
+        return DB::transaction(function () use ($branch, $reservation, $table, $data, $actor) {
             $this->repo->lockTable($table);
 
             $start     = isset($data['reservation_date']) ? $this->parse($data['reservation_date']) : $reservation->reservation_date;
@@ -142,6 +151,8 @@ class ReservationService
                 return $failure;
             }
 
+            $before = $this->snapshot($reservation, $reservation->table);
+
             $reservation->update([
                 'table_id'         => $table->table_id,
                 'customer_name'    => isset($data['customer_name']) ? trim($data['customer_name']) : $reservation->customer_name,
@@ -153,6 +164,10 @@ class ReservationService
                 'notes'            => array_key_exists('notes', $data) ? $data['notes'] : $reservation->notes,
             ]);
 
+            if ($actor) {
+                $this->logEdit($actor, $branch, $reservation, $table, $before);
+            }
+
             return [
                 'success'     => true,
                 'message'     => 'Reservation updated.',
@@ -163,7 +178,7 @@ class ReservationService
 
     // ── Status ───────────────────────────────────────────────────────────
 
-    public function updateStatus(CafeBranch $branch, string $reservationUuid, string $status): array
+    public function updateStatus(CafeBranch $branch, string $reservationUuid, string $status, ?User $actor = null): array
     {
         $reservation = $this->repo->findForBranch($reservationUuid, $branch->branch_id);
 
@@ -218,11 +233,98 @@ class ReservationService
             }
         });
 
+        if ($actor && $status === 'cancelled') {
+            $this->activity->reservation($actor, $branch, ActivityLog::RESERVATION_CANCELLED,
+                "Cancelled the reservation for {$reservation->customer_name} at {$this->tableLabel($table)} on {$this->when($reservation->reservation_date, $reservation->reservation_end)}",
+                $this->logMeta($reservation, $table));
+        }
+
         return [
             'success'     => true,
             'message'     => "Reservation marked {$status}.",
             'reservation' => new ReservationResource($this->fresh($reservation)),
         ];
+    }
+
+    // ── Activity log ─────────────────────────────────────────────────────
+
+    /** Fields an edit can change, with their labels in the log. */
+    private const LOGGED_FIELDS = [
+        'customer_name'  => 'Guest name',
+        'customer_phone' => 'Phone',
+        'customer_email' => 'Email',
+        'party_size'     => 'Party size',
+        'time'           => 'Time',
+        'table'          => 'Table',
+        'notes'          => 'Notes',
+    ];
+
+    /** Contact details are named in the log, never their values. */
+    private const PRIVATE_FIELDS = ['customer_phone', 'customer_email'];
+
+    /** What an edit can change, as display strings. */
+    private function snapshot(Reservation $reservation, BranchTable $table): array
+    {
+        return [
+            'customer_name'  => $reservation->customer_name,
+            'customer_phone' => $reservation->customer_phone,
+            'customer_email' => $reservation->customer_email,
+            'party_size'     => (string) $reservation->party_size,
+            'time'           => $this->when($reservation->reservation_date, $reservation->reservation_end),
+            'table'          => $this->tableLabel($table),
+            'notes'          => $reservation->notes,
+        ];
+    }
+
+    /** One entry naming what the edit changed; nothing is logged when nothing changed. */
+    private function logEdit(User $actor, CafeBranch $branch, Reservation $reservation, BranchTable $table, array $before): void
+    {
+        $after   = $this->snapshot($reservation, $table);
+        $changed = array_values(array_filter(
+            array_keys(self::LOGGED_FIELDS),
+            fn (string $field) => ($before[$field] ?? null) !== ($after[$field] ?? null)
+        ));
+
+        if (! $changed) {
+            return;
+        }
+
+        $changes = array_map(fn (string $field) => in_array($field, self::PRIVATE_FIELDS, true)
+            ? ['field' => self::LOGGED_FIELDS[$field]]
+            : ['field' => self::LOGGED_FIELDS[$field], 'before' => $before[$field], 'after' => $after[$field]], $changed);
+
+        $what = strtolower(implode(', ', array_map(fn (string $field) => self::LOGGED_FIELDS[$field], $changed)));
+
+        $this->activity->reservation($actor, $branch, ActivityLog::RESERVATION_UPDATED,
+            "Edited the reservation for {$reservation->customer_name} on {$after['time']} ({$what})",
+            [...$this->logMeta($reservation, $table), 'changes' => $changes]);
+    }
+
+    private function logMeta(Reservation $reservation, BranchTable $table): array
+    {
+        return [
+            'reservation' => [
+                'uuid'     => $reservation->uuid,
+                'customer' => $reservation->customer_name,
+                'party'    => $reservation->party_size,
+                'table'    => $table->table_name,
+                'start'    => $reservation->reservation_date->toDateTimeString(),
+                'end'      => $reservation->reservation_end->toDateTimeString(),
+            ],
+        ];
+    }
+
+    private function tableLabel(BranchTable $table): string
+    {
+        $floor = $table->floorPlan?->floorplan_name;
+
+        return $floor ? "{$table->table_name} ({$floor})" : $table->table_name;
+    }
+
+    /** "Oct 6, 10:00 AM to 11:30 AM" */
+    private function when(Carbon $start, Carbon $end): string
+    {
+        return $start->format('M j, g:i A') . ' to ' . $end->format($start->isSameDay($end) ? 'g:i A' : 'M j, g:i A');
     }
 
     // ── Rules ────────────────────────────────────────────────────────────
