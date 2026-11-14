@@ -22,7 +22,8 @@ class BranchStaffService
         private readonly CafeStaffRepository $repo,
         private readonly StaffPinService $pins,
         private readonly MailAdapterInterface $mailer,
-        private readonly ActivityLogService $activity
+        private readonly ActivityLogService $activity,
+        private readonly BranchAlertService $alerts
     ) {}
 
     /** Field labels for the audit log, in the order the edit form shows them. */
@@ -345,6 +346,10 @@ class BranchStaffService
             fn (string $who) => "Set a new register PIN for {$who}",
             ['temporary' => $target->mustChangePin()]
         );
+
+        if ($target->isCashier()) {
+            $this->alerts->cashierPinChanged($branch, $target, $actor);
+        }
 
         Log::channel('owner')->info('Staff PIN set/reset.', [
             'actor_uuid'  => $actor->uuid,

@@ -13,6 +13,7 @@ class ApprovalListResource extends JsonResource
             'uuid'        => $this->uuid,
             'status'      => $this->status,
             'reason'      => $this->reason,
+            'can_resubmit' => (bool) $this->can_resubmit,
             'reviewed_at' => $this->reviewed_at?->toISOString(),
             'user'        => new UserResource($this->whenLoaded('user')),
             'cafe'        => new CafeResource($this->whenLoaded('cafe')),

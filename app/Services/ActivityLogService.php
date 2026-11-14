@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * A cafe's audit log: who signed in or out, who unlocked or locked a register,
- * who changed today's servings, who changed a floor plan, and who added or edited an employee. The owner reads it on the Activity Log page.
+ * who changed today's servings, who changed a floor plan, who booked, edited or cancelled a
+ * reservation, and who added or edited an employee. The owner reads it on the Activity Log page.
  *
  * Writing a log entry never fails the action it describes: errors are reported
  * to the app log and swallowed.
@@ -66,6 +67,11 @@ class ActivityLogService
     public function floorPlan(User $actor, CafeBranch $branch, string $action, string $description, array $meta = []): void
     {
         $this->forBranch($actor, $branch, ActivityLog::CATEGORY_FLOOR_PLANS, $action, $description, $meta);
+    }
+
+    public function reservation(User $actor, CafeBranch $branch, string $action, string $description, array $meta = []): void
+    {
+        $this->forBranch($actor, $branch, ActivityLog::CATEGORY_RESERVATIONS, $action, $description, $meta);
     }
 
     /**

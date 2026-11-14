@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\ApprovalList;
 use App\Models\User;
 use App\Models\UserDocument;
+use App\Repository\RegistrationRepository;
 use App\Rules\BranchTin;
 use App\Support\Tin;
 use Illuminate\Foundation\Http\FormRequest;
@@ -14,6 +16,27 @@ use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
 {
+    /** Sent instead of a temp upload path to reuse a rejected application's document. */
+    public const KEEP_FILE = 'keep';
+
+    private ?ApprovalList $resubmission = null;
+    private bool $resubmissionLoaded = false;
+
+    /**
+     * The rejected application being edited, when this is a resubmission. Its
+     * branch is still live until submit archives it, so uniqueness checks skip it.
+     */
+    private function resubmission(): ?ApprovalList
+    {
+        if (! $this->resubmissionLoaded) {
+            $this->resubmissionLoaded = true;
+            $user = User::where('uuid', $this->route('uuid'))->first();
+            $this->resubmission = $user ? app(RegistrationRepository::class)->findResubmittableApplication($user) : null;
+        }
+
+        return $this->resubmission;
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -67,6 +90,7 @@ class RegisterRequest extends FormRequest
         $user = User::where('uuid', $this->route('uuid'))->first();
         $userId = $user ? $user->user_id : null;
         $userEmail = $user ? $user->email : null;
+        $oldBranchId = $this->resubmission()?->branch_id;
 
         return [
             // User Details
@@ -80,7 +104,7 @@ class RegisterRequest extends FormRequest
                 'regex:/^(\+639\d{9}|082\d{7})$/',
                 'different:cafe_phonenumber',
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
-                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
             ],
             'owner_address'         => ['required', 'string', 'max:500'],
             'username'              => [
@@ -111,7 +135,7 @@ class RegisterRequest extends FormRequest
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_email')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
                 $userEmail ? Rule::notIn([$userEmail]) : '',
             ],
             'cafe_phonenumber'      => [
@@ -120,13 +144,13 @@ class RegisterRequest extends FormRequest
                 'max:20',
                 'regex:/^(\+639\d{9}|082\d{7})$/',
                 'different:phone_number',
-                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at'),
+                Rule::unique('cafe_branches', 'cafe_phonenumber')->whereNull('deleted_at')->ignore($oldBranchId, 'branch_id'),
                 Rule::unique('users', 'phone_number')->ignore($userId, 'user_id'),
             ],
             'address'               => ['required', 'string'],
             'bir_file'              => ['required', 'string'],
             'bir_registered_at'     => ['required', 'date'],
-            'tin_number'            => ['required', 'string', 'regex:' . Tin::FORMAT_REGEX, BranchTin::forMainBranch()],
+            'tin_number'            => ['required', 'string', 'regex:' . Tin::FORMAT_REGEX, BranchTin::forMainBranch($oldBranchId)],
             'vat'                   => ['required', 'string', 'in:vat-registered,non-vat'],
         ];
     }
@@ -163,9 +187,16 @@ class RegisterRequest extends FormRequest
                 'bir_file'     => 'BIR certificate',
                 'cafe_picture' => 'Café picture',
             ];
+            $keepable = $this->keepableFiles($data);
             foreach ($uploads as $field => $label) {
                 $path = $data[$field] ?? null;
                 if (! is_string($path) || $path === '' || $validator->errors()->has($field)) {
+                    continue;
+                }
+                if ($path === self::KEEP_FILE) {
+                    if (empty($keepable[$field])) {
+                        $validator->errors()->add($field, "There is no previous {$label} to keep. Please upload it.");
+                    }
                     continue;
                 }
                 if (! preg_match('#^temp/[A-Za-z0-9]+\.[A-Za-z0-9]+$#', $path) || ! Storage::disk('local')->exists($path)) {
@@ -173,6 +204,32 @@ class RegisterRequest extends FormRequest
                 }
             }
         });
+    }
+
+    /**
+     * Which upload fields may be sent as "keep": the rejected application has
+     * that file, and for typed documents the type was not changed (a kept
+     * driver's license cannot be resubmitted as a passport).
+     */
+    private function keepableFiles(array $data): array
+    {
+        $approval = $this->resubmission();
+
+        if (! $approval) {
+            return [];
+        }
+
+        $userDoc = $approval->user?->documents()->latest('user_doc_id')->first();
+        $cafeDoc = $approval->cafe->documents->sortByDesc('cafe_doc_id')->first();
+        $sameIdType = $userDoc && ($data['id_type'] ?? null) === $userDoc->id_type;
+
+        return [
+            'file'         => $sameIdType && ! empty($userDoc->file),
+            'file_back'    => $sameIdType && ! empty($userDoc->file_back),
+            'dti_sec_file' => $cafeDoc && ! empty($cafeDoc->file) && ($data['cafe_doc_type'] ?? null) === $cafeDoc->doc_type,
+            'bir_file'     => ! empty($approval->branch->documents->firstWhere('doc_type', 'BIR')?->file),
+            'cafe_picture' => ! empty($approval->branch->cafe_picture),
+        ];
     }
 
     public function messages(): array

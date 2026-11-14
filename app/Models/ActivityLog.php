@@ -18,10 +18,11 @@ class ActivityLog extends Model
     public const CATEGORY_FLOOR_PLANS = 'floor_plans';
     public const CATEGORY_EMPLOYEES   = 'employees';
     public const CATEGORY_MENU        = 'menu';
+    public const CATEGORY_RESERVATIONS = 'reservations';
 
     public const CATEGORIES = [
         self::CATEGORY_AUTH, self::CATEGORY_POS, self::CATEGORY_SERVINGS, self::CATEGORY_FLOOR_PLANS,
-        self::CATEGORY_EMPLOYEES, self::CATEGORY_MENU,
+        self::CATEGORY_EMPLOYEES, self::CATEGORY_MENU, self::CATEGORY_RESERVATIONS,
     ];
 
     // Menu rows are cafe-wide (no branch) except the per-branch availability ones.
@@ -38,6 +39,7 @@ class ActivityLog extends Model
     public const EMPLOYEE_UPDATED          = 'employee.updated';
     public const EMPLOYEE_SCHEDULE_UPDATED = 'employee.schedule_updated';
     public const EMPLOYEE_PIN_RESET        = 'employee.pin_reset';
+    public const EMPLOYEE_PIN_CHANGED      = 'employee.pin_changed'; // a manager changed their own PIN
     public const EMPLOYEE_TERMINATED       = 'employee.terminated';
 
     public const FLOOR_PLAN_CREATED     = 'floor_plan.created';
@@ -46,6 +48,11 @@ class ActivityLog extends Model
     public const FLOOR_PLAN_LAYOUT_SAVED = 'floor_plan.layout_saved';
     public const FLOOR_PLAN_ACTIVATED   = 'floor_plan.activated';
     public const FLOOR_PLAN_DEACTIVATED = 'floor_plan.deactivated';
+
+    // Bookings made or changed from the owner or manager dashboard (not from the register).
+    public const RESERVATION_CREATED   = 'reservation.created';
+    public const RESERVATION_UPDATED   = 'reservation.updated';
+    public const RESERVATION_CANCELLED = 'reservation.cancelled';
 
     public const AUTH_LOGIN  = 'auth.login';
     public const AUTH_LOGOUT = 'auth.logout';

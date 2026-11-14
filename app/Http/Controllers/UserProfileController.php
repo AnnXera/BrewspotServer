@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\ChangeOwnPinRequest;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\UpdateUserProfileRequest;
 use App\Http\Requests\UploadProfilePhotoRequest;
+use App\Services\StaffPinService;
 use App\Services\UserProfileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,6 +65,19 @@ class UserProfileController extends Controller
             $request->user(),
             $request->validated('current_password'),
             $request->validated('password')
+        ));
+    }
+
+    /**
+     * PUT /api/user/pin
+     * Owner or manager sets their own register PIN (approves voids/refunds), confirmed with their password.
+     */
+    public function updatePin(ChangeOwnPinRequest $request, StaffPinService $pins): JsonResponse
+    {
+        return $this->respond($pins->changeOwnPin(
+            $request->user(),
+            $request->validated('current_password'),
+            $request->validated('pin')
         ));
     }
 

@@ -22,12 +22,14 @@ class ApprovalList extends Model
         'branch_id',
         'status',
         'reason',
+        'can_resubmit',
         'reviewed_by',
         'reviewed_at',
     ];
 
     protected $casts = [
-        'reviewed_at' => 'datetime',
+        'reviewed_at'  => 'datetime',
+        'can_resubmit' => 'boolean',
     ];
 
     protected static function booted(): void

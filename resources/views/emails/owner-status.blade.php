@@ -51,6 +51,21 @@
                                 </table>
                             @endif
 
+                            @if (! empty($resubmitUrl))
+                                <p style="font-size: 15px; line-height: 1.6; margin-bottom: 8px; color: #4a382d;">
+                                    You can correct your application and submit it again without starting over. Your previous details and documents are kept, so you only need to change what the reason above mentions.
+                                </p>
+                                <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 24px auto;">
+                                    <tr>
+                                        <td align="center" style="border-radius: 5px; background-color: #2b1810;">
+                                            <a href="{{ $resubmitUrl }}" target="_blank" style="display: inline-block; padding: 13px 30px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #ffffff; text-decoration: none; border-radius: 5px;">
+                                                Edit and Resubmit Application
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+                            @endif
+
                             @if ($setupUrl)
                                 <!-- CTA Button -->
                                 <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 30px auto;">

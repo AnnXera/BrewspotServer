@@ -163,7 +163,7 @@ class OwnerManagementService
      * Update owner status, cascade to approval_list ONLY for approved/rejected,
      * and send the matching notification email.
      */
-    public function updateStatus(string $uuid, string $status, int $reviewerId, ?string $reason = null): array
+    public function updateStatus(string $uuid, string $status, int $reviewerId, ?string $reason = null, bool $allowResubmit = true): array
     {
         $isApplicationDecision = in_array($status, ['approved', 'rejected'], true);
 
@@ -208,7 +208,7 @@ class OwnerManagementService
             $approval = $this->repo->findLatestApproval($owner->user_id);
 
             if ($approval) {
-                $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason);
+                $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason, $allowResubmit);
             }
         }
 
@@ -222,6 +222,7 @@ class OwnerManagementService
             status: $status,
             ownerUuid: $owner->uuid,
             reason: $status === 'rejected' ? $reason : null,
+            canResubmit: $status === 'rejected' && $allowResubmit,
         ));
 
         Log::channel('admin')->info('Owner status updated.', [
@@ -229,6 +230,7 @@ class OwnerManagementService
             'old_status'  => $oldStatus,
             'new_status'  => $status,
             'reason'      => $status === 'rejected' ? $reason : null,
+            'can_resubmit' => $status === 'rejected' ? $allowResubmit : null,
             'approval_id' => $approval?->approval_id,
             'reviewed_by' => $reviewerId,
         ]);

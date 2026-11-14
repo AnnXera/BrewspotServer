@@ -76,7 +76,8 @@ class OwnerManagementController extends Controller
             $uuid,
             $request->validated('status'),
             $reviewerId,
-            $request->validated('reason')
+            $request->validated('reason'),
+            $request->boolean('allow_resubmit', true)
         );
 
         return response()->json($result, $result['success'] ? 200 : 422);
