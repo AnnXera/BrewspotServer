@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\RegisterRequest;
+use App\Http\Requests\ResubmitApplicationRequest;
 use App\Http\Requests\ValidateRegistrationStepRequest;
 use App\Services\RegistrationService;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,22 @@ class RegistrationController extends Controller
     public function register(RegisterRequest $request, string $uuid): JsonResponse
     {
         return $this->respond($this->service->registerByUuid($uuid, $request->validated()));
+    }
+
+    /**
+     * POST /api/auth/application/{uuid}/resubmit
+     */
+    public function resubmit(ResubmitApplicationRequest $request, string $uuid): JsonResponse
+    {
+        return $this->respond($this->service->resubmitByUuid($uuid, $request->validated()));
+    }
+
+    /**
+     * GET /api/auth/register/{uuid}/previous-application
+     */
+    public function previousApplication(string $uuid): JsonResponse
+    {
+        return $this->respond($this->service->getPreviousApplication($uuid));
     }
 
     /**

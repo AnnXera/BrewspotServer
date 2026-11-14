@@ -17,7 +17,8 @@ class OwnerStatusMail extends Mailable implements ShouldQueue
         public readonly string $firstname,
         public readonly string $status,
         public readonly ?string $ownerUuid = null,
-        public readonly ?string $reason = null
+        public readonly ?string $reason = null,
+        public readonly bool $canResubmit = false
     ) {}
 
     public function envelope(): Envelope
@@ -37,6 +38,9 @@ class OwnerStatusMail extends Mailable implements ShouldQueue
                 'heading'     => $this->headingForStatus(),
                 'bodyMessage' => $this->messageForStatus(),
                 'reason'      => $this->status === 'rejected' ? $this->reason : null,
+                'resubmitUrl' => $this->status === 'rejected' && $this->canResubmit && $this->ownerUuid
+                    ? rtrim(config('app.frontend_url'), '/') . "/application/{$this->ownerUuid}"
+                    : null,
                 'setupUrl'    => $this->status === 'approved'
                     ? rtrim(config('app.frontend_url'), '/') . "/setup-password/{$this->ownerUuid}"
                     : null,

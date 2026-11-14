@@ -103,9 +103,11 @@ Route::prefix('auth')->group(function () {
     Route::post('/send-code', [VerificationCodeController::class, 'sendCode']); // registration email verification code
     Route::post('/resend-code', [VerificationCodeController::class, 'resendCode']); // resend registration email verification code
     Route::post('/verify-code', [VerificationCodeController::class, 'verifyCode']); // registration email verification code
-    Route::post('/register/{user}', [RegistrationController::class, 'register']);
+    Route::post('/register/{uuid}', [RegistrationController::class, 'register']);
+    Route::get('/register/{uuid}/previous-application', [RegistrationController::class, 'previousApplication']); // prefill when resubmitting a rejected application
     Route::post('/validate-registration-step/{uuid?}', [RegistrationController::class, 'validateStep']);
     Route::get('/application/{uuid}', [RegistrationController::class, 'showApplication']); // view submitted application details
+    Route::post('/application/{uuid}/resubmit', [RegistrationController::class, 'resubmit'])->middleware('throttle:10,1'); // edit a rejected application from its page, no OTP
 
     Route::get('/setup-password/{uuid}', [PasswordSetupController::class, 'show']); // check password setup link status
     Route::post('/setup-password/{uuid}', [PasswordSetupController::class, 'setup']); // set password for cafe owner

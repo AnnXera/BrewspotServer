@@ -164,11 +164,12 @@ class OwnerManagementRepository
      * Update the approval entry to reflect the admin's decision.
      * Only ever called for approved/rejected — see updateStatus() scoping rule.
      */
-    public function updateApproval(ApprovalList $approval, string $status, int $reviewerId, ?string $reason = null): ApprovalList
+    public function updateApproval(ApprovalList $approval, string $status, int $reviewerId, ?string $reason = null, bool $allowResubmit = true): ApprovalList
     {
         $approval->update([
-            'status'      => $status,
-            'reason'      => $status === 'rejected' ? $reason : null,
+            'status'       => $status,
+            'reason'       => $status === 'rejected' ? $reason : null,
+            'can_resubmit' => $status !== 'rejected' || $allowResubmit,
             'reviewed_by' => $reviewerId,
             'reviewed_at' => now(),
         ]);

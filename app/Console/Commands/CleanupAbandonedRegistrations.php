@@ -55,6 +55,19 @@ class CleanupAbandonedRegistrations extends Command
         $deletedCount = 0;
 
         foreach ($abandonedUsers as $user) {
+            // A rejected owner who started a resubmission and walked away still has
+            // their application and its history: put them back to rejected instead.
+            if ($user->approvals()->exists()) {
+                $user->update(['status' => 'rejected']);
+
+                Log::channel('registration')->info('Abandoned resubmission reverted to rejected.', [
+                    'user_id' => $user->user_id,
+                    'uuid'    => $user->uuid,
+                ]);
+
+                continue;
+            }
+
             try {
                 DB::transaction(function () use ($user) {
                     $uuid = $user->uuid;
