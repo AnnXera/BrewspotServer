@@ -10,10 +10,15 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        // An earlier version of this migration pointed the foreign key at users.id (the key is
+        // user_id). On MySQL that left an empty qr_codes table behind without the constraint and
+        // the migration unrecorded, so clear that leftover before creating it properly.
+        Schema::dropIfExists('qr_codes');
+
         Schema::create('qr_codes', function (Blueprint $table) {
             $table->id();
             $table->uuid('token')->unique();
-            $table->foreignId('owner_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('owner_id')->constrained('users', 'user_id')->onDelete('cascade');
             $table->string('url');
             $table->string('path')->nullable(); // optional if you store image later
             $table->timestamps();
@@ -28,4 +33,3 @@ return new class extends Migration {
         Schema::dropIfExists('qr_codes');
     }
 };
-?>
