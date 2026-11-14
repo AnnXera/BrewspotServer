@@ -6,7 +6,8 @@ use App\Http\Requests\Concerns\StaffRequestHelpers;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * PUT /api/manager/pin — a manager sets their own PIN (used to approve voids/refunds).
+ * PUT /api/user/pin (owners and managers) or /api/manager/pin: set your own PIN, used to
+ * approve voids/refunds on the register.
  */
 class ChangeOwnPinRequest extends FormRequest
 {

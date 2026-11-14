@@ -132,6 +132,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
     Route::post('/user/profile-photo', [UserProfileController::class, 'uploadPhoto']);
     Route::delete('/user/profile-photo', [UserProfileController::class, 'deletePhoto']);
     Route::put('/user/change-password', [UserProfileController::class, 'changePassword']);
+    Route::put('/user/pin', [UserProfileController::class, 'updatePin'])->middleware('role:Cafe Owner,Manager'); // register PIN for void/refund approval
 
     // Which plan features the signed-in user's cafe can use (owner, manager or staff)
     Route::get('/plan-access', [\App\Http\Controllers\PlanAccessController::class, 'show']);

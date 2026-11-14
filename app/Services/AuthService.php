@@ -28,6 +28,7 @@ class AuthService
 
     /**
      * Step 1 — Validate credentials and send 2FA code.
+     * Platform admins skip the emailed code and get their token here.
      */
     public function login(string $email, string $password): array
     {
@@ -79,6 +80,10 @@ class AuthService
                 'success' => false,
                 'message' => $this->statusMessage($user->status),
             ];
+        }
+
+        if ($user->isAdmin()) {
+            return $this->startSession($user, 'Login successful — admin, no 2FA code needed.');
         }
 
         // Generate and send 2FA code
@@ -206,10 +211,16 @@ class AuthService
 
         $code->update(['is_used' => true]);
 
+        return $this->startSession($user, 'Login successful — 2FA verified.');
+    }
+
+    /** Issues the API token and the payload the client stores after signing in. */
+    private function startSession(User $user, string $logMessage): array
+    {
         $token = $this->repo->createToken($user);
 
-        Log::channel('auth')->info('Login successful — 2FA verified.', [
-            'email'   => $email,
+        Log::channel('auth')->info($logMessage, [
+            'email'   => $user->email,
             'user_id' => $user->user_id,
             'role'    => $user->role->role_name,
         ]);

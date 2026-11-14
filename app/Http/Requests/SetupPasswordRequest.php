@@ -29,7 +29,7 @@ class SetupPasswordRequest extends FormRequest
                     ->numbers()
                     ->symbols(),
             ],
-            // Managers only — PasswordSetupService requires it for them and
+            // Owners and managers: PasswordSetupService requires it for them and
             // ignores it for everyone else.
             'pin' => ['nullable', 'confirmed', ...self::PIN_RULE],
         ];

@@ -91,6 +91,33 @@ class BranchNotice extends AppNotice
             $link);
     }
 
+    /** To the owner: a manager picked a new PIN themselves (it approves voids and refunds). */
+    public static function pinChanged(string $branchUuid, string $userUuid, string $name, string $branchName): self
+    {
+        return new self('pin_changed', "{$name} changed their PIN",
+            "{$name} (Manager) set a new register PIN at {$branchName}. It approves voids and refunds. If you didn't expect this, set a new PIN for them.",
+            "/owner/branches/{$branchUuid}?tab=employees&employee={$userUuid}");
+    }
+
+    /** To the owner and the branch's managers: someone set a new PIN for a cashier. */
+    public static function cashierPinChanged(
+        string $branchUuid,
+        string $cashierUuid,
+        string $cashierName,
+        string $actorName,
+        string $actorRole,
+        string $branchName,
+        bool $forOwner = false
+    ): self {
+        $link = $forOwner
+            ? "/owner/branches/{$branchUuid}?tab=employees&employee={$cashierUuid}"
+            : "/manager/cafe?branch={$branchUuid}&tab=employees&employee={$cashierUuid}";
+
+        return new self('pin_changed', "{$cashierName}'s PIN was changed",
+            "{$actorName} ({$actorRole}) set a new register PIN for {$cashierName} (Cashier) at {$branchName}.",
+            $link);
+    }
+
     public static function refundApproved(string $branchUuid, string $receiptNumber, string $amount, string $approverName, ?string $reason): self
     {
         $why = $reason ? " Reason: {$reason}" : '';
