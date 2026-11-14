@@ -32,6 +32,8 @@ class CheckoutPosRequest extends FormRequest
             'discount_type'             => ['nullable', 'string', 'in:none,PWD,Senior'],
             'discount_amount'           => ['nullable', 'numeric', 'min:0'],
             'order_type'                => ['nullable', 'string', Rule::in(Transaction::ORDER_TYPES)],
+            'note'                      => ['nullable', 'string', 'max:500'],
+            'walk_in_note'              => ['nullable', 'string', 'max:500'],
         ];
     }
 }
