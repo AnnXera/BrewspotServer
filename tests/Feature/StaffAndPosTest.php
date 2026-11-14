@@ -106,6 +106,60 @@ class StaffAndPosTest extends TestCase
             ->assertForbidden();
     }
 
+    // ── Pending / rejected branches can't be operated ────────────────────
+
+    public function test_rejected_and_pending_branches_refuse_branch_features(): void
+    {
+        $token = $this->tokenFor($this->owner);
+
+        foreach (['rejected' => 'rejected by an administrator', 'pending_approval' => 'waiting for admin approval'] as $status => $phrase) {
+            $this->otherBranch->update(['status' => $status]);
+
+            $this->api('GET', "/api/owner/branches/{$this->otherBranch->uuid}/staff", $token)
+                ->assertForbidden()
+                ->assertJsonPath('branch_status', $status)
+                ->assertJsonFragment(['success' => false])
+                ->assertSee($phrase);
+        }
+    }
+
+    public function test_an_inactive_branch_is_still_usable(): void
+    {
+        // Inactive is the owner's own pause, not an admin decision
+        $this->otherBranch->update(['status' => 'inactive']);
+
+        $this->api('GET', "/api/owner/branches/{$this->otherBranch->uuid}/staff", $this->tokenFor($this->owner))
+            ->assertOk();
+    }
+
+    public function test_a_stranger_gets_the_generic_refusal_for_a_rejected_branch(): void
+    {
+        // The status is only revealed to someone who owns the branch
+        $this->otherBranch->update(['status' => 'rejected']);
+        $stranger = $this->makeUser('Cafe Owner', ['email' => 'nosy@test.local']);
+
+        $this->api('GET', "/api/owner/branches/{$this->otherBranch->uuid}/staff", $this->tokenFor($stranger))
+            ->assertForbidden()
+            ->assertJsonMissingPath('branch_status');
+    }
+
+    public function test_staff_cannot_be_assigned_to_a_rejected_branch(): void
+    {
+        $this->otherBranch->update(['status' => 'rejected']);
+
+        $this->api('POST', '/api/owner/staff', $this->tokenFor($this->owner), [
+            'firstname'    => 'Rae',
+            'lastname'     => 'Lim',
+            'email'        => 'rae@test.local',
+            'phone_number' => '+639171112222',
+            'address'      => 'Davao City',
+            'role'         => 'Staff',
+            'branch_uuids' => [$this->otherBranch->uuid],
+        ])->assertJson(['success' => false]);
+
+        $this->assertDatabaseMissing('users', ['email' => 'rae@test.local']);
+    }
+
     // ── Employees tab list + stats ───────────────────────────────────────
 
     public function test_employee_list_filters_sorts_and_counts(): void

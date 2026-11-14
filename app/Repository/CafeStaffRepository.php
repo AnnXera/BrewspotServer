@@ -26,7 +26,9 @@ class CafeStaffRepository
      */
     public function findOwnedBranches(int $cafeId, array $branchUuids)
     {
+        // Staff can only be assigned to approved branches
         return CafeBranch::where('cafe_id', $cafeId)
+            ->operational()
             ->whereIn('uuid', array_unique($branchUuids))
             ->get();
     }
