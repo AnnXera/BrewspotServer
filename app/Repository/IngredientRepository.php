@@ -61,18 +61,22 @@ class IngredientRepository
     }
 
     /**
-     * Recipe rows mirror the ingredient's name, so a rename is copied to them.
-     * Consumption logs are left alone — they keep the name used at the time.
+     * Recipe rows mirror the ingredient's name and unit, so a rename or unit
+     * change is copied to them (amounts are not converted). Consumption logs
+     * are left alone: they keep the name and unit used at the time.
      */
     public function update(Ingredient $ingredient, array $data): Ingredient
     {
         $ingredient->update($data);
 
-        if ($ingredient->wasChanged('name')) {
-            MenuRecipe::where('ingredient_id', $ingredient->ingredient_id)
-                ->update(['ingredient_name' => $ingredient->name]);
-            MenuAddonRecipe::where('ingredient_id', $ingredient->ingredient_id)
-                ->update(['ingredient_name' => $ingredient->name]);
+        $mirrored = array_filter([
+            'ingredient_name' => $ingredient->wasChanged('name') ? $ingredient->name : null,
+            'unit'            => $ingredient->wasChanged('unit') ? $ingredient->unit : null,
+        ]);
+
+        if ($mirrored) {
+            MenuRecipe::where('ingredient_id', $ingredient->ingredient_id)->update($mirrored);
+            MenuAddonRecipe::where('ingredient_id', $ingredient->ingredient_id)->update($mirrored);
         }
 
         return $ingredient->loadCount($this->usageCounts());
