@@ -12,8 +12,7 @@ use Illuminate\Validation\Rule;
  * POST  /api/owner/ingredients
  * PATCH /api/owner/ingredients/{uuid}
  *
- * Duplicate names (ignoring case/spacing) and unit changes on ingredients
- * already used in recipes are checked in IngredientService.
+ * Duplicate names (ignoring case/spacing) are checked in IngredientService.
  */
 class IngredientRequest extends FormRequest
 {

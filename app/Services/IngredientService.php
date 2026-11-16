@@ -59,8 +59,8 @@ class IngredientService
     }
 
     /**
-     * Rename, change unit, or retire/restore. The unit can only change while
-     * no recipe uses the ingredient, since recipe amounts are stored in it.
+     * Rename, change unit, or retire/restore. Allowed even while menu items or
+     * add-ons use the ingredient; recipe amounts are kept as-is (not converted).
      */
     public function updateIngredient(User $owner, string $uuid, array $data): array
     {
@@ -82,15 +82,6 @@ class IngredientService
 
         if (isset($data['name']) && ($clash = $this->repo->findNameClash($cafe->cafe_id, $data['name'], $ingredient->ingredient_id))) {
             return $this->nameTaken($clash->name, $clash->is_active);
-        }
-
-        if (isset($data['unit']) && $data['unit'] !== $ingredient->unit && ($items = $this->usedBy($ingredient))) {
-            return [
-                'success' => false,
-                'http'    => 422,
-                'message' => 'Validation failed.',
-                'errors'  => ['unit' => ["Used in {$items}, whose amounts are in {$ingredient->unit}. Remove it from those recipes before changing the unit."]],
-            ];
         }
 
         $ingredient = DB::transaction(fn () => $this->repo->update($ingredient, $data));

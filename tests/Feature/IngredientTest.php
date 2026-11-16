@@ -188,18 +188,21 @@ class IngredientTest extends TestCase
         $this->api('PATCH', "/api/owner/ingredients/{$milk->uuid}", ['name' => 'fresh milk'])->assertOk();
     }
 
-    public function test_unit_can_only_change_while_no_recipe_uses_it(): void
+    public function test_unit_can_change_while_a_recipe_uses_it(): void
     {
         $this->createItem('Latte', [['ingredient_name' => 'Milk', 'quantity' => 200, 'unit' => 'ml']])->assertCreated();
         $milk  = Ingredient::where('name', 'Milk')->first();
         $sugar = Ingredient::create(['cafe_id' => $this->cafe->cafe_id, 'name' => 'Sugar', 'unit' => 'g']);
 
         $this->api('PATCH', "/api/owner/ingredients/{$milk->uuid}", ['unit' => 'l'])
-            ->assertStatus(422)
-            ->assertJsonPath('errors.unit.0', 'Used in 1 menu item, whose amounts are in ml. Remove it from those recipes before changing the unit.');
+            ->assertOk()
+            ->assertJsonPath('ingredient.unit', 'l')
+            ->assertJsonPath('ingredient.used_in', 1);
 
-        // Sending the same unit back isn't a change.
-        $this->api('PATCH', "/api/owner/ingredients/{$milk->uuid}", ['name' => 'Milk', 'unit' => 'ml'])->assertOk();
+        // Recipe rows take the new unit; the amount is kept as entered.
+        $recipe = DB::table('menu_recipes')->where('ingredient_id', $milk->ingredient_id)->first();
+        $this->assertSame('l', $recipe->unit);
+        $this->assertEquals(200, $recipe->quantity);
 
         $this->api('PATCH', "/api/owner/ingredients/{$sugar->uuid}", ['unit' => 'kg'])
             ->assertOk()->assertJsonPath('ingredient.unit', 'kg');
