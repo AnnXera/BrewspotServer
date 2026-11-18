@@ -8,6 +8,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 
+/**
+ * @property int $transaction_id
+ * @property string $uuid
+ * @property string|null $receipt_number
+ * @property int $branch_id
+ * @property int $staff_id
+ * @property float $total_amount
+ * @property string|null $discount_type
+ * @property float|null $discount_amount
+ * @property string|null $discount_id_number
+ * @property string|null $discount_id_image
+ * @property string|null $walk_in_note
+ * @property string $status
+ * @property string|null $order_type
+ */
 class Transaction extends Model
 {
     protected $primaryKey = 'transaction_id';
@@ -27,6 +42,8 @@ class Transaction extends Model
         'total_amount',
         'discount_type',
         'discount_amount',
+        'discount_id_number',
+        'discount_id_image',
         'walk_in_note',
         'status',
         'order_type',

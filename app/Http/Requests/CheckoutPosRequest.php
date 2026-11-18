@@ -31,6 +31,8 @@ class CheckoutPosRequest extends FormRequest
             'reference_number'          => ['nullable', 'string'],
             'discount_type'             => ['nullable', 'string', 'in:none,PWD,Senior'],
             'discount_amount'           => ['nullable', 'numeric', 'min:0'],
+            'discount_id_number'        => ['nullable', 'string', 'max:50'],
+            'discount_id_image'         => ['nullable', 'string'],
             'order_type'                => ['nullable', 'string', Rule::in(Transaction::ORDER_TYPES)],
         ];
     }

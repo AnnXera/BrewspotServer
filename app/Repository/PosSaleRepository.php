@@ -95,7 +95,7 @@ class PosSaleRepository
     {
         return InventoryServing::where('men_item_id', $itemId)
             ->where('branch_id', $branchId)
-            ->whereDate('date', $date)
+            ->where('date', $date->toDateString())
             ->lockForUpdate()
             ->first();
     }
@@ -179,7 +179,7 @@ class PosSaleRepository
             ->first();
     }
 
-    // ── Refunds (call inside a transaction) ──────────────────────────────
+    // ── Refunds & Voids (call inside a transaction) ──────────────────────────────
 
     public function markRefunded(Transaction $transaction, string $note, array $event): void
     {
@@ -190,5 +190,16 @@ class PosSaleRepository
 
         $transaction->events()->create($event);
         $transaction->payments()->update(['status' => 'refunded']);
+    }
+
+    public function markVoided(Transaction $transaction, string $note, array $event): void
+    {
+        $transaction->update([
+            'status'       => 'voided',
+            'walk_in_note' => $note,
+        ]);
+
+        $transaction->events()->create($event);
+        $transaction->payments()->update(['status' => 'voided']);
     }
 }
