@@ -7,6 +7,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
+/**
+ * @property int $transaction_item_id
+ * @property string $uuid
+ * @property int $transaction_id
+ * @property int $men_item_id
+ * @property int|null $men_size_id
+ * @property string|null $size_name
+ * @property string|null $temperature
+ * @property int $quantity
+ * @property float $unit_price
+ */
 class TransactionItem extends Model
 {
     public const TEMPERATURES = ['hot', 'iced'];
