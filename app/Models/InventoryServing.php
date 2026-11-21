@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class InventoryServing extends Model
@@ -40,6 +41,17 @@ class InventoryServing extends Model
     protected static function booted(): void
     {
         static::creating(fn ($serving) => $serving->uuid = (string) Str::uuid());
+    }
+
+    /**
+     * Always store the day as plain Y-m-d. The 'date' cast alone would save
+     * "Y-m-d 00:00:00", which an exact where('date', 'Y-m-d') never matches on
+     * SQLite. Checkout locks today's row with that exact match (so MySQL can use
+     * the unique item/branch/date index), and a miss made it insert a duplicate.
+     */
+    public function setDateAttribute($value): void
+    {
+        $this->attributes['date'] = $value === null ? null : Carbon::parse($value)->toDateString();
     }
 
     /** Servings gone for the day: sold, spoiled, or made and then refunded. */

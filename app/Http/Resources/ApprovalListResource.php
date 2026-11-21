@@ -12,6 +12,8 @@ class ApprovalListResource extends JsonResource
         return [
             'uuid'        => $this->uuid,
             'status'      => $this->status,
+            // 'resubmitted' for an owner resubmission under review; otherwise the same as status
+            'display_status' => $this->displayStatus(),
             'reason'      => $this->reason,
             'can_resubmit' => (bool) $this->can_resubmit,
             'reviewed_at' => $this->reviewed_at?->toISOString(),

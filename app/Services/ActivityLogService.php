@@ -59,6 +59,30 @@ class ActivityLogService
         $this->forDevice($device, $assignment, ActivityLog::POS_LOCK, $description, ['reason' => $reason]);
     }
 
+    /**
+     * A register set up on a device, or removed from the dashboard, by an owner or
+     * manager. Logged under the register category with the device attached.
+     */
+    public function posDevice(User $actor, PosDevice $device, string $action, string $description): void
+    {
+        $device->loadMissing('branch');
+
+        if (! $device->branch) {
+            return;
+        }
+
+        $this->write([
+            'cafe_id'     => $device->branch->cafe_id,
+            'branch_id'   => $device->branch_id,
+            'device_id'   => $device->device_id,
+            ...$this->actor($actor),
+            'category'    => ActivityLog::CATEGORY_POS,
+            'action'      => $action,
+            'description' => $description,
+            'meta'        => ['device' => ['uuid' => $device->uuid, 'name' => $device->name]],
+        ]);
+    }
+
     public function serving(User $actor, CafeBranch $branch, string $action, string $description, array $meta = []): void
     {
         $this->forBranch($actor, $branch, ActivityLog::CATEGORY_SERVINGS, $action, $description, $meta);

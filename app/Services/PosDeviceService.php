@@ -82,6 +82,9 @@ class PosDeviceService
             $setupToken->delete();
         }
 
+        $this->activity->posDevice($user, $device, \App\Models\ActivityLog::POS_DEVICE_REGISTERED,
+            "Set up register \"{$device->name}\" on a device");
+
         Log::channel('auth')->info('POS device registered.', [
             'device_uuid' => $device->uuid,
             'branch_uuid' => $branch->uuid,
@@ -118,6 +121,9 @@ class PosDeviceService
         }
 
         $this->repo->revoke($device);
+
+        $this->activity->posDevice($actor, $device, \App\Models\ActivityLog::POS_DEVICE_REMOVED,
+            "Removed register \"{$device->name}\"");
 
         Log::channel('auth')->info('POS device removed from dashboard.', [
             'device_uuid' => $device->uuid,

@@ -194,10 +194,15 @@ class OwnerManagementRepository
         $query = ApprovalList::with(['user', 'cafe', 'branch', 'reviewer'])
             ->latest('created_at');
 
-        if ($status) {
-            $effectiveStatus = ($status === 'pending') ? 'pending_approval' : $status;
-            $query->where('status', $effectiveStatus);
-        }
+        // 'pending_approval' = everything awaiting review (dashboard, older callers).
+        // The approvals tabs split that in two: 'pending' (first-time applications and
+        // branch submissions) and 'resubmitted' (owners correcting a rejection).
+        match ($status) {
+            null, ''      => null,
+            'pending'     => $query->firstSubmission(),
+            'resubmitted' => $query->resubmission(),
+            default       => $query->where('status', $status),
+        };
 
         if ($type === 'owner') {
             $query->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'main'));
@@ -222,7 +227,7 @@ class OwnerManagementRepository
     }
 
     /**
-     * Counts for the tab badges (General/Pending/Approved/Rejected), scoped
+     * Counts for the tab badges (General/Pending/Resubmitted/Approved/Rejected), scoped
      * to the same 'owner' vs 'branch' distinction as listApprovals().
      * Intentionally NOT filtered by search — badge counts always reflect
      * the full set for that registration type, independent of the search box.
@@ -238,7 +243,11 @@ class OwnerManagementRepository
         }
 
         return [
+            // Everything awaiting review, resubmissions included
             'pending_approval' => (clone $base)->where('status', 'pending_approval')->count(),
+            // ...split for the Pending and Resubmitted tabs
+            'pending'           => (clone $base)->firstSubmission()->count(),
+            'resubmitted'       => (clone $base)->resubmission()->count(),
             'approved'          => (clone $base)->where('status', 'approved')->count(),
             'rejected'          => (clone $base)->where('status', 'rejected')->count(),
         ];

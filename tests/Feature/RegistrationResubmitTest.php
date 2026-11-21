@@ -317,6 +317,55 @@ class RegistrationResubmitTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_a_resubmission_shows_as_resubmitted(): void
+    {
+        $token = $this->admin->createToken('test')->plainTextToken;
+
+        // A first application is plain pending, under the Pending tab
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner')
+            ->assertJsonPath('approvals.data.0.display_status', 'pending_approval');
+        $this->withToken($token)->getJson('/api/admin/approvals/stats?type=owner')
+            ->assertJsonPath('stats.pending', 1)
+            ->assertJsonPath('stats.resubmitted', 0);
+
+        $this->reject();
+        $this->postJson("/api/auth/application/{$this->owner->uuid}/resubmit", $this->resubmitPayload())->assertOk();
+
+        $newApproval = ApprovalList::where('user_id', $this->owner->user_id)->latest('approval_id')->first();
+
+        // Admin list: the new attempt is labelled resubmitted but is still pending underneath
+        $rows = collect($this->withToken($token)->getJson('/api/admin/approvals?type=owner')->json('approvals.data'))->keyBy('uuid');
+        $this->assertSame('resubmitted', $rows[$newApproval->uuid]['display_status']);
+        $this->assertSame('pending_approval', $rows[$newApproval->uuid]['status']);
+        $this->assertSame('rejected', $rows[$this->approval->uuid]['display_status']);
+
+        // The Resubmitted tab lists it, the Pending tab does not, and "everything awaiting
+        // review" (pending_approval, used by the dashboard) still includes it
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner&status=resubmitted')
+            ->assertJsonCount(1, 'approvals.data')
+            ->assertJsonPath('approvals.data.0.uuid', $newApproval->uuid);
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner&status=pending')
+            ->assertJsonCount(0, 'approvals.data');
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner&status=pending_approval')
+            ->assertJsonPath('approvals.data.0.uuid', $newApproval->uuid);
+
+        $this->withToken($token)->getJson('/api/admin/approvals/stats?type=owner')
+            ->assertJsonPath('stats.pending_approval', 1)
+            ->assertJsonPath('stats.pending', 0)
+            ->assertJsonPath('stats.resubmitted', 1)
+            ->assertJsonPath('stats.rejected', 1);
+
+        // Snapshot and the applicant's page say the same
+        $this->withToken($token)->getJson("/api/admin/approvals/{$newApproval->uuid}/snapshot")
+            ->assertJsonPath('approval.display_status', 'resubmitted');
+        $this->getJson("/api/auth/application/{$this->owner->uuid}")
+            ->assertJsonPath('application.approval.display_status', 'resubmitted');
+
+        // Approving it works as for any pending application
+        $this->withToken($token)->patchJson("/api/admin/owners/{$this->owner->uuid}/status", ['status' => 'approved'])->assertOk();
+        $this->assertSame('approved', $newApproval->fresh()->displayStatus());
+    }
+
     public function test_page_resubmit_is_refused_while_pending(): void
     {
         $this->postJson("/api/auth/application/{$this->owner->uuid}/resubmit", $this->resubmitPayload())

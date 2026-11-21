@@ -417,6 +417,7 @@ class OwnerManagementService
             'approval' => [
                 'uuid'         => $approval->uuid,
                 'status'       => $approval->status,
+                'display_status' => $approval->displayStatus(),
                 'reason'       => $approval->reason,
                 'reviewed_at'  => $approval->reviewed_at?->toISOString(),
                 'reviewer'     => $approval->reviewer
