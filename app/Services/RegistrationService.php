@@ -318,6 +318,8 @@ class RegistrationService
                 ],
                 'approval' => [
                     'status'           => $approval?->status ?? $user->status,
+                    // 'resubmitted' while a corrected application waits for review
+                    'display_status'   => $approval?->displayStatus() ?? $user->status,
                     'reason'           => $approval?->reason,
                     'can_resubmit'     => $approval?->status === 'rejected' && $approval->can_resubmit,
                     'submitted_at'     => $approval?->created_at?->toISOString() ?? $user->created_at?->toISOString(),

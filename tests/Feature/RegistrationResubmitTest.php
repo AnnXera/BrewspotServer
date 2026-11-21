@@ -317,6 +317,40 @@ class RegistrationResubmitTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_a_resubmission_shows_as_resubmitted(): void
+    {
+        $token = $this->admin->createToken('test')->plainTextToken;
+
+        // A first application is plain pending
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner')
+            ->assertJsonPath('approvals.data.0.display_status', 'pending_approval');
+
+        $this->reject();
+        $this->postJson("/api/auth/application/{$this->owner->uuid}/resubmit", $this->resubmitPayload())->assertOk();
+
+        $newApproval = ApprovalList::where('user_id', $this->owner->user_id)->latest('approval_id')->first();
+
+        // Admin list: the new attempt is labelled resubmitted but is still pending underneath
+        $rows = collect($this->withToken($token)->getJson('/api/admin/approvals?type=owner')->json('approvals.data'))->keyBy('uuid');
+        $this->assertSame('resubmitted', $rows[$newApproval->uuid]['display_status']);
+        $this->assertSame('pending_approval', $rows[$newApproval->uuid]['status']);
+        $this->assertSame('rejected', $rows[$this->approval->uuid]['display_status']);
+
+        // The Pending filter still includes it
+        $this->withToken($token)->getJson('/api/admin/approvals?type=owner&status=pending')
+            ->assertJsonPath('approvals.data.0.uuid', $newApproval->uuid);
+
+        // Snapshot and the applicant's page say the same
+        $this->withToken($token)->getJson("/api/admin/approvals/{$newApproval->uuid}/snapshot")
+            ->assertJsonPath('approval.display_status', 'resubmitted');
+        $this->getJson("/api/auth/application/{$this->owner->uuid}")
+            ->assertJsonPath('application.approval.display_status', 'resubmitted');
+
+        // Approving it works as for any pending application
+        $this->withToken($token)->patchJson("/api/admin/owners/{$this->owner->uuid}/status", ['status' => 'approved'])->assertOk();
+        $this->assertSame('approved', $newApproval->fresh()->displayStatus());
+    }
+
     public function test_page_resubmit_is_refused_while_pending(): void
     {
         $this->postJson("/api/auth/application/{$this->owner->uuid}/resubmit", $this->resubmitPayload())

@@ -37,6 +37,37 @@ class ApprovalList extends Model
         static::creating(fn ($approval) => $approval->uuid = (string) Str::uuid());
     }
 
+    /**
+     * An owner application (main branch) still waiting for review that corrects
+     * an earlier rejected one. It stays 'pending_approval' underneath, so reviews
+     * and filters work unchanged; this only changes how it is labelled.
+     */
+    public function isResubmission(): bool
+    {
+        if ($this->status !== 'pending_approval') {
+            return false;
+        }
+
+        $branch = $this->relationLoaded('branch')
+            ? $this->branch
+            : $this->branch()->withTrashed()->first();
+
+        if (($branch?->branch_type ?? null) !== 'main') {
+            return false; // side-branch submissions are not resubmissions
+        }
+
+        return static::where('user_id', $this->user_id)
+            ->where('approval_id', '<', $this->approval_id)
+            ->where('status', 'rejected')
+            ->exists();
+    }
+
+    /** The status to show: 'resubmitted' for a resubmission under review, else the stored status. */
+    public function displayStatus(): string
+    {
+        return $this->isResubmission() ? 'resubmitted' : $this->status;
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id', 'user_id');
