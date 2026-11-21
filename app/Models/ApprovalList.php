@@ -62,6 +62,29 @@ class ApprovalList extends Model
             ->exists();
     }
 
+    /**
+     * Query form of isResubmission(): pending owner applications (main branch)
+     * that follow an earlier rejection by the same owner. Used for the
+     * Resubmitted tab and its count.
+     */
+    public function scopeResubmission($query)
+    {
+        return $query->where('approval_lists.status', 'pending_approval')
+            ->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'main'))
+            ->whereExists(fn ($q) => $q->selectRaw('1')
+                ->from('approval_lists as earlier')
+                ->whereColumn('earlier.user_id', 'approval_lists.user_id')
+                ->whereColumn('earlier.approval_id', '<', 'approval_lists.approval_id')
+                ->where('earlier.status', 'rejected'));
+    }
+
+    /** Pending entries that are not resubmissions: first-time applications and branch submissions. */
+    public function scopeFirstSubmission($query)
+    {
+        return $query->where('approval_lists.status', 'pending_approval')
+            ->whereNotIn('approval_lists.approval_id', static::query()->resubmission()->select('approval_lists.approval_id'));
+    }
+
     /** The status to show: 'resubmitted' for a resubmission under review, else the stored status. */
     public function displayStatus(): string
     {

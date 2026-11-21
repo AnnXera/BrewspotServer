@@ -881,6 +881,27 @@ class StaffAndPosTest extends TestCase
         $this->api('GET', '/api/pos/device', $device)->assertUnauthorized();
     }
 
+    public function test_checkout_finds_todays_serving_row_instead_of_duplicating_it(): void
+    {
+        // Rows can be created with a Carbon date (as the servings screen does) or a string.
+        // Both must be stored as plain Y-m-d so checkout's exact-date lock finds them.
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 130, 'is_available' => true]);
+        $serving = \App\Models\InventoryServing::create([
+            'men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id,
+            'date' => today(), 'expected_servings' => 5,
+        ]);
+
+        $this->assertSame(today()->toDateString(), \Illuminate\Support\Facades\DB::table('inventory_servings')
+            ->where('servings_id', $serving->servings_id)->value('date'));
+
+        $locked = \Illuminate\Support\Facades\DB::transaction(fn () => app(\App\Repository\PosSaleRepository::class)
+            ->lockOrCreateServing($item->men_item_id, $this->mainBranch->branch_id, today()));
+
+        $this->assertSame($serving->servings_id, $locked->servings_id);
+        $this->assertSame(1, \App\Models\InventoryServing::where('men_item_id', $item->men_item_id)->count());
+        $this->assertTrue($locked->date->isToday(), 'the date cast still returns a Carbon');
+    }
+
     public function test_checkout_logs_ingredient_consumption_per_sold_line(): void
     {
         $cafeId = $this->mainBranch->cafe_id;
