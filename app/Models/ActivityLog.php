@@ -59,6 +59,8 @@ class ActivityLog extends Model
 
     public const POS_UNLOCK = 'pos.unlock';
     public const POS_LOCK   = 'pos.lock';
+    public const POS_DEVICE_REGISTERED = 'pos.device_registered'; // an owner/manager set up a device as a register
+    public const POS_DEVICE_REMOVED    = 'pos.device_removed';    // removed from the dashboard
 
     public const SERVING_CREATED        = 'serving.created';
     public const SERVING_UPDATED        = 'serving.updated';

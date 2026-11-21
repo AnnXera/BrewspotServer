@@ -85,10 +85,12 @@ class ActivityLogTest extends FloorPlanTestCase
         $res = $this->api('GET', $this->base('manager') . '/activity-logs', $this->tokenFor($this->manager))->assertOk();
 
         $this->assertEqualsCanonicalizing(
-            [ActivityLog::POS_UNLOCK, ActivityLog::MENU_ITEM_CREATED, ActivityLog::MENU_ITEM_AVAILABILITY],
+            // The register's setup is logged at the main branch too
+            [ActivityLog::POS_DEVICE_REGISTERED, ActivityLog::POS_UNLOCK, ActivityLog::MENU_ITEM_CREATED, ActivityLog::MENU_ITEM_AVAILABILITY],
             collect($res->json('logs'))->pluck('action')->all()
         );
-        $res->assertJsonPath('counts.all', 3)
+        $res->assertJsonPath('counts.all', 4)
+            ->assertJsonPath('counts.pos', 2)
             ->assertJsonPath('counts.menu', 2)
             ->assertJsonPath('counts.employees', 0)
             ->assertJsonPath('filters.branch.uuid', $this->mainBranch->uuid);
@@ -96,7 +98,7 @@ class ActivityLogTest extends FloorPlanTestCase
 
         // The `branch` filter can't widen a manager's view to another branch.
         $this->api('GET', $this->base('manager') . "/activity-logs?branch={$this->otherBranch->uuid}", $this->tokenFor($this->manager))
-            ->assertOk()->assertJsonPath('counts.all', 3);
+            ->assertOk()->assertJsonPath('counts.all', 4);
 
         // Another branch's log stays closed to them.
         $this->api('GET', $this->base('manager', $this->otherBranch) . '/activity-logs', $this->tokenFor($this->manager))->assertForbidden();

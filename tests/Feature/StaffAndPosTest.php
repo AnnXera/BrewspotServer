@@ -777,7 +777,12 @@ class StaffAndPosTest extends TestCase
         $this->api('POST', '/api/pos/device/lock', $device)->assertOk();
         $this->api('POST', '/api/pos/device/lock', $device)->assertOk(); // already locked: nothing logged
 
-        $logs = ActivityLog::orderBy('activity_log_id')->get();
+        // Setting up the register is logged first, by the owner who did it
+        $setup = ActivityLog::orderBy('activity_log_id')->first();
+        $this->assertSame(ActivityLog::POS_DEVICE_REGISTERED, $setup->action);
+        $this->assertSame($this->owner->user_id, $setup->user_id);
+
+        $logs = ActivityLog::where('action', '!=', ActivityLog::POS_DEVICE_REGISTERED)->orderBy('activity_log_id')->get();
         $this->assertSame(
             [ActivityLog::POS_UNLOCK, ActivityLog::POS_LOCK, ActivityLog::POS_UNLOCK, ActivityLog::POS_LOCK],
             $logs->pluck('action')->all()
@@ -793,8 +798,8 @@ class StaffAndPosTest extends TestCase
         $owner = $this->tokenFor($this->owner);
         $this->api('GET', '/api/owner/activity-logs', $owner)
             ->assertOk()
-            ->assertJsonPath('counts.all', 4)
-            ->assertJsonPath('counts.pos', 4)
+            ->assertJsonPath('counts.all', 5)
+            ->assertJsonPath('counts.pos', 5)
             ->assertJsonPath('logs.0.action', ActivityLog::POS_LOCK) // newest first
             ->assertJsonPath('logs.0.device', 'Front Counter')
             ->assertJsonPath('logs.0.branch', 'Main Branch');
@@ -879,6 +884,33 @@ class StaffAndPosTest extends TestCase
             ->assertOk();
 
         $this->api('GET', '/api/pos/device', $device)->assertUnauthorized();
+    }
+
+    public function test_activity_log_records_who_set_up_and_removed_a_register(): void
+    {
+        $this->registerDevice($this->manager, $this->mainBranch);
+        $device = \App\Models\PosDevice::where('branch_id', $this->mainBranch->branch_id)->latest('device_id')->firstOrFail();
+
+        $setup = \App\Models\ActivityLog::where('action', \App\Models\ActivityLog::POS_DEVICE_REGISTERED)->firstOrFail();
+        $this->assertSame($this->manager->user_id, $setup->user_id);
+        $this->assertSame('Manager', $setup->actor_role);
+        $this->assertSame($this->mainBranch->branch_id, $setup->branch_id);
+        $this->assertSame($device->device_id, $setup->device_id);
+        $this->assertSame(\App\Models\ActivityLog::CATEGORY_POS, $setup->category);
+        $this->assertSame('Set up register "Front Counter" on a device', $setup->description);
+
+        $this->api('DELETE', "/api/owner/branches/{$this->mainBranch->uuid}/pos-devices/{$device->uuid}", $this->tokenFor($this->owner))
+            ->assertOk();
+
+        $removed = \App\Models\ActivityLog::where('action', \App\Models\ActivityLog::POS_DEVICE_REMOVED)->firstOrFail();
+        $this->assertSame($this->owner->user_id, $removed->user_id);
+        $this->assertSame('Removed register "Front Counter"', $removed->description);
+
+        // Both show in the owner's activity log under the register category
+        $this->api('GET', '/api/owner/activity-logs?category=pos', $this->tokenFor($this->owner))
+            ->assertOk()
+            ->assertSee('Set up register')
+            ->assertSee('Removed register');
     }
 
     public function test_checkout_finds_todays_serving_row_instead_of_duplicating_it(): void
