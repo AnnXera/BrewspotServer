@@ -255,6 +255,38 @@ class SizesAndAddonsTest extends TestCase
         $this->assertEquals(115, TransactionItem::sole()->unit_price); // 95 + 20
     }
 
+    public function test_max_per_drink_is_optional(): void
+    {
+        // Created without a limit, and a limit can be added and cleared again
+        $shot = $this->api('POST', '/api/owner/menu-addons', ['name' => 'Extra Shot', 'price' => 30])
+            ->assertCreated()
+            ->assertJsonPath('addon.max_quantity', null)
+            ->json('addon.uuid');
+
+        $this->api('PATCH', "/api/owner/menu-addons/{$shot}", ['max_quantity' => 3])->assertOk()->assertJsonPath('addon.max_quantity', 3);
+        $this->api('PATCH', "/api/owner/menu-addons/{$shot}", ['max_quantity' => null])->assertOk()->assertJsonPath('addon.max_quantity', null);
+        $this->api('PATCH', "/api/owner/menu-addons/{$shot}", ['max_quantity' => 0])->assertStatus(422)->assertJsonValidationErrors('max_quantity');
+
+        // At the register: no limit of its own, so up to the hard cap per drink
+        $item = $this->createIcedCaramel([$shot])->json('item');
+        $this->stock($item['uuid'], 10);
+        $device = $this->unlockedDevice();
+
+        $offered = collect($this->deviceApi('GET', '/api/pos/device/menu', $device)->json('items'))->firstWhere('uuid', $item['uuid'])['addons'][0];
+        $this->assertNull($offered['max_quantity']);
+        $this->assertSame(\App\Models\MenuAddon::MAX_QUANTITY_LIMIT, $offered['quantity_cap']);
+
+        $small = $item['sizes'][0]['uuid'];
+        $checkout = fn (int $shots) => $this->deviceApi('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item['uuid'], 'quantity' => 1, 'size_uuid' => $small, 'addons' => [['uuid' => $shot, 'quantity' => $shots]]]],
+            'payment_method' => 'cash', 'amount_tendered' => 1000,
+        ]);
+
+        $checkout(\App\Models\MenuAddon::MAX_QUANTITY_LIMIT + 1)->assertStatus(422);
+        $checkout(5)->assertOk(); // above the old default of 1
+        $this->assertSame(5, TransactionItem::with('addons')->sole()->addons->sole()->quantity);
+    }
+
     // ── Hot and iced ─────────────────────────────────────────────────────
 
     public function test_hot_and_iced_item_needs_an_iced_price_per_size(): void

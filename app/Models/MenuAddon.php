@@ -19,7 +19,14 @@ class MenuAddon extends Model
 
     protected $primaryKey = 'addon_id';
 
+    /** Hard cap per drink for every add-on, including those with no limit of their own. */
     public const MAX_QUANTITY_LIMIT = 10;
+
+    /** Most of this add-on one drink can have: its own limit, or the hard cap when it has none. */
+    public function quantityCap(): int
+    {
+        return $this->max_quantity ?? self::MAX_QUANTITY_LIMIT;
+    }
 
     public function getRouteKeyName(): string
     {

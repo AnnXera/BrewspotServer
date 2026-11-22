@@ -333,7 +333,8 @@ class PosDeviceService
                     'uuid' => $a->uuid,
                     'name' => $a->name,
                     'price' => (float) $a->price,
-                    'max_quantity' => $a->max_quantity,
+                    'max_quantity' => $a->max_quantity, // null = no limit of its own
+                    'quantity_cap' => $a->quantityCap(), // what the register allows per drink
                 ])->values(),
             ]);
 
@@ -400,8 +401,8 @@ class PosDeviceService
 
             $quantity = (int) $row['quantity'];
 
-            if ($quantity > $addon->max_quantity) {
-                return ['message' => "{$menuItem->menu_name} can have at most {$addon->max_quantity} {$addon->name}."];
+            if ($quantity > $addon->quantityCap()) {
+                return ['message' => "{$menuItem->menu_name} can have at most {$addon->quantityCap()} {$addon->name}."];
             }
 
             $lines[$addon->addon_id] = ['addon' => $addon, 'quantity' => $quantity];
