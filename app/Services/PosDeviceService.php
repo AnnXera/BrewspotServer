@@ -815,7 +815,9 @@ class PosDeviceService
 
     /**
      * Void a transaction completely, requiring manager PIN authorization.
-     * Cancels the sale, returns servings to inventory, and marks payments voided.
+     * Cancels the sale and marks payments voided. Servings are not put back on
+     * sale: they leave the sold count for the voided count, so what's left stays
+     * the same (20 planned, 1 sold = 19 left; after the void still 19 left).
      */
     public function void(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
     {
@@ -878,10 +880,11 @@ class PosDeviceService
                 'event'     => TransactionEvent::VOIDED,
                 'user_id'   => $managerUser->user_id,
                 'reason'    => !empty($reason) ? trim($reason) : null,
-                'restocked' => true,
+                'restocked' => false,
             ]);
 
-            // All item servings return directly to available inventory
+            // Off the sold count (it is no longer a sale), onto the voided count, so
+            // the servings stay used up and the remaining count does not change.
             foreach ($transaction->items as $item) {
                 $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
 
@@ -890,12 +893,8 @@ class PosDeviceService
                     continue;
                 }
 
-                $ranOut = $serving->isUsedUp();
                 $serving->servings_sold -= $qty;
-
-                if ($serving->is_sold_out && $ranOut && !$serving->isUsedUp()) {
-                    $serving->is_sold_out = false;
-                }
+                $serving->servings_voided += $qty;
 
                 $this->sales->saveServing($serving);
             }

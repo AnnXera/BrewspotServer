@@ -476,6 +476,7 @@ class OwnerAnalyticsService
                 'sold'            => $sold,
                 'spoilage'        => $spoiled,
                 'refunded'        => (int) $servings->sum('refunded'), // made and served, then refunded
+                'voided_sales'    => (int) $servings->sum('voided_sales'), // made, then the sale was voided
                 'spoilage_value'  => round((float) $servings->sum('spoilage_value'), 2),
                 'spoilage_change' => $spoiled === 0 && $previousSpoiled === 0 ? 0.0 : $this->change($spoiled, $previousSpoiled),
                 // How much of what was planned actually sold.
@@ -497,6 +498,7 @@ class OwnerAnalyticsService
                     'sold'           => (int) $row->sold,
                     'spoilage'       => (int) $row->spoilage,
                     'refunded'       => (int) $row->refunded,
+                    'voided_sales'   => (int) $row->voided_sales,
                     'spoilage_value' => round((float) $row->spoilage_value, 2),
                     'sold_out_days'  => (int) $row->sold_out_days,
                     'days'          => (int) $row->days,
