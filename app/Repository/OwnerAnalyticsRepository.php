@@ -351,7 +351,8 @@ class OwnerAnalyticsRepository
                 ->whereNull('menu_items.deleted_at')
                 ->orWhere('inventory_servings.servings_sold', '>', 0)
                 ->orWhere('inventory_servings.spoilage_qty', '>', 0)
-                ->orWhere('inventory_servings.servings_refunded', '>', 0))
+                ->orWhere('inventory_servings.servings_refunded', '>', 0)
+                ->orWhere('inventory_servings.servings_voided', '>', 0))
             ->groupBy('menu_items.uuid', 'menu_items.menu_name')
             ->selectRaw('menu_items.uuid, menu_items.menu_name,
                 MAX(CASE WHEN menu_items.deleted_at IS NULL THEN 0 ELSE 1 END) as removed,
@@ -359,6 +360,7 @@ class OwnerAnalyticsRepository
                 SUM(inventory_servings.servings_sold) as sold,
                 SUM(inventory_servings.spoilage_qty) as spoilage,
                 SUM(inventory_servings.servings_refunded) as refunded,
+                SUM(inventory_servings.servings_voided) as voided_sales,
                 MAX(menu_items.base_price) as base_price,
                 SUM(CASE WHEN inventory_servings.is_sold_out THEN 1 ELSE 0 END) as sold_out_days,
                 COUNT(*) as days')

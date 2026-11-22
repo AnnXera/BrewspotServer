@@ -87,6 +87,7 @@ class PosSaleRepository
                 'servings_sold'     => 0,
                 'spoilage_qty'      => 0,
                 'servings_refunded' => 0,
+                'servings_voided'   => 0,
                 'is_sold_out'       => false,
             ]);
     }

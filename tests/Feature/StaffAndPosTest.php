@@ -913,6 +913,33 @@ class StaffAndPosTest extends TestCase
             ->assertSee('Removed register');
     }
 
+    public function test_voiding_a_sale_leaves_the_remaining_servings_unchanged(): void
+    {
+        // 20 planned, 1 sold = 19 left; after the void it stays 19.
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 20]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $sale = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 1]], 'payment_method' => 'cash', 'amount_tendered' => 200,
+        ])->assertOk()->json('transaction_uuid');
+
+        $serving = \App\Models\InventoryServing::sole();
+        $this->assertSame(19, $serving->remaining());
+
+        $this->api('POST', "/api/pos/device/transactions/{$sale}/void", $device, [
+            'manager_uuid' => $this->manager->uuid, 'pin' => '9999', 'reason' => 'Wrong item',
+        ])->assertOk();
+
+        $serving->refresh();
+        $this->assertSame(19, $serving->remaining(), 'voiding must not put the serving back on sale');
+        $this->assertSame(0, $serving->servings_sold, 'a voided sale is not a sale');
+        $this->assertSame(1, $serving->servings_voided);
+        $this->assertSame('voided', \App\Models\Transaction::where('uuid', $sale)->value('status'));
+    }
+
     public function test_checkout_finds_todays_serving_row_instead_of_duplicating_it(): void
     {
         // Rows can be created with a Carbon date (as the servings screen does) or a string.

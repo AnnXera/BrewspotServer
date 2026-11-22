@@ -30,8 +30,9 @@ class MenuAddonRequest extends FormRequest
         return [
             'name'         => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:100'],
             'price'        => [$isUpdate ? 'sometimes' : 'required', 'numeric', 'min:0'],
-            // Most of this add-on one drink can have (2 = "double Oreo").
-            'max_quantity' => ['sometimes', 'integer', 'min:1', 'max:' . MenuAddon::MAX_QUANTITY_LIMIT],
+            // Most of this add-on one drink can have (2 = "double Oreo"). Optional:
+            // empty/null means no limit of its own (still capped at MAX_QUANTITY_LIMIT).
+            'max_quantity' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:' . MenuAddon::MAX_QUANTITY_LIMIT],
             'is_available' => ['sometimes', 'boolean'],
 
             // Ingredients one serving of the add-on uses. May be empty.

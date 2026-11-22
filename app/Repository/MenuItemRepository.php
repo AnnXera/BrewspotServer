@@ -205,6 +205,7 @@ class MenuItemRepository
                 ->where('servings_sold', 0)
                 ->where('spoilage_qty', 0)
                 ->where('servings_refunded', 0)
+                ->where('servings_voided', 0)
                 ->delete();
 
             $item->delete();

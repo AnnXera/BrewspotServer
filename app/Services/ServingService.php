@@ -43,6 +43,7 @@ class ServingService
                 'servings_sold'     => $servings->sum('servings_sold'),
                 'spoilage_qty'      => $servings->sum('spoilage_qty'),
                 'servings_refunded' => $servings->sum('servings_refunded'),
+                'servings_voided'   => $servings->sum('servings_voided'),
                 'sold_out'          => $servings->filter(fn (InventoryServing $s) => $s->is_sold_out)->count(),
             ],
             'servings' => InventoryServingResource::collection($servings),
@@ -363,13 +364,14 @@ class ServingService
         return $changes;
     }
 
-    /** "3 sold, 1 spoiled, 1 refunded", leaving out the zeros. */
+    /** "3 sold, 1 spoiled, 1 refunded, 1 voided", leaving out the zeros. */
     private function usedBreakdown(InventoryServing $s): string
     {
         return collect([
             'sold'     => $s->servings_sold,
             'spoiled'  => $s->spoilage_qty,
             'refunded' => $s->servings_refunded,
+            'voided'   => $s->servings_voided,
         ])->filter()->map(fn ($n, $label) => "{$n} {$label}")->join(', ');
     }
 

@@ -26,6 +26,7 @@ class InventoryServing extends Model
         'servings_sold',
         'spoilage_qty',
         'servings_refunded',
+        'servings_voided',
         'is_sold_out',
     ];
 
@@ -35,6 +36,7 @@ class InventoryServing extends Model
         'servings_sold' => 'integer',
         'spoilage_qty' => 'integer',
         'servings_refunded' => 'integer',
+        'servings_voided' => 'integer',
         'is_sold_out' => 'boolean',
     ];
 
@@ -54,10 +56,10 @@ class InventoryServing extends Model
         $this->attributes['date'] = $value === null ? null : Carbon::parse($value)->toDateString();
     }
 
-    /** Servings gone for the day: sold, spoiled, or made and then refunded. */
+    /** Servings gone for the day: sold, spoiled, or made and then refunded or voided. */
     public function used(): int
     {
-        return $this->servings_sold + $this->spoilage_qty + $this->servings_refunded;
+        return $this->servings_sold + $this->spoilage_qty + $this->servings_refunded + $this->servings_voided;
     }
 
     public function remaining(): int
