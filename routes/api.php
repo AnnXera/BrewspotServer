@@ -69,6 +69,7 @@ $branchScopedRoutes = function () {
         Route::put('/servings/categories/{categoryUuid}/items', [ServingController::class, 'saveCategoryItems']);
         Route::get('/servings/ingredients-used', [ServingOverviewController::class, 'ingredientsUsed']);
         Route::get('/servings/log', [ServingOverviewController::class, 'log']);
+        Route::get('/servings/log/{lineUuid}/ingredients', [ServingOverviewController::class, 'logIngredients']);
         Route::get('/servings/spoilage', [SpoilageController::class, 'index']);
         Route::post('/servings/spoilage/{logUuid}/void', [SpoilageController::class, 'void']);
         Route::post('/servings', [ServingController::class, 'store']);
