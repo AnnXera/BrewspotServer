@@ -112,6 +112,25 @@ class OwnerAnalyticsTest extends TestCase
             ->assertJsonPath('summary.orders', 1);
     }
 
+    public function test_a_single_day_trends_by_hour(): void
+    {
+        $this->sale($this->main, '2026-10-16 09:40', [[$this->latte, 1]], 'cash');
+        $this->sale($this->side, '2026-10-16 09:05', [[$this->bagel, 1]], 'cash');
+        $this->sale($this->main, '2026-10-16 23:15', [[$this->latte, 1]], 'cash');   // after 10 PM: widens the range
+        $this->sale($this->main, '2026-10-15 09:00', [[$this->latte, 1]], 'cash');   // another day
+
+        $this->api('/api/owner/analytics/sales?from=2026-10-16&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonPath('granularity', 'hour')
+            ->assertJsonCount(18, 'series')                   // 6 AM to 11 PM
+            ->assertJsonPath('series.0.hour', 6)
+            ->assertJsonPath('series.0.orders', 0)
+            ->assertJsonPath('series.3.hour', 9)
+            ->assertJsonPath('series.3.orders', 2)
+            ->assertJsonPath('series.17.hour', 23)
+            ->assertJsonPath('series.17.orders', 1);
+    }
+
     public function test_long_windows_roll_up_into_weeks_and_months(): void
     {
         $this->api('/api/owner/analytics/sales?from=2026-08-01&to=2026-10-16')
