@@ -152,6 +152,21 @@ class InventoryServingRepository
             ->paginate($perPage);
     }
 
+    /**
+     * One sold line of the branch's completed transactions on a day, with what it used.
+     */
+    public function findSalesLineForDate(string $uuid, int $branchId, Carbon $date): ?TransactionItem
+    {
+        return TransactionItem::query()
+            ->where('uuid', $uuid)
+            ->whereHas('transaction', fn ($q) => $q
+                ->where('branch_id', $branchId)
+                ->where('status', 'completed')
+                ->whereBetween('created_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()]))
+            ->with(['transaction', 'addons', 'consumptionLogs', 'menuItem' => fn ($q) => $q->withTrashed()])
+            ->first();
+    }
+
     public function create(int $itemId, int $branchId, Carbon $date, int $expectedServings): InventoryServing
     {
         $serving = InventoryServing::create([

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CafeBranch;
+use App\Models\Ingredient;
 use App\Models\InventoryServing;
 use App\Models\MenuCategory;
 use App\Models\TransactionItem;
@@ -216,6 +217,57 @@ class ServingOverviewService
             'success' => true,
             'date'    => $this->today()->toDateString(),
             'log'     => $lines->toArray(),
+        ];
+    }
+
+    /**
+     * Ingredients one sold line used (recipe snapshot at sale time, add-ons included),
+     * per ingredient and unit. `quantity` is the line total; `per_serving` divides it by
+     * the drinks on the line. Unmeasured units ("to taste", "pinch") come back with no amount.
+     */
+    public function logIngredients(CafeBranch $branch, string $lineUuid): array
+    {
+        $line = $this->repo->findSalesLineForDate($lineUuid, $branch->branch_id, $this->today());
+
+        if (! $line) {
+            return ['success' => false, 'http' => 404, 'message' => 'Serving log entry not found for today.'];
+        }
+
+        $qty = max(1, (int) $line->quantity);
+
+        $ingredients = $line->consumptionLogs
+            ->groupBy(fn ($log) => $log->ingredient_name . '|' . $log->unit)
+            ->map(function (Collection $logs) use ($qty) {
+                $first    = $logs->first();
+                $measured = ! in_array($first->unit, Ingredient::UNMEASURED_UNITS, true);
+                $total    = round((float) $logs->sum('quantity_consumed'), 2);
+
+                return [
+                    'name'        => $first->ingredient_name,
+                    'unit'        => $first->unit,
+                    'measured'    => $measured,
+                    'quantity'    => $measured ? $total : null,
+                    'per_serving' => $measured ? round($total / $qty, 2) : null,
+                ];
+            })
+            ->sortBy([['measured', 'desc'], fn ($a, $b) => strcasecmp($a['name'], $b['name'])])
+            ->values();
+
+        $item = $line->menuItem;
+
+        return [
+            'success' => true,
+            'entry'   => [
+                'uuid'         => $line->uuid,
+                'order_number' => sprintf('ODR-%s-%04d', $line->transaction->created_at->format('Y'), $line->transaction_id),
+                'menu_name'    => $item?->menu_name,
+                'picture'      => $item?->picture ? Storage::disk('public')->url($item->picture) : null,
+                'size_name'    => $line->size_name,
+                'quantity'     => $line->quantity,
+                'sold_at'      => $line->transaction->created_at->toISOString(),
+                'addons'       => $line->addons->map(fn ($a) => ['name' => $a->addon_name, 'quantity' => (int) $a->quantity])->values(),
+            ],
+            'ingredients' => $ingredients,
         ];
     }
 

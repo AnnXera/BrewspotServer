@@ -331,6 +331,40 @@ class ServingsTest extends TestCase
             ->assertJsonPath('log.data.1.quantity', 2);
     }
 
+    public function test_log_entry_ingredients_total_per_line_and_per_serving(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        // Espresso twice: once from the recipe, once from an add-on; both count.
+        $line = $this->sell($this->latte, 2, [['Espresso', 'shots', 4], ['Milk', 'ml', 300], ['Espresso', 'shots', 2], ['Cinnamon', 'pinch', 2]]);
+        $line->addons()->create(['addon_name' => 'Extra shot', 'price' => 30, 'quantity' => 1]);
+
+        $this->api('GET', $this->url("/log/{$line->uuid}/ingredients"), $token)
+            ->assertOk()
+            ->assertJsonPath('entry.menu_name', 'Latte')
+            ->assertJsonPath('entry.quantity', 2)
+            ->assertJsonPath('entry.addons.0.name', 'Extra shot')
+            ->assertJsonCount(3, 'ingredients')
+            ->assertJsonPath('ingredients.0', ['name' => 'Espresso', 'unit' => 'shots', 'measured' => true, 'quantity' => 6, 'per_serving' => 3])
+            ->assertJsonPath('ingredients.1', ['name' => 'Milk', 'unit' => 'ml', 'measured' => true, 'quantity' => 300, 'per_serving' => 150])
+            ->assertJsonPath('ingredients.2', ['name' => 'Cinnamon', 'unit' => 'pinch', 'measured' => false, 'quantity' => null, 'per_serving' => null]);
+    }
+
+    public function test_log_entry_ingredients_only_for_todays_completed_lines_of_the_branch(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        $old    = $this->sell($this->latte, 1, [], ['created_at' => now()->subDay()]);
+        $voided = $this->sell($this->latte, 1, [], ['status' => 'voided']);
+        $other  = $this->sell($this->latte, 1, [], ['branch_id' => $this->otherBranch->branch_id]);
+
+        foreach ([$old, $voided] as $line) {
+            $this->api('GET', $this->url("/log/{$line->uuid}/ingredients"), $token)->assertNotFound();
+        }
+        $this->api('GET', $this->url("/log/{$other->uuid}/ingredients"), $token)->assertNotFound();
+        $this->api('GET', $this->url('/log/not-a-uuid/ingredients'), $token)->assertNotFound();
+    }
+
     public function test_category_items_show_limit_stock_and_status(): void
     {
         $token  = $this->tokenFor($this->manager);

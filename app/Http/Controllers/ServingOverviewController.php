@@ -70,4 +70,12 @@ class ServingOverviewController extends Controller
             (int) ($request->validated('per_page') ?? 20)
         ));
     }
+
+    /**
+     * GET .../servings/log/{lineUuid}/ingredients
+     */
+    public function logIngredients(ServingOverviewRequest $request, string $branchUuid, string $lineUuid): JsonResponse
+    {
+        return $this->respond($this->service->logIngredients($request->attributes->get('branch'), $lineUuid));
+    }
 }
