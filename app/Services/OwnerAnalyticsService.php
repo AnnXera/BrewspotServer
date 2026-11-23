@@ -19,6 +19,10 @@ use Illuminate\Support\Collection;
  */
 class OwnerAnalyticsService
 {
+    // Hours the single-day trend always shows (6 AM to 10 PM).
+    private const TREND_FIRST_HOUR = 6;
+    private const TREND_LAST_HOUR  = 22;
+
     public function __construct(
         private readonly OwnerAnalyticsRepository $repo,
         private readonly ManagerDashboardService $managerDashboard
@@ -76,7 +80,9 @@ class OwnerAnalyticsService
                 ],
             ],
             'granularity' => $granularity,
-            'series'      => $this->series($granularity, $days, $from, $to),
+            'series'      => $granularity === 'hour'
+                ? $this->hourlySeries($this->repo->hourlyTotals($ids, $from, $to), $from)
+                : $this->series($granularity, $days, $from, $to),
             'heatmap'     => $this->repo->hourlyGrid($ids, $from, $to),
             'payments'    => $payments
                 ->map(fn ($row) => [
@@ -613,13 +619,14 @@ class OwnerAnalyticsService
     }
 
     /**
-     * Day buckets up to a month, Sunday-to-Saturday weeks up to six months, months beyond.
+     * Hours for a single day, day buckets up to a month, Sunday-to-Saturday weeks up to six months, months beyond.
      */
     private function granularity(Carbon $from, Carbon $to): string
     {
         $days = (int) $from->diffInDays($to->copy()->startOfDay()) + 1;
 
         return match (true) {
+            $days === 1  => 'hour',
             $days <= 31  => 'day',
             $days <= 183 => 'week',
             default      => 'month',
@@ -662,6 +669,33 @@ class OwnerAnalyticsService
             ];
 
             $cursor = $end->copy()->addDay()->startOfDay();
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * One bucket per hour of a single day, from 6 AM to 10 PM, widened to take in
+     * any sale outside those hours. Empty hours stay at zero.
+     */
+    private function hourlySeries(Collection $hours, Carbon $day): array
+    {
+        $byHour = $hours->keyBy(fn ($row) => (int) $row->hour);
+        $first  = min(self::TREND_FIRST_HOUR, $byHour->keys()->min() ?? self::TREND_FIRST_HOUR);
+        $last   = max(self::TREND_LAST_HOUR, $byHour->keys()->max() ?? self::TREND_LAST_HOUR);
+        $date   = $day->toDateString();
+
+        $buckets = [];
+        for ($h = $first; $h <= $last; $h++) {
+            $row = $byHour->get($h);
+
+            $buckets[] = [
+                'start'   => $date,
+                'end'     => $date,
+                'hour'    => $h,
+                'revenue' => round((float) ($row->revenue ?? 0), 2),
+                'orders'  => (int) ($row->orders ?? 0),
+            ];
         }
 
         return $buckets;
