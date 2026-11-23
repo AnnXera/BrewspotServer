@@ -19,7 +19,7 @@ class SaveCategoryServingsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'items'                  => ['required', 'array', 'min:1', 'max:200'],
+            'items'                  => ['required', 'array', 'min:1', 'max:1000'],
             'items.*.menu_item_uuid' => ['required', 'string', 'max:64'],
             'items.*.daily_limit'    => ['required', 'integer', 'min:0', 'max:100000'],
             'items.*.enabled'        => ['required', 'boolean'],
