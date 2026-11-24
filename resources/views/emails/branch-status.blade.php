@@ -79,6 +79,26 @@
                                 </table>
                             @endif
 
+                            @if (! empty($actionUrl))
+                                <p style="font-size: 15px; line-height: 1.6; margin-bottom: 8px; color: #4a382d;">
+                                    {{ $actionNote }}
+                                </p>
+                                <!-- CTA Button -->
+                                <table border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 24px auto;">
+                                    <tr>
+                                        <td align="center" style="border-radius: 5px; background-color: #2b1810;">
+                                            <a href="{{ $actionUrl }}" target="_blank" style="display: inline-block; padding: 13px 30px; font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #ffffff; text-decoration: none; border-radius: 5px;">
+                                                {{ $actionLabel }}
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+                                <p style="font-size: 12px; line-height: 1.5; color: #8c7668; text-align: center; margin-bottom: 24px;">
+                                    If the button above does not work, copy and paste this URL into your browser:<br>
+                                    <span style="word-break: break-all; color: #5c483c; font-family: monospace;">{{ $actionUrl }}</span>
+                                </p>
+                            @endif
+
                             <p style="font-size: 13px; line-height: 1.6; color: #8c7668; margin-top: 20px; margin-bottom: 0;">
                                 If you have inquiries regarding this decision or wish to submit further details, please contact the BrewSpot Administration Support desk.
                             </p>

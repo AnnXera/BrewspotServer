@@ -38,9 +38,11 @@ class ApprovalList extends Model
     }
 
     /**
-     * An owner application (main branch) still waiting for review that corrects
-     * an earlier rejected one. It stays 'pending_approval' underneath, so reviews
-     * and filters work unchanged; this only changes how it is labelled.
+     * An entry still waiting for review that corrects an earlier rejected one:
+     * an owner application (main branch) after a rejected application by the same
+     * owner, or a side branch sent back after that same branch was rejected.
+     * It stays 'pending_approval' underneath, so reviews and filters work
+     * unchanged; this only changes how it is labelled.
      */
     public function isResubmission(): bool
     {
@@ -52,30 +54,34 @@ class ApprovalList extends Model
             ? $this->branch
             : $this->branch()->withTrashed()->first();
 
-        if (($branch?->branch_type ?? null) !== 'main') {
-            return false; // side-branch submissions are not resubmissions
-        }
+        $earlier = static::where('approval_id', '<', $this->approval_id)->where('status', 'rejected');
 
-        return static::where('user_id', $this->user_id)
-            ->where('approval_id', '<', $this->approval_id)
-            ->where('status', 'rejected')
-            ->exists();
+        return match ($branch?->branch_type) {
+            'main'  => $earlier->where('user_id', $this->user_id)->exists(),
+            'side'  => $earlier->where('branch_id', $this->branch_id)->exists(),
+            default => false,
+        };
     }
 
     /**
-     * Query form of isResubmission(): pending owner applications (main branch)
-     * that follow an earlier rejection by the same owner. Used for the
-     * Resubmitted tab and its count.
+     * Query form of isResubmission(). Used for the Resubmitted tab and its count.
      */
     public function scopeResubmission($query)
     {
+        $rejectedBefore = fn (string $sameColumn) => fn ($q) => $q->selectRaw('1')
+            ->from('approval_lists as earlier')
+            ->whereColumn("earlier.{$sameColumn}", "approval_lists.{$sameColumn}")
+            ->whereColumn('earlier.approval_id', '<', 'approval_lists.approval_id')
+            ->where('earlier.status', 'rejected');
+
         return $query->where('approval_lists.status', 'pending_approval')
-            ->whereHas('branch', fn ($q) => $q->withTrashed()->where('branch_type', 'main'))
-            ->whereExists(fn ($q) => $q->selectRaw('1')
-                ->from('approval_lists as earlier')
-                ->whereColumn('earlier.user_id', 'approval_lists.user_id')
-                ->whereColumn('earlier.approval_id', '<', 'approval_lists.approval_id')
-                ->where('earlier.status', 'rejected'));
+            ->where(fn ($q) => $q
+                ->where(fn ($main) => $main
+                    ->whereHas('branch', fn ($b) => $b->withTrashed()->where('branch_type', 'main'))
+                    ->whereExists($rejectedBefore('user_id')))
+                ->orWhere(fn ($side) => $side
+                    ->whereHas('branch', fn ($b) => $b->withTrashed()->where('branch_type', 'side'))
+                    ->whereExists($rejectedBefore('branch_id'))));
     }
 
     /** Pending entries that are not resubmissions: first-time applications and branch submissions. */

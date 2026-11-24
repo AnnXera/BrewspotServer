@@ -18,6 +18,8 @@ class UpdateBranchStatusRequest extends FormRequest
         return [
             'status' => ['required', 'string', 'in:approved,rejected'],
             'reason' => ['nullable', 'string', 'max:1000'],
+            // Rejections only: false makes it final (the owner cannot edit and resubmit the branch)
+            'allow_resubmit' => ['sometimes', 'boolean'],
         ];
     }
 

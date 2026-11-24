@@ -206,7 +206,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/branches', [BranchController::class, 'store']); // add side branch
         Route::post('/branches/check-contact', [BranchController::class, 'checkContact']); // email/phone availability for the add-branch form
         Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
-        Route::delete('/branches/{uuid}', [BranchController::class, 'destroy']); // soft-delete branch
+        Route::delete('/branches/{uuid}', [BranchController::class, 'destroy']); // soft-delete branch (withdraws a pending one)
+        Route::post('/branches/{uuid}/resubmit', [BranchController::class, 'resubmit']); // edit a rejected side branch and send it back for review
 
         // Feature-Gated: Staff Management
         Route::middleware('plan.feature:staff_management')->group(function () {

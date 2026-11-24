@@ -51,6 +51,12 @@ class BranchRepository
         ]);
     }
 
+    /** The branch's most recent approval entry, whatever its status. */
+    public function latestApproval(int $branchId): ?ApprovalList
+    {
+        return ApprovalList::where('branch_id', $branchId)->latest('approval_id')->first();
+    }
+
     /**
      * Find a branch by UUID scoped to the owner's cafes.
      * Returns null when the branch doesn't exist or doesn't belong to this owner.

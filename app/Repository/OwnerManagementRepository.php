@@ -295,20 +295,6 @@ class OwnerManagementRepository
             ->first();
     }
 
-    public function findApplicationHistory(int $userId)
-    {
-        return ApprovalList::where('user_id', $userId)
-            ->with([
-                'cafe'             => fn ($q) => $q->withTrashed(),
-                'cafe.documents'   => fn ($q) => $q->withTrashed(),
-                'branch'           => fn ($q) => $q->withTrashed(),
-                'branch.documents' => fn ($q) => $q->withTrashed(),
-                'reviewer',
-            ])
-            ->orderByDesc('created_at')
-            ->get();
-    }
-
     /**
      * Snapshot of the cafe/branch/documents exactly as they were for THIS
      * approval row — including trashed data from a since-superseded
