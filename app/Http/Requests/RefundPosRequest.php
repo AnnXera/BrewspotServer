@@ -19,6 +19,10 @@ class RefundPosRequest extends FormRequest
             'pin'          => ['required', 'string'],
             'reason'       => ['required', 'string', 'max:255', 'not_regex:/^\s*$/'],
             'restock'      => ['nullable', 'boolean'], // true: never made, servings go back on sale
+            // Which items to refund; left out, everything not refunded yet.
+            'items'            => ['sometimes', 'array', 'min:1', 'max:100'],
+            'items.*.uuid'     => ['required', 'string', 'max:64'],
+            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:1000'],
         ];
     }
 

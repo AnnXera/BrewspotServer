@@ -1017,6 +1017,125 @@ class StaffAndPosTest extends TestCase
         $this->assertNotSame('completed', \App\Models\Transaction::where('uuid', $sale)->value('status'));
     }
 
+    /** Two items with servings planned today, an unlocked register, and one sale of both. */
+    private function saleOfTwoItems(array $checkout = []): array
+    {
+        $latte = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        $bagel = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Bagel', 'base_price' => 60, 'is_available' => true]);
+        foreach ([$latte, $bagel] as $item) {
+            \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 10]);
+        }
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $sale = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $latte->uuid, 'quantity' => 2], ['uuid' => $bagel->uuid, 'quantity' => 1]],
+            'payment_method' => 'cash', 'amount_tendered' => 500, ...$checkout,
+        ])->assertOk()->json('transaction_uuid');
+
+        $tx = \App\Models\Transaction::where('uuid', $sale)->with('items')->sole();
+
+        return [
+            $device, $tx,
+            $tx->items->firstWhere('men_item_id', $latte->men_item_id),
+            $tx->items->firstWhere('men_item_id', $bagel->men_item_id),
+        ];
+    }
+
+    private function refundItems(string $device, string $sale, array $extra): \Illuminate\Testing\TestResponse
+    {
+        return $this->api('POST', "/api/pos/device/transactions/{$sale}/refund", $device, [
+            'manager_uuid' => $this->manager->uuid, 'pin' => '9999', 'reason' => 'Customer changed mind', ...$extra,
+        ]);
+    }
+
+    public function test_refunding_one_item_keeps_the_rest_of_the_sale(): void
+    {
+        [$device, $tx, $latteLine, $bagelLine] = $this->saleOfTwoItems();
+        $this->assertSame(300.0, (float) $tx->total_amount); // 2 x 120 + 60
+
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $latteLine->uuid, 'quantity' => 1]]])
+            ->assertOk()
+            ->assertJsonPath('refunded_amount', 120)
+            ->assertJsonPath('transaction.status', 'partially_refunded')
+            ->assertJsonPath('transaction.refunded_amount', 120);
+
+        $tx->refresh();
+        $this->assertSame('partially_refunded', $tx->status);
+        $this->assertSame(1, $latteLine->fresh()->refunded_quantity);
+        $this->assertSame(0, $bagelLine->fresh()->refunded_quantity);
+        $this->assertNotSame('refunded', $tx->payments()->value('status'), 'payment stays until the whole sale is refunded');
+
+        $event = \App\Models\TransactionEvent::where('transaction_id', $tx->transaction_id)->sole();
+        $this->assertSame([[$latteLine->transaction_item_id, 1, 120.0]], $event->items->map(fn ($i) => [$i->transaction_item_id, $i->quantity, (float) $i->amount])->all());
+
+        // Made and served: the refunded latte stays used up.
+        $latteServing = \App\Models\InventoryServing::where('men_item_id', $latteLine->men_item_id)->sole();
+        $this->assertSame(1, $latteServing->servings_sold);
+        $this->assertSame(1, $latteServing->servings_refunded);
+
+        // The register's day: 180 kept, 120 given back.
+        $this->api('GET', '/api/pos/device/transactions', $device)
+            ->assertOk()
+            ->assertJsonPath('today_total', 180)
+            ->assertJsonPath('today_count', 1)
+            ->assertJsonPath('void_total', 120);
+
+        // Refund the rest (no items: everything left) and the sale is refunded in full.
+        $this->refundItems($device, $tx->uuid, ['restock' => true])
+            ->assertOk()
+            ->assertJsonPath('refunded_amount', 180)
+            ->assertJsonPath('transaction.status', 'refunded');
+
+        $tx->refresh();
+        $this->assertSame(300.0, (float) $tx->refunded_amount);
+        $this->assertSame('refunded', $tx->payments()->value('status'));
+        $this->assertSame(2, $latteLine->fresh()->refunded_quantity);
+
+        // Never made: the second refund put its servings back on sale.
+        $this->assertSame(0, \App\Models\InventoryServing::where('men_item_id', $bagelLine->men_item_id)->value('servings_sold'));
+    }
+
+    public function test_item_refunds_take_their_share_of_the_discount_and_add_up_to_what_was_paid(): void
+    {
+        [$device, $tx, $latteLine, $bagelLine] = $this->saleOfTwoItems(['discount_type' => 'PWD', 'discount_id_number' => 'PWD-1']);
+        $this->assertSame(240.0, (float) $tx->total_amount); // 300 less 20%
+
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $latteLine->uuid, 'quantity' => 1]]])
+            ->assertOk()->assertJsonPath('refunded_amount', 96); // 120 less 20%
+
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $bagelLine->uuid, 'quantity' => 1]]])
+            ->assertOk()->assertJsonPath('refunded_amount', 48);
+
+        // The last one returns exactly what is left.
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $latteLine->uuid, 'quantity' => 1]]])
+            ->assertOk()->assertJsonPath('refunded_amount', 96)->assertJsonPath('transaction.status', 'refunded');
+
+        $this->assertSame(240.0, (float) $tx->fresh()->refunded_amount);
+    }
+
+    public function test_cannot_refund_more_than_was_sold_or_void_a_partly_refunded_sale(): void
+    {
+        [$device, $tx, $latteLine, $bagelLine] = $this->saleOfTwoItems();
+
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $latteLine->uuid, 'quantity' => 3]]])->assertStatus(422);
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => 'not-on-this-sale', 'quantity' => 1]]])->assertStatus(422);
+        $this->refundItems($device, $tx->uuid, ['items' => []])->assertStatus(422);
+
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $bagelLine->uuid, 'quantity' => 1]]])->assertOk();
+        $this->refundItems($device, $tx->uuid, ['items' => [['uuid' => $bagelLine->uuid, 'quantity' => 1]]])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Bagel has already been refunded.');
+
+        $this->api('POST', "/api/pos/device/transactions/{$tx->uuid}/void", $device, [
+            'manager_uuid' => $this->manager->uuid, 'pin' => '9999', 'reason' => 'Wrong order',
+        ])->assertStatus(422);
+
+        $this->assertSame('partially_refunded', $tx->fresh()->status);
+        $this->assertSame(60.0, (float) $tx->fresh()->refunded_amount);
+    }
+
     public function test_voiding_the_last_sale_of_a_sold_out_item_puts_it_back_on_sale(): void
     {
         $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 120, 'is_available' => true]);

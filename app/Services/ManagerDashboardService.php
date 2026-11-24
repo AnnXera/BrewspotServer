@@ -239,6 +239,7 @@ class ManagerDashboardService
             'created_at'     => $t->created_at->toISOString(),
             'staff_name'     => $t->staff?->user ? trim("{$t->staff->user->firstname} {$t->staff->user->lastname}") : 'POS / Admin',
             'total_amount'   => (float) $t->total_amount,
+            'refunded_amount' => (float) $t->refunded_amount,
             'status'         => $t->status,
             'order_type'     => $t->order_type ?: 'dine_in',
             'items_count'    => $t->items_count,
@@ -297,6 +298,7 @@ class ManagerDashboardService
                 'discount_type'   => $t->discount_type,
                 'discount_amount' => (float) $t->discount_amount,
                 'total_amount'    => (float) $t->total_amount,
+                'refunded_amount' => (float) $t->refunded_amount,
                 'payment'         => $payment ? [
                     'method'           => $payment->payment_method_type,
                     'reference_number' => $payment->payment_instrument,
@@ -309,6 +311,7 @@ class ManagerDashboardService
                     'size_name'  => $i->size_name,
                     'temperature' => $i->temperature,
                     'quantity'   => $i->quantity,
+                    'refunded_quantity' => (int) $i->refunded_quantity,
                     'unit_price' => (float) $i->unit_price,
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),
                     'addons'     => $i->addons->map(fn ($a) => [

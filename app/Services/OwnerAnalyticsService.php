@@ -182,16 +182,16 @@ class OwnerAnalyticsService
             'discount_type'   => (float) $t->discount_amount > 0 ? $t->discount_type : null,
             'discount_amount' => round((float) $t->discount_amount, 2),
             'total_amount'    => round((float) $t->total_amount, 2),
+            'refunded_amount' => round((float) $t->refunded_amount, 2),
             'status'          => $t->status,
             'refund'          => $this->refundInfo($t),
         ];
     }
 
-    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
-    /** When a sale left the settled state (refund, void). Null while it still counts as income. */
+    /** When a sale was last refunded or voided. Null while nothing was taken off it. */
     private function changedAt(Transaction $t): ?string
     {
-        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true)) {
+        if (in_array($t->status, OwnerAnalyticsRepository::SETTLED, true) && (float) $t->refunded_amount <= 0) {
             return null;
         }
 

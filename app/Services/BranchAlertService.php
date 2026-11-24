@@ -324,16 +324,16 @@ class BranchAlertService
     }
 
     /** Tell the branch's other managers; the one who approved it already knows. */
-    public function refundApproved(CafeBranch $branch, Transaction $transaction, User $approver, ?string $reason): void
+    public function refundApproved(CafeBranch $branch, Transaction $transaction, User $approver, ?string $reason, ?float $amount = null): void
     {
-        $this->safely('refund', function () use ($branch, $transaction, $approver, $reason) {
+        $this->safely('refund', function () use ($branch, $transaction, $approver, $reason, $amount) {
             $managers = $this->repo->activeManagersAtBranch($branch->branch_id)
                 ->reject(fn (User $u) => $u->user_id === $approver->user_id);
 
             $this->notifications->notifyUsers($managers, BranchNotice::refundApproved(
                 $branch->uuid,
                 (string) $transaction->receipt_number,
-                number_format((float) $transaction->total_amount, 2),
+                number_format($amount ?? (float) $transaction->total_amount, 2), // what this refund gave back
                 trim("{$approver->firstname} {$approver->lastname}"),
                 $reason ? trim($reason) : null,
             ));

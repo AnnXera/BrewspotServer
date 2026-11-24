@@ -110,10 +110,10 @@ class ManagerDashboardRepository
             ->whereDate('created_at', $day)
             ->selectRaw("
                 COUNT(*) as total_count,
-                SUM(CASE WHEN status IN ('completed', 'paid') THEN 1 ELSE 0 END) as completed_count,
+                SUM(CASE WHEN status IN ('completed', 'paid', 'partially_refunded') THEN 1 ELSE 0 END) as completed_count,
                 SUM(CASE WHEN status = 'void' THEN 1 ELSE 0 END) as void_count,
-                SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) as refunded_count,
-                COALESCE(SUM(CASE WHEN status IN ('completed', 'paid') THEN total_amount ELSE 0 END), 0) as completed_amount
+                SUM(CASE WHEN status IN ('refunded', 'partially_refunded') THEN 1 ELSE 0 END) as refunded_count,
+                COALESCE(SUM(CASE WHEN status IN ('completed', 'paid', 'partially_refunded') THEN total_amount - refunded_amount ELSE 0 END), 0) as completed_amount
             ")
             ->first();
     }

@@ -63,6 +63,7 @@ class SpoilageTest extends TestCase
 
         $this->manager = $this->makeUser('Manager');
         CafeStaff::create(['user_id' => $this->manager->user_id, 'branch_id' => $this->branch->branch_id, 'employment_status' => 'active']);
+        app(StaffPinService::class)->setPin($this->manager, '654321'); // approves spoilage on the register
 
         $this->cashier = $this->makeUser('Cashier');
         CafeStaff::create(['user_id' => $this->cashier->user_id, 'branch_id' => $this->branch->branch_id, 'employment_status' => 'active']);
@@ -82,6 +83,7 @@ class SpoilageTest extends TestCase
             ->assertJsonPath('log.reason', 'dropped')
             ->assertJsonPath('log.menu_item.menu_name', 'Latte')
             ->assertJsonPath('log.logged_by', "{$this->cashier->firstname} {$this->cashier->lastname}")
+            ->assertJsonPath('log.approved_by', "{$this->manager->firstname} {$this->manager->lastname}")
             ->assertJsonPath('log.device_name', 'Front Counter');
 
         $this->api('POST', '/api/pos/device/spoilage', $device, ['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1])->assertCreated();
@@ -108,6 +110,8 @@ class SpoilageTest extends TestCase
         $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 2])->assertStatus(422); // only 1 left
         $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 0])->assertStatus(422);
         $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1, 'reason' => 'stolen'])->assertStatus(422);
+        $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1, 'reason' => null])
+            ->assertStatus(422)->assertJsonPath('message', 'Pick a reason for the spoilage.');
 
         $noServing = MenuItem::create(['cafe_id' => $this->cafe->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 120, 'is_available' => true]);
         $log(['menu_item_uuid' => $noServing->uuid, 'quantity' => 1])->assertStatus(422);
@@ -120,6 +124,28 @@ class SpoilageTest extends TestCase
         $log(['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1])->assertForbidden();
 
         $this->assertSame(0, ServingSpoilageLog::count());
+    }
+
+    public function test_spoilage_needs_a_manager_or_owner_pin(): void
+    {
+        $serving = $this->makeServing(['expected_servings' => 10]);
+        $device  = $this->unlockedDevice();
+        $log     = fn (array $extra) => $this->api('POST', '/api/pos/device/spoilage', $device, ['menu_item_uuid' => $this->latte->uuid, 'quantity' => 1, ...$extra]);
+
+        // No approver, a wrong PIN, and a cashier (not a manager) are all turned away.
+        $log(['manager_uuid' => null, 'pin' => null])->assertStatus(422);
+        $log(['manager_uuid' => $this->manager->uuid, 'pin' => '000000'])->assertStatus(422);
+        $log(['manager_uuid' => $this->cashier->uuid, 'pin' => '123456'])->assertForbidden();
+        $this->assertSame(0, ServingSpoilageLog::count());
+        $this->assertSame(0, $serving->fresh()->spoilage_qty);
+
+        // The owner can approve too.
+        app(StaffPinService::class)->setPin($this->owner, '112233');
+        $log(['manager_uuid' => $this->owner->uuid, 'pin' => '112233'])
+            ->assertCreated()
+            ->assertJsonPath('log.approved_by', "{$this->owner->firstname} {$this->owner->lastname}");
+
+        $this->assertSame($this->owner->user_id, ServingSpoilageLog::sole()->approved_by);
     }
 
     public function test_items_in_sizes_need_the_size_and_keep_its_price(): void
@@ -247,6 +273,16 @@ class SpoilageTest extends TestCase
     private function api(string $method, string $uri, string $token, array $data = []): TestResponse
     {
         $this->app['auth']->forgetGuards();
+
+        // Spoilage on the register needs a reason and the branch manager's approval; filled in unless a test sets them.
+        if ($method === 'POST' && $uri === '/api/pos/device/spoilage') {
+            if (! array_key_exists('manager_uuid', $data)) {
+                $data += ['manager_uuid' => $this->manager->uuid, 'pin' => '654321'];
+            }
+            if (! array_key_exists('reason', $data)) {
+                $data['reason'] = 'expired';
+            }
+        }
 
         return $this->withHeader('Authorization', "Bearer {$token}")->json($method, $uri, $data);
     }

@@ -25,6 +25,7 @@ class ServingSpoilageLogResource extends JsonResource
             'reason'       => $this->reason,
             'logged_by'    => $staff ? trim("{$staff->firstname} {$staff->lastname}") : null,
             'device_name'  => $this->device?->name,
+            'approved_by'  => $this->approvedBy ? trim("{$this->approvedBy->firstname} {$this->approvedBy->lastname}") : null,
             'voided_at'    => $this->voided_at?->toISOString(),
             'voided_by'    => $this->voidedBy ? trim("{$this->voidedBy->firstname} {$this->voidedBy->lastname}") : null,
             'created_at'   => $this->created_at?->toISOString(),

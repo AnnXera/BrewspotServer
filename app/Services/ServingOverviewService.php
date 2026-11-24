@@ -208,7 +208,7 @@ class ServingOverviewService
                 'order_number' => sprintf('ODR-%s-%04d', $line->transaction->created_at->format('Y'), $line->transaction_id),
                 'menu_name'    => $item?->menu_name,
                 'picture'      => $item?->picture ? Storage::disk('public')->url($item->picture) : null,
-                'quantity'     => $line->quantity,
+                'quantity'     => $line->refundableQuantity(), // what was kept after item refunds
                 'sold_at'      => $line->transaction->created_at->toISOString(),
             ];
         });
@@ -233,14 +233,16 @@ class ServingOverviewService
             return ['success' => false, 'http' => 404, 'message' => 'Serving log entry not found for today.'];
         }
 
-        $qty = max(1, (int) $line->quantity);
+        // Recorded for the whole line; partly refunded lines count only what was kept.
+        $sold = max(1, (int) $line->quantity);
+        $qty  = max(1, $line->refundableQuantity());
 
         $ingredients = $line->consumptionLogs
             ->groupBy(fn ($log) => $log->ingredient_name . '|' . $log->unit)
-            ->map(function (Collection $logs) use ($qty) {
+            ->map(function (Collection $logs) use ($qty, $sold) {
                 $first    = $logs->first();
                 $measured = ! in_array($first->unit, Ingredient::UNMEASURED_UNITS, true);
-                $total    = round((float) $logs->sum('quantity_consumed'), 2);
+                $total    = round((float) $logs->sum('quantity_consumed') * $qty / $sold, 2);
 
                 return [
                     'name'        => $first->ingredient_name,
@@ -263,7 +265,7 @@ class ServingOverviewService
                 'menu_name'    => $item?->menu_name,
                 'picture'      => $item?->picture ? Storage::disk('public')->url($item->picture) : null,
                 'size_name'    => $line->size_name,
-                'quantity'     => $line->quantity,
+                'quantity'     => $line->refundableQuantity(),
                 'sold_at'      => $line->transaction->created_at->toISOString(),
                 'addons'       => $line->addons->map(fn ($a) => ['name' => $a->addon_name, 'quantity' => (int) $a->quantity])->values(),
             ],

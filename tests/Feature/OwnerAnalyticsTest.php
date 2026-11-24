@@ -147,6 +147,65 @@ class OwnerAnalyticsTest extends TestCase
             ->assertJsonPath('series.11.end', '2026-10-16');
     }
 
+    public function test_partly_refunded_sales_count_only_what_was_kept(): void
+    {
+        // 2 lattes + 1 bagel = 320; one latte refunded (120), so 200 kept.
+        [$latteLine] = $this->sale($this->main, '2026-10-15 09:00', [[$this->latte, 2], [$this->bagel, 1]], 'cash');
+        \App\Models\IngredientConsumptionLog::create(['transaction_item_id' => $latteLine->transaction_item_id, 'ingredient_name' => 'Espresso', 'quantity_consumed' => 4, 'unit' => 'shots']);
+
+        // Refunded before it was made: its servings went back on sale (restocked).
+        $latteLine->update(['refunded_quantity' => 1]);
+        $latteLine->transaction->update(['status' => Transaction::PARTIALLY_REFUNDED, 'refunded_amount' => 120]);
+        $event = $latteLine->transaction->events()->create(['event' => 'refunded', 'reason' => 'Not made', 'restocked' => true]);
+        $event->items()->create(['transaction_item_id' => $latteLine->transaction_item_id, 'quantity' => 1, 'amount' => 120]);
+
+        $this->api('/api/owner/analytics/sales?from=2026-10-10&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonPath('summary.orders', 1)
+            ->assertJsonPath('summary.revenue', 200)
+            ->assertJsonPath('summary.items_sold', 2)
+            ->assertJsonPath('summary.voided_orders', 0)   // not refunded in full
+            ->assertJsonPath('summary.voided_amount', 120);
+
+        $this->api('/api/owner/analytics/menu?from=2026-10-10&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonPath('items.0.name', 'Latte')
+            ->assertJsonPath('items.0.quantity', 1);
+
+        $this->api('/api/owner/analytics/operations?from=2026-10-10&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonPath('ingredients.0.name', 'Espresso')
+            ->assertJsonPath('ingredients.0.quantity', 2);   // half the line was kept
+
+        $this->api('/api/owner/analytics/transactions?from=2026-10-10&to=2026-10-16&status=refunded')
+            ->assertOk()
+            ->assertJsonPath('transactions.0.status', 'partially_refunded')
+            ->assertJsonPath('transactions.0.refunded_amount', 120);
+    }
+
+    public function test_made_items_count_toward_ingredients_even_when_refunded(): void
+    {
+        // Sale A: 2 lattes, 1 refunded after it was made. Sale B: 1 latte refunded in full, made.
+        // Sale C: 1 latte refunded in full, never made. Each latte uses 2 shots.
+        [$a] = $this->sale($this->main, '2026-10-15 09:00', [[$this->latte, 2]], 'cash');
+        [$b] = $this->sale($this->main, '2026-10-15 10:00', [[$this->latte, 1]], 'cash');
+        [$c] = $this->sale($this->main, '2026-10-15 11:00', [[$this->latte, 1]], 'cash');
+
+        foreach ([[$a, 4, 1, Transaction::PARTIALLY_REFUNDED, false], [$b, 2, 1, 'refunded', false], [$c, 2, 1, 'refunded', true]] as [$line, $shots, $qty, $status, $restocked]) {
+            \App\Models\IngredientConsumptionLog::create(['transaction_item_id' => $line->transaction_item_id, 'ingredient_name' => 'Espresso', 'quantity_consumed' => $shots, 'unit' => 'shots']);
+            $line->update(['refunded_quantity' => $qty]);
+            $line->transaction->update(['status' => $status, 'refunded_amount' => 120]);
+            $event = $line->transaction->events()->create(['event' => 'refunded', 'reason' => 'Test', 'restocked' => $restocked]);
+            $event->items()->create(['transaction_item_id' => $line->transaction_item_id, 'quantity' => $qty, 'amount' => 120]);
+        }
+
+        // A: 4 shots (both made), B: 2 (made), C: 0 (never made) = 6.
+        $this->api('/api/owner/analytics/operations?from=2026-10-10&to=2026-10-16')
+            ->assertOk()
+            ->assertJsonPath('ingredients.0.name', 'Espresso')
+            ->assertJsonPath('ingredients.0.quantity', 6);
+    }
+
     public function test_menu_lists_items_unsold_items_and_add_ons(): void
     {
         $line = $this->sale($this->main, '2026-10-15 09:00', [[$this->latte, 2, 'Large']], 'cash');

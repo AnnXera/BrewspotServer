@@ -30,6 +30,7 @@ class ServingSpoilageLog extends Model
         'size_name',
         'staff_id',
         'device_id',
+        'approved_by', // manager or owner who approved it with their PIN
         'quantity',
         'unit_value',
         'reason',
@@ -66,6 +67,12 @@ class ServingSpoilageLog extends Model
     public function voidedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'voided_by', 'user_id');
+    }
+
+    /** The manager or owner who approved the entry with their PIN. */
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by', 'user_id');
     }
 
     public function scopeActive(Builder $query): Builder

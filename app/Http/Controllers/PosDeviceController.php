@@ -181,7 +181,8 @@ class PosDeviceController extends Controller
             $request->validated('manager_uuid'),
             $request->validated('pin'),
             $request->validated('reason'),
-            $request->boolean('restock')
+            $request->boolean('restock'),
+            $request->validated('items') // null: refund everything left
         ));
     }
 

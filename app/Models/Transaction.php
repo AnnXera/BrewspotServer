@@ -29,6 +29,18 @@ class Transaction extends Model
 
     public const ORDER_TYPES = ['dine_in', 'take_out', 'delivery'];
 
+    /** Some items refunded; the rest is still a sale and counts as income (total_amount - refunded_amount). */
+    public const PARTIALLY_REFUNDED = 'partially_refunded';
+
+    /** Statuses that count as income. Reports subtract refunded_amount from total_amount. */
+    public const SETTLED = ['completed', 'paid', self::PARTIALLY_REFUNDED];
+
+    /** Money this sale still brings in after refunds. */
+    public function netAmount(): float
+    {
+        return round((float) $this->total_amount - (float) $this->refunded_amount, 2);
+    }
+
     public function getRouteKeyName(): string
     {
         return 'uuid';
@@ -40,6 +52,7 @@ class Transaction extends Model
         'branch_id',
         'staff_id',
         'total_amount',
+        'refunded_amount', // running money refunded, item by item
         'discount_type',
         'discount_amount',
         'discount_id_number',
@@ -51,6 +64,7 @@ class Transaction extends Model
 
     protected $casts = [
         'total_amount' => 'decimal:2',
+        'refunded_amount' => 'decimal:2',
     ];
 
     protected static function booted(): void

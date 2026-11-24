@@ -9,6 +9,8 @@ use App\Models\InventoryServing;
 use App\Models\MenuBranch;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
+use App\Models\Transaction;
+use App\Models\TransactionEventItem;
 use App\Models\TransactionItem;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -125,15 +127,21 @@ class InventoryServingRepository
      */
     public function ingredientUsageForDate(int $branchId, Carbon $date): Collection
     {
+        // Made items used their ingredients even when refunded afterwards; only refunds of
+        // items never made take theirs back (see TransactionEventItem::refundsPerLine).
         return DB::table('ingredient_consumption_logs as l')
             ->join('transaction_items as ti', 'ti.transaction_item_id', '=', 'l.transaction_item_id')
             ->join('transactions as t', 't.transaction_id', '=', 'ti.transaction_id')
+            ->leftJoinSub(TransactionEventItem::refundsPerLine(), 'r', 'r.transaction_item_id', '=', 'ti.transaction_item_id')
             ->where('t.branch_id', $branchId)
-            ->where('t.status', 'completed')
+            ->where(fn ($q) => $q
+                ->whereIn('t.status', Transaction::SETTLED)
+                ->orWhere(fn ($r) => $r->where('t.status', 'refunded')->where('r.tracked', '>', 0)))
+            ->whereRaw('ti.quantity > COALESCE(r.unmade, 0)')
             ->whereBetween('t.created_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()])
             ->whereNotIn('l.unit', Ingredient::UNMEASURED_UNITS)
             ->groupBy('l.ingredient_name', 'l.unit')
-            ->selectRaw('l.ingredient_name as name, l.unit, SUM(l.quantity_consumed) as quantity')
+            ->selectRaw('l.ingredient_name as name, l.unit, SUM(l.quantity_consumed * (ti.quantity - COALESCE(r.unmade, 0)) / ti.quantity) as quantity')
             ->get();
     }
 
@@ -145,8 +153,9 @@ class InventoryServingRepository
         return TransactionItem::query()
             ->whereHas('transaction', fn ($q) => $q
                 ->where('branch_id', $branchId)
-                ->where('status', 'completed')
+                ->whereIn('status', Transaction::SETTLED)
                 ->whereBetween('created_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()]))
+            ->whereColumn('quantity', '>', 'refunded_quantity') // fully refunded lines leave the log
             ->with(['transaction', 'menuItem' => fn ($q) => $q->withTrashed()])
             ->latest('transaction_item_id')
             ->paginate($perPage);
@@ -161,8 +170,9 @@ class InventoryServingRepository
             ->where('uuid', $uuid)
             ->whereHas('transaction', fn ($q) => $q
                 ->where('branch_id', $branchId)
-                ->where('status', 'completed')
+                ->whereIn('status', Transaction::SETTLED)
                 ->whereBetween('created_at', [$date->copy()->startOfDay(), $date->copy()->endOfDay()]))
+            ->whereColumn('quantity', '>', 'refunded_quantity')
             ->with(['transaction', 'addons', 'consumptionLogs', 'menuItem' => fn ($q) => $q->withTrashed()])
             ->first();
     }
