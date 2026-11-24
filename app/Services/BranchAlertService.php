@@ -323,6 +323,22 @@ class BranchAlertService
         });
     }
 
+    /** The owner changed the branch's contact details or picture: tell its active managers. */
+    public function branchDetailsUpdated(CafeBranch $branch, User $actor, array $fields): void
+    {
+        $this->safely('branch_details', function () use ($branch, $actor, $fields) {
+            $managers = $this->repo->activeManagersAtBranch($branch->branch_id)
+                ->reject(fn (User $u) => $u->user_id === $actor->user_id);
+
+            $this->notifications->notifyUsers($managers, BranchNotice::detailsUpdated(
+                $branch->uuid,
+                $branch->branch_name,
+                trim("{$actor->firstname} {$actor->lastname}"),
+                $fields,
+            ));
+        });
+    }
+
     /** Tell the branch's other managers; the one who approved it already knows. */
     public function refundApproved(CafeBranch $branch, Transaction $transaction, User $approver, ?string $reason, ?float $amount = null): void
     {

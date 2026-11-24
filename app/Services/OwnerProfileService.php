@@ -150,9 +150,21 @@ class OwnerProfileService
             ];
         }
 
+        // The latest admin review of this branch, so the page can show why it was
+        // rejected and whether it may be edited and resubmitted.
+        $review = \App\Models\ApprovalList::where('branch_id', $branch->branch_id)->latest('approval_id')->first();
+
         return [
             'success' => true,
             'branch'  => new CafeBranchResource($branch),
+            'review'  => $review ? [
+                'status'       => $review->status, // pending_approval | approved | rejected | withdrawn
+                'reason'       => $review->reason,
+                'can_resubmit' => (bool) $review->can_resubmit,
+                'submitted_at' => $review->created_at?->toISOString(),
+                'reviewed_at'  => $review->reviewed_at?->toISOString(),
+                'resubmitted'  => $review->status === 'pending_approval' && $review->isResubmission(),
+            ] : null,
         ];
     }
 

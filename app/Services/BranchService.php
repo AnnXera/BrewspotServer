@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\CafeBranchResource;
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Notifications\BranchSubmittedForApproval;
 
@@ -33,8 +34,16 @@ class BranchService
     public function __construct(
         private readonly BranchRepository $repo,
         private readonly SubscriptionRepository $subscriptionRepo,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly ActivityLogService $activity,
+        private readonly BranchAlertService $alerts
     ) {}
+
+    /** Contact fields the owner edits without admin review, with their audit-log labels. */
+    private const CONTACT_FIELDS = [
+        'cafe_email'       => 'Email',
+        'cafe_phonenumber' => 'Phone number',
+    ];
 
     public function createBranch(User $owner, array $payload): array
     {
@@ -48,31 +57,8 @@ class BranchService
             return ['success' => false, 'message' => 'No cafe found for this account.'];
         }
 
-        $subscription = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
-
-        if (! $subscription) {
-            Log::channel('owner')->warning('Branch creation blocked — no active subscription.', [
-                'owner_uuid' => $owner->uuid,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'You need an active subscription plan before adding branches.',
-            ];
-        }
-
-        $plan = $subscription->plan;
-
-        if (! $plan || ! $plan->load('features')->hasFeature('multi_branch')) {
-            Log::channel('owner')->warning('Branch creation blocked — plan does not include multi_branch feature.', [
-                'owner_uuid' => $owner->uuid,
-                'plan'       => $plan?->sub_name,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => "Your current plan ({$plan?->sub_name}) does not support multiple branches. Upgrade to Premium or higher to add more branches.",
-            ];
+        if ($blocked = $this->multiBranchBlock($owner)) {
+            return ['success' => false, 'message' => $blocked];
         }
 
         $result = [];
@@ -146,6 +132,142 @@ class BranchService
     }
 
     /**
+     * Why the owner can't submit a side branch right now (no running subscription, or a
+     * plan without multi_branch), or null when they can.
+     */
+    private function multiBranchBlock(User $owner): ?string
+    {
+        $subscription = $this->subscriptionRepo->findCurrentByUserId($owner->user_id);
+
+        if (! $subscription) {
+            Log::channel('owner')->warning('Branch submission blocked — no active subscription.', [
+                'owner_uuid' => $owner->uuid,
+            ]);
+
+            return 'You need an active subscription plan before adding branches.';
+        }
+
+        $plan = $subscription->plan;
+
+        if (! $plan || ! $plan->load('features')->hasFeature('multi_branch')) {
+            Log::channel('owner')->warning('Branch submission blocked — plan does not include multi_branch feature.', [
+                'owner_uuid' => $owner->uuid,
+                'plan'       => $plan?->sub_name,
+            ]);
+
+            return "Your current plan ({$plan?->sub_name}) does not support multiple branches. Upgrade to Premium or higher to add more branches.";
+        }
+
+        return null;
+    }
+
+    /**
+     * An owner corrects a rejected side branch and sends it back for review. Only
+     * allowed when the admin let them resubmit. The branch keeps its uuid; a new
+     * approval entry is added, so the history shows both the rejection and this.
+     */
+    public function resubmitBranch(User $owner, string $branchUuid, array $payload): array
+    {
+        $branch = $this->repo->findByUuidForOwner($owner->user_id, $branchUuid);
+
+        if (! $branch) {
+            return ['success' => false, 'message' => 'Branch not found.'];
+        }
+
+        $latest = $this->repo->latestApproval($branch->branch_id);
+
+        if ($branch->branch_type !== 'side' || $branch->status !== 'rejected' || $latest?->status !== 'rejected') {
+            return ['success' => false, 'message' => 'Only a rejected branch can be resubmitted.'];
+        }
+
+        if (! $latest->can_resubmit) {
+            return ['success' => false, 'message' => 'This rejection is final, so the branch cannot be resubmitted.'];
+        }
+
+        if ($blocked = $this->multiBranchBlock($owner)) {
+            return ['success' => false, 'message' => $blocked];
+        }
+
+        if (! isset($payload['bir_file']) && ! $branch->documents->firstWhere('doc_type', 'BIR')) {
+            return [
+                'success' => false,
+                'message' => 'Please upload the BIR certificate for this branch.',
+                'errors'  => ['bir_file' => ['BIR file is required.']],
+            ];
+        }
+
+        $cafe = $branch->cafe;
+        $approval = null;
+
+        try {
+            DB::transaction(function () use ($owner, $cafe, $branch, $payload, &$approval) {
+                $branchFolder = "users/{$owner->uuid}/cafes/{$cafe->uuid}/branches/{$branch->uuid}";
+
+                $updates = [
+                    'branch_name'      => $payload['branch_name'],
+                    'address'          => $payload['address'],
+                    'cafe_email'       => $payload['cafe_email'],
+                    'cafe_phonenumber' => $payload['cafe_phonenumber'],
+                    'status'           => 'pending_approval',
+                ];
+
+                if (isset($payload['cafe_picture'])) {
+                    if ($branch->cafe_picture) {
+                        Storage::disk('public')->delete($branch->cafe_picture);
+                    }
+                    $updates['cafe_picture'] = $this->storeFile($payload['cafe_picture'], "{$branchFolder}/cafe_pictures", 'public');
+                }
+
+                $this->repo->update($branch, $updates);
+
+                // BIR details are always resent; the file only when a new one was chosen.
+                $birDetails = [
+                    'registered_at' => $payload['bir_registered_at'],
+                    'expired_at'    => $payload['bir_expired_at'] ?? null,
+                    'tin_number'    => $payload['tin_number'],
+                    'vat'           => $payload['vat'],
+                ];
+                $existingBir = $branch->documents->firstWhere('doc_type', 'BIR');
+
+                if (isset($payload['bir_file'])) {
+                    if ($existingBir?->file) {
+                        Storage::disk('local')->delete($existingBir->file);
+                    }
+                    $path = $this->storeFile($payload['bir_file'], "{$branchFolder}/branch_documents");
+                    $this->repo->updateDocument($branch->branch_id, 'BIR', $path, $birDetails);
+                } else {
+                    $existingBir->update($birDetails); // checked above: one exists
+                }
+
+                $approval = $this->repo->createApprovalEntry($owner->user_id, $cafe->cafe_id, $branch->branch_id);
+            });
+        } catch (\Throwable $e) {
+            Log::channel('owner')->error('Branch resubmission failed.', [
+                'owner_uuid'  => $owner->uuid,
+                'branch_uuid' => $branchUuid,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => 'Something went wrong while resubmitting the branch. Please try again.'];
+        }
+
+        $branch->refresh();
+
+        Log::channel('owner')->info('Side branch resubmitted for approval.', [
+            'owner_uuid'  => $owner->uuid,
+            'branch_uuid' => $branch->uuid,
+        ]);
+
+        $this->notifications->notifyAdmins(new BranchSubmittedForApproval($owner, $cafe, $branch, $approval, resubmitted: true));
+
+        return [
+            'success' => true,
+            'message' => 'Branch resubmitted. Please wait for admin approval.',
+            'branch'  => new CafeBranchResource($branch->load('documents')),
+        ];
+    }
+
+    /**
      * Update branch details and/or toggle status (active ↔ inactive).
      * Only branches with an owner-editable status can be updated.
      */
@@ -182,6 +304,17 @@ class BranchService
             }
         }
 
+        // What changed in the contact details, for the activity log and the managers' notice.
+        $changes = [];
+        foreach (self::CONTACT_FIELDS as $field => $label) {
+            if (isset($payload[$field]) && $payload[$field] !== $branch->{$field}) {
+                $changes[] = ['field' => $label, 'before' => $branch->{$field}, 'after' => $payload[$field]];
+            }
+        }
+        if (isset($payload['cafe_picture'])) {
+            $changes[] = ['field' => 'Picture'];
+        }
+
         try {
             $result = [];
 
@@ -190,11 +323,10 @@ class BranchService
                 $branchFolder = "users/{$owner->uuid}/cafes/{$cafe->uuid}/branches/{$branch->uuid}";
 
                 // Collect basic field updates
+                // Name and address are deliberately absent (BIR-registered; admin-only).
                 $updates = array_filter([
-                    'branch_name'      => $payload['branch_name'] ?? null,
                     'cafe_email'       => $payload['cafe_email'] ?? null,
                     'cafe_phonenumber' => $payload['cafe_phonenumber'] ?? null,
-                    'address'          => $payload['address'] ?? null,
                     'status'           => $payload['status'] ?? null,
                 ], fn ($v) => $v !== null);
 
@@ -259,6 +391,15 @@ class BranchService
                 ];
             });
 
+            // After commit, so a rolled-back edit is never logged or announced.
+            if ($changes) {
+                $lower = array_map('strtolower', array_column($changes, 'field'));
+
+                $this->activity->branch($owner, $branch, ActivityLog::BRANCH_DETAILS_UPDATED,
+                    'Updated branch ' . implode(', ', $lower), ['changes' => $changes]);
+                $this->alerts->branchDetailsUpdated($branch, $owner, $lower);
+            }
+
             return $result;
 
         } catch (\Throwable $e) {
@@ -301,7 +442,11 @@ class BranchService
             ];
         }
 
-        if (! in_array($branch->status, self::OWNER_EDITABLE_STATUSES, true)) {
+        // Besides active/inactive, an owner may withdraw a branch still under review
+        // or remove one that was rejected. Suspended branches stay admin-controlled.
+        $deletable = [...self::OWNER_EDITABLE_STATUSES, 'pending_approval', 'rejected'];
+
+        if (! in_array($branch->status, $deletable, true)) {
             Log::channel('owner')->warning('Branch deletion blocked — status not deletable by owner.', [
                 'owner_uuid'  => $owner->uuid,
                 'branch_uuid' => $branch->uuid,
@@ -314,9 +459,22 @@ class BranchService
             ];
         }
 
-        // Soft-delete documents first, then the branch
-        $branch->documents()->delete();
-        $branch->delete();
+        $withdrawn = $branch->status === 'pending_approval';
+
+        DB::transaction(function () use ($branch, $withdrawn) {
+            // A pending review is closed as withdrawn so it leaves the admin's queue
+            // but stays in the owner's application history.
+            if ($withdrawn) {
+                $pending = $this->repo->latestApproval($branch->branch_id);
+                if ($pending?->status === 'pending_approval') {
+                    $pending->update(['status' => 'withdrawn']);
+                }
+            }
+
+            // Soft-delete documents first, then the branch
+            $branch->documents()->delete();
+            $branch->delete();
+        });
 
         Log::channel('owner')->info('Branch soft-deleted.', [
             'owner_uuid'  => $owner->uuid,
@@ -326,7 +484,9 @@ class BranchService
 
         return [
             'success' => true,
-            'message' => "Branch '{$branch->branch_name}' has been deleted.",
+            'message' => $withdrawn
+                ? "Branch '{$branch->branch_name}' was withdrawn from review and removed."
+                : "Branch '{$branch->branch_name}' has been deleted.",
         ];
     }
 

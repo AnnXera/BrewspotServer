@@ -98,6 +98,12 @@ class ActivityLogService
         $this->forBranch($actor, $branch, ActivityLog::CATEGORY_RESERVATIONS, $action, $description, $meta);
     }
 
+    /** A change to the branch's own details (contact email, phone number, picture). */
+    public function branch(User $actor, CafeBranch $branch, string $action, string $description, array $meta = []): void
+    {
+        $this->forBranch($actor, $branch, ActivityLog::CATEGORY_BRANCH, $action, $description, $meta);
+    }
+
     /**
      * A menu change. Cafe-wide (adding, editing or deleting an item or category) when
      * $branch is null; tied to one branch for availability at that branch.

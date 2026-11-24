@@ -71,6 +71,53 @@ class OwnerManagementService
     /**
      * Get full owner profile with cafes, branches, documents, subscription, and payment history.
      */
+    /**
+     * The owner's applications and branch submissions, newest first. `kind` is
+     * application (first main-branch application), resubmission (a main-branch
+     * application after an earlier rejection), branch (a side branch) or
+     * branch_resubmission (a side branch sent back after it was rejected).
+     * `status` is pending_approval | approved | rejected | withdrawn.
+     */
+    private function applicationHistory(int $userId): array
+    {
+        $mainRejected   = false;
+        $branchRejected = []; // branch_id => true once that side branch was rejected
+        $rows = [];
+
+        foreach ($this->repo->approvalHistoryForOwner($userId) as $entry) {
+            $isMain = ($entry->branch?->branch_type ?? 'main') === 'main';
+            $kind   = $isMain
+                ? ($mainRejected ? 'resubmission' : 'application')
+                : (isset($branchRejected[$entry->branch_id]) ? 'branch_resubmission' : 'branch');
+
+            if ($entry->status === 'rejected') {
+                if ($isMain) {
+                    $mainRejected = true;
+                } else {
+                    $branchRejected[$entry->branch_id] = true;
+                }
+            }
+
+            $reviewer = $entry->reviewer
+                ? trim("{$entry->reviewer->firstname} {$entry->reviewer->lastname}")
+                : null;
+
+            $rows[] = [
+                'uuid'         => $entry->uuid,
+                'kind'         => $kind,
+                'status'       => $entry->status, // pending_approval | approved | rejected | withdrawn
+                'branch_name'  => $entry->branch?->branch_name,
+                'reason'       => $entry->reason,
+                'can_resubmit' => (bool) $entry->can_resubmit,
+                'submitted_at' => $entry->created_at?->toISOString(),
+                'reviewed_at'  => $entry->reviewed_at?->toISOString(),
+                'reviewed_by'  => $reviewer ?: null,
+            ];
+        }
+
+        return array_reverse($rows);
+    }
+
     public function getOwnerDetails(string $uuid): array
     {
         $owner = $this->repo->findOwnerByUuid($uuid);
@@ -118,6 +165,12 @@ class OwnerManagementService
                             'branch_doc_id' => $doc->branch_doc_id,
                             'doc_type'      => $doc->doc_type,
                             'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
+                            // BIR registration details (null on other document types)
+                            'tin_number'    => $doc->tin_number,
+                            'vat'           => $doc->vat, // vat-registered | non-vat
+                            'registered_at' => $doc->registered_at?->toISOString(),
+                            'expired_at'    => $doc->expired_at?->toISOString(),
+                            'uploaded_at'   => ($doc->updated_at ?? $doc->created_at)?->toISOString(),
                         ]),
                     ]),
                 ];
@@ -136,6 +189,8 @@ class OwnerManagementService
                 'payment_method' => $currentSubscription->latestPayment?->payment_instrument
                     ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayMongo' : null),
             ] : null,
+
+            'application_history' => $this->applicationHistory($owner->user_id),
 
             'payment_history' => $owner->payments->sortByDesc('created_at')->map(function ($payment) {
                 $rawId = $payment->uuid;
@@ -260,7 +315,7 @@ class OwnerManagementService
      * (e.g. a side branch). Independent of owner status — does not touch
      * the owner's User.status at all.
      */
-    public function updateBranchStatus(string $branchUuid, string $status, int $reviewerId, ?string $reason = null): array
+    public function updateBranchStatus(string $branchUuid, string $status, int $reviewerId, ?string $reason = null, bool $allowResubmit = true): array
     {
         $branch = $this->repo->findBranchByUuid($branchUuid);
 
@@ -286,7 +341,7 @@ class OwnerManagementService
         $approval = $this->repo->findLatestApprovalForBranch($branch->branch_id);
 
         if ($approval) {
-            $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason);
+            $approval = $this->repo->updateApproval($approval, $status, $reviewerId, $reason, $allowResubmit);
         }
 
         $owner = $branch->cafe->owner ?? null;
@@ -304,6 +359,8 @@ class OwnerManagementService
                     branchName: $branch->branch_name,
                     status: $status,
                     reason: $status === 'rejected' ? $reason : null,
+                    branchUuid: $branch->uuid,
+                    canResubmit: $status !== 'rejected' || $allowResubmit,
                 )
             );
         }
@@ -326,24 +383,12 @@ class OwnerManagementService
 
     public function getApplicationHistory(string $uuid): array
     {
-        $owner   = $this->repo->findOwnerByUuid($uuid); // throws ModelNotFoundException if invalid
-        $history = $this->repo->findApplicationHistory($owner->user_id);
+        $owner = $this->repo->findOwnerByUuid($uuid); // throws ModelNotFoundException if invalid
 
+        // Same entries as the owner details' application_history (one source of truth).
         return [
             'success' => true,
-            'history' => $history->map(fn ($approval) => [
-                'approval_uuid' => $approval->uuid,
-                'status'        => $approval->status,
-                'reviewed_at'   => $approval->reviewed_at?->toISOString(),
-                'reviewer'      => $approval->reviewer
-                    ? trim("{$approval->reviewer->firstname} {$approval->reviewer->lastname}")
-                    : null,
-                'cafe_name'     => $approval->cafe?->cafe_name,
-                'branch_name'   => $approval->branch?->branch_name,
-                'branch_type'   => $approval->branch?->branch_type,
-                'is_archived'   => $approval->cafe?->trashed() ?? false,
-                'submitted_at'  => $approval->created_at?->toISOString(),
-            ])->values(),
+            'history' => $this->applicationHistory($owner->user_id),
         ];
     }
 

@@ -118,6 +118,20 @@ class BranchNotice extends AppNotice
             $link);
     }
 
+    // ---- Branch details ----
+
+    /** To the branch's managers: the owner changed its contact details or picture. $fields are lowercase labels. */
+    public static function detailsUpdated(string $branchUuid, string $branchName, string $actorName, array $fields): self
+    {
+        $list = count($fields) > 1
+            ? implode(', ', array_slice($fields, 0, -1)) . ' and ' . end($fields)
+            : ($fields[0] ?? 'details');
+
+        return new self('branch_details_updated', "{$branchName} details were updated",
+            "{$actorName} (Owner) changed the branch {$list}.",
+            "/manager/cafe?branch={$branchUuid}");
+    }
+
     public static function refundApproved(string $branchUuid, string $receiptNumber, string $amount, string $approverName, ?string $reason): self
     {
         $why = $reason ? " Reason: {$reason}" : '';

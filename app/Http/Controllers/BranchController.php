@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\CheckBranchContactRequest;
+use App\Http\Requests\ResubmitBranchRequest;
 use App\Http\Requests\StoreBranchRequest;
 use App\Http\Requests\UpdateBranchRequest;
 use App\Services\BranchService;
@@ -32,6 +33,17 @@ class BranchController extends Controller
     public function checkContact(CheckBranchContactRequest $request): JsonResponse
     {
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * POST /api/owner/branches/{uuid}/resubmit
+     * Correct a rejected side branch and send it back for admin review.
+     */
+    public function resubmit(ResubmitBranchRequest $request, string $uuid): JsonResponse
+    {
+        $result = $this->service->resubmitBranch($request->user(), $uuid, $request->validated());
+
+        return response()->json($result, $result['success'] ? 200 : 422);
     }
 
     /**

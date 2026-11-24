@@ -17,7 +17,8 @@ class BranchSubmittedForApproval extends Notification
         private readonly User $owner,
         private readonly Cafe $cafe,
         private readonly CafeBranch $branch,
-        private readonly ApprovalList $approval
+        private readonly ApprovalList $approval,
+        private readonly bool $resubmitted = false // a rejected branch, edited and sent back
     ) {}
 
     public function via(object $notifiable): array
@@ -29,8 +30,10 @@ class BranchSubmittedForApproval extends Notification
     {
         return [
             'kind'          => 'branch_submission',
-            'title'         => 'New branch to review',
-            'body'          => "{$this->cafe->cafe_name} submitted {$this->branch->branch_name} for approval.",
+            'title'         => $this->resubmitted ? 'Branch resubmitted for review' : 'New branch to review',
+            'body'          => $this->resubmitted
+                ? "{$this->cafe->cafe_name} corrected and resubmitted {$this->branch->branch_name} after it was rejected."
+                : "{$this->cafe->cafe_name} submitted {$this->branch->branch_name} for approval.",
             'approval_uuid' => $this->approval->uuid,
             'owner_uuid'    => $this->owner->uuid,
         ];

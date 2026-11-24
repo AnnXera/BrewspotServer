@@ -19,11 +19,15 @@ class ActivityLog extends Model
     public const CATEGORY_EMPLOYEES   = 'employees';
     public const CATEGORY_MENU        = 'menu';
     public const CATEGORY_RESERVATIONS = 'reservations';
+    public const CATEGORY_BRANCH       = 'branch';
 
     public const CATEGORIES = [
         self::CATEGORY_AUTH, self::CATEGORY_POS, self::CATEGORY_SERVINGS, self::CATEGORY_FLOOR_PLANS,
-        self::CATEGORY_EMPLOYEES, self::CATEGORY_MENU, self::CATEGORY_RESERVATIONS,
+        self::CATEGORY_EMPLOYEES, self::CATEGORY_MENU, self::CATEGORY_RESERVATIONS, self::CATEGORY_BRANCH,
     ];
+
+    // The owner changed a branch's contact email, phone number or picture.
+    public const BRANCH_DETAILS_UPDATED = 'branch.details_updated';
 
     // Menu rows are cafe-wide (no branch) except the per-branch availability ones.
     public const MENU_ITEM_CREATED          = 'menu.item_created';
