@@ -913,9 +913,9 @@ class StaffAndPosTest extends TestCase
             ->assertSee('Removed register');
     }
 
-    public function test_voiding_a_sale_leaves_the_remaining_servings_unchanged(): void
+    public function test_voiding_a_sale_puts_its_servings_back_on_sale(): void
     {
-        // 20 planned, 1 sold = 19 left; after the void it stays 19.
+        // 20 planned, 1 sold = 19 left; after the void it is back to 20.
         $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
         \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 20]);
 
@@ -934,10 +934,112 @@ class StaffAndPosTest extends TestCase
         ])->assertOk();
 
         $serving->refresh();
-        $this->assertSame(19, $serving->remaining(), 'voiding must not put the serving back on sale');
+        $this->assertSame(20, $serving->remaining(), 'voiding puts the serving back on sale');
         $this->assertSame(0, $serving->servings_sold, 'a voided sale is not a sale');
-        $this->assertSame(1, $serving->servings_voided);
+        $this->assertSame(0, $serving->servings_voided, 'nothing stays used up');
         $this->assertSame('voided', \App\Models\Transaction::where('uuid', $sale)->value('status'));
+        $this->assertTrue((bool) \App\Models\TransactionEvent::where('event', \App\Models\TransactionEvent::VOIDED)->value('restocked'));
+    }
+
+    public function test_a_void_needs_a_reason(): void
+    {
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 5]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $sale = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 1]], 'payment_method' => 'cash', 'amount_tendered' => 200,
+        ])->assertOk()->json('transaction_uuid');
+
+        foreach ([[], ['reason' => ''], ['reason' => '   ']] as $extra) {
+            $this->api('POST', "/api/pos/device/transactions/{$sale}/void", $device, [
+                'manager_uuid' => $this->manager->uuid, 'pin' => '9999', ...$extra,
+            ])->assertStatus(422);
+        }
+
+        $this->assertSame('completed', \App\Models\Transaction::where('uuid', $sale)->value('status'));
+    }
+
+    public function test_checkout_works_out_the_discount_itself(): void
+    {
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 10]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        // PWD with a made-up amount: the server charges 20% of 240, not 200.
+        $pwd = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 2]], 'payment_method' => 'cash', 'amount_tendered' => 500,
+            'discount_type' => 'PWD', 'discount_amount' => 200, 'discount_id_number' => 'PWD-123',
+        ])->assertOk()->json('transaction_uuid');
+
+        $tx = \App\Models\Transaction::where('uuid', $pwd)->sole();
+        $this->assertEquals(48, (float) $tx->discount_amount);
+        $this->assertEquals(192, (float) $tx->total_amount);
+
+        // No discount type: any amount sent is ignored.
+        $plain = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 1]], 'payment_method' => 'cash', 'amount_tendered' => 500,
+            'discount_type' => 'none', 'discount_amount' => 50,
+        ])->assertOk()->json('transaction_uuid');
+
+        $tx = \App\Models\Transaction::where('uuid', $plain)->sole();
+        $this->assertEquals(0, (float) $tx->discount_amount);
+        $this->assertEquals(120, (float) $tx->total_amount);
+        $this->assertNull($tx->discount_type);
+    }
+
+    public function test_a_refund_needs_a_reason(): void
+    {
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Latte', 'base_price' => 120, 'is_available' => true]);
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 5]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $sale = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 1]], 'payment_method' => 'cash', 'amount_tendered' => 200,
+        ])->assertOk()->json('transaction_uuid');
+
+        foreach ([[], ['reason' => ''], ['reason' => '   ']] as $extra) {
+            $this->api('POST', "/api/pos/device/transactions/{$sale}/refund", $device, [
+                'manager_uuid' => $this->manager->uuid, 'pin' => '9999', ...$extra,
+            ])->assertStatus(422);
+        }
+        $this->assertSame('completed', \App\Models\Transaction::where('uuid', $sale)->value('status'));
+
+        $this->api('POST', "/api/pos/device/transactions/{$sale}/refund", $device, [
+            'manager_uuid' => $this->manager->uuid, 'pin' => '9999', 'reason' => 'Wrong order',
+        ])->assertOk();
+        $this->assertNotSame('completed', \App\Models\Transaction::where('uuid', $sale)->value('status'));
+    }
+
+    public function test_voiding_the_last_sale_of_a_sold_out_item_puts_it_back_on_sale(): void
+    {
+        $item = \App\Models\MenuItem::create(['cafe_id' => $this->mainBranch->cafe_id, 'menu_name' => 'Mocha', 'base_price' => 120, 'is_available' => true]);
+        \App\Models\InventoryServing::create(['men_item_id' => $item->men_item_id, 'branch_id' => $this->mainBranch->branch_id, 'date' => today(), 'expected_servings' => 1]);
+
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $this->api('POST', "/api/pos/device/staff/{$this->cashier->uuid}/unlock", $device, ['pin' => '123456'])->assertOk();
+
+        $sale = $this->api('POST', '/api/pos/device/checkout', $device, [
+            'items' => [['uuid' => $item->uuid, 'quantity' => 1]], 'payment_method' => 'cash', 'amount_tendered' => 200,
+        ])->assertOk()->json('transaction_uuid');
+
+        $serving = \App\Models\InventoryServing::sole();
+        $serving->forceFill(['is_sold_out' => true])->save(); // as when it ran out
+        $this->assertSame(0, $serving->remaining());
+
+        $this->api('POST', "/api/pos/device/transactions/{$sale}/void", $device, [
+            'manager_uuid' => $this->manager->uuid, 'pin' => '9999', 'reason' => 'Wrong item',
+        ])->assertOk();
+
+        $serving->refresh();
+        $this->assertSame(1, $serving->remaining());
+        $this->assertFalse((bool) $serving->is_sold_out);
     }
 
     public function test_checkout_finds_todays_serving_row_instead_of_duplicating_it(): void

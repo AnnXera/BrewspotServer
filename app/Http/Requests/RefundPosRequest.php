@@ -17,8 +17,16 @@ class RefundPosRequest extends FormRequest
         return [
             'manager_uuid' => ['required', 'string'],
             'pin'          => ['required', 'string'],
-            'reason'       => ['nullable', 'string', 'max:255'],
+            'reason'       => ['required', 'string', 'max:255', 'not_regex:/^\s*$/'],
             'restock'      => ['nullable', 'boolean'], // true: never made, servings go back on sale
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'reason.required'  => 'Give a reason for the refund.',
+            'reason.not_regex' => 'Give a reason for the refund.',
         ];
     }
 }

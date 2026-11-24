@@ -28,7 +28,7 @@ class InventoryServingResource extends JsonResource
             'servings_sold'     => $this->servings_sold,
             'spoilage_qty'      => $this->spoilage_qty,
             'servings_refunded' => $this->servings_refunded,
-            'servings_voided'   => $this->servings_voided, // voided at the register; still used up
+            'servings_voided'   => $this->servings_voided, // from voids before they went back on sale; still used up
             'remaining'         => $this->remaining(),
             'is_sold_out'       => $this->is_sold_out,
             'created_at'        => $this->created_at?->toISOString(),

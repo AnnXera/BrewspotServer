@@ -39,6 +39,10 @@ class PosDeviceService
     /** Sale statuses that count toward totals. Anything else (voided, refunded) is reported separately. */
     private const SETTLED_STATUSES = ['completed', 'paid'];
 
+    /** Discounts the register may apply, and their rate on the order subtotal. */
+    private const DISCOUNT_TYPES = ['PWD', 'Senior'];
+    private const DISCOUNT_RATE = 0.20;
+
     public function __construct(
         private readonly PosDeviceRepository $repo,
         private readonly StaffPinService $pins,
@@ -483,6 +487,11 @@ class PosDeviceService
             ];
         }
 
+        // PWD / Senior: 20% of the order, worked out here from the server's own prices.
+        // The amount the register sends is ignored so it can't over- or under-discount.
+        $discountType = in_array($discountType, self::DISCOUNT_TYPES, true) ? $discountType : null;
+        $discountAmount = $discountType ? round($totalAmount * self::DISCOUNT_RATE, 2) : 0.0;
+
         // No VAT: the POS is not BIR-accredited, so prices are charged as-is.
         $grandTotal = $totalAmount - $discountAmount;
 
@@ -815,9 +824,8 @@ class PosDeviceService
 
     /**
      * Void a transaction completely, requiring manager PIN authorization.
-     * Cancels the sale and marks payments voided. Servings are not put back on
-     * sale: they leave the sold count for the voided count, so what's left stays
-     * the same (20 planned, 1 sold = 19 left; after the void still 19 left).
+     * Cancels the sale and marks payments voided. Its servings go back on sale
+     * (20 planned, 1 sold = 19 left; after the void 20 left again).
      */
     public function void(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
     {
@@ -880,11 +888,11 @@ class PosDeviceService
                 'event'     => TransactionEvent::VOIDED,
                 'user_id'   => $managerUser->user_id,
                 'reason'    => !empty($reason) ? trim($reason) : null,
-                'restocked' => false,
+                'restocked' => true,
             ]);
 
-            // Off the sold count (it is no longer a sale), onto the voided count, so
-            // the servings stay used up and the remaining count does not change.
+            // A void cancels the sale, so its servings go back on sale: off the sold
+            // count, and the remaining count goes up by the same amount.
             foreach ($transaction->items as $item) {
                 $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
 
@@ -893,8 +901,13 @@ class PosDeviceService
                     continue;
                 }
 
+                $ranOut = $serving->isUsedUp();
                 $serving->servings_sold -= $qty;
-                $serving->servings_voided += $qty;
+
+                // Sold out only because it ran out (not switched off by a manager): back on sale.
+                if ($serving->is_sold_out && $ranOut && !$serving->isUsedUp()) {
+                    $serving->is_sold_out = false;
+                }
 
                 $this->sales->saveServing($serving);
             }
