@@ -40,7 +40,9 @@ class SpoilageController extends Controller
             $data['menu_item_uuid'],
             $data['size_uuid'] ?? null,
             (int) $data['quantity'],
-            $data['reason'] ?? null
+            $data['reason'] ?? null,
+            $data['manager_uuid'],
+            $data['pin']
         ), 201);
     }
 

@@ -40,7 +40,7 @@ class OwnerDashboardRepository
     public function lifetimeTotals(Collection $branchIds): array
     {
         $row = $this->completed($branchIds)
-            ->selectRaw('COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue')
+            ->selectRaw('COUNT(*) as orders, COALESCE(SUM(total_amount - refunded_amount), 0) as revenue')
             ->first();
 
         return [
@@ -56,7 +56,7 @@ class OwnerDashboardRepository
     {
         return $this->completed($branchIds)
             ->whereBetween('created_at', [$from, $to])
-            ->selectRaw('DATE(created_at) as day, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as orders, COALESCE(SUM(total_amount - refunded_amount), 0) as revenue')
             ->groupBy('day')
             ->get()
             ->keyBy(fn ($row) => (string) $row->day);
@@ -72,14 +72,15 @@ class OwnerDashboardRepository
             ->join('menu_items', 'menu_items.men_item_id', '=', 'transaction_items.men_item_id')
             ->leftJoin('menu_categories', 'menu_categories.men_category_id', '=', 'menu_items.men_category_id')
             ->whereIn('transactions.branch_id', $branchIds)
-            ->where('transactions.status', 'completed')
+            ->whereIn('transactions.status', Transaction::SETTLED)
+            ->whereColumn('transaction_items.quantity', '>', 'transaction_items.refunded_quantity')
             ->whereBetween('transactions.created_at', [$from, $to])
             ->groupBy('menu_items.men_item_id', 'menu_items.uuid', 'menu_items.menu_name', 'menu_categories.uuid', 'menu_categories.name')
             ->selectRaw('menu_items.men_item_id, menu_items.uuid, menu_items.menu_name,
                 menu_categories.uuid as category_uuid, menu_categories.name as category_name,
                 COUNT(DISTINCT transactions.transaction_id) as orders,
-                SUM(transaction_items.quantity) as quantity,
-                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                SUM(transaction_items.quantity - transaction_items.refunded_quantity) as quantity,
+                SUM((transaction_items.quantity - transaction_items.refunded_quantity) * transaction_items.unit_price) as sales')
             ->get();
     }
 
@@ -94,14 +95,15 @@ class OwnerDashboardRepository
             ->join('menu_items', 'menu_items.men_item_id', '=', 'transaction_items.men_item_id')
             ->leftJoin('menu_categories', 'menu_categories.men_category_id', '=', 'menu_items.men_category_id')
             ->whereIn('transactions.branch_id', $branchIds)
-            ->where('transactions.status', 'completed')
+            ->whereIn('transactions.status', Transaction::SETTLED)
+            ->whereColumn('transaction_items.quantity', '>', 'transaction_items.refunded_quantity')
             ->whereBetween('transactions.created_at', [$from, $to])
             ->groupBy('menu_categories.uuid', 'menu_categories.name')
             ->selectRaw('menu_categories.uuid as category_uuid, menu_categories.name as category_name,
                 COUNT(DISTINCT transactions.transaction_id) as orders,
                 COUNT(DISTINCT transaction_items.men_item_id) as items,
-                SUM(transaction_items.quantity) as quantity,
-                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                SUM(transaction_items.quantity - transaction_items.refunded_quantity) as quantity,
+                SUM((transaction_items.quantity - transaction_items.refunded_quantity) * transaction_items.unit_price) as sales')
             ->get();
     }
 
@@ -113,7 +115,7 @@ class OwnerDashboardRepository
         return $this->completed($branchIds)
             ->whereBetween('created_at', [$from, $to])
             ->groupBy('branch_id')
-            ->selectRaw('branch_id, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue')
+            ->selectRaw('branch_id, COUNT(*) as orders, COALESCE(SUM(total_amount - refunded_amount), 0) as revenue')
             ->get()
             ->keyBy('branch_id');
     }
@@ -122,6 +124,6 @@ class OwnerDashboardRepository
     {
         return Transaction::query()
             ->whereIn('branch_id', $branchIds)
-            ->where('status', 'completed');
+            ->whereIn('status', Transaction::SETTLED); // income is total_amount - refunded_amount
     }
 }

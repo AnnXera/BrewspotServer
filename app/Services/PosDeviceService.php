@@ -8,7 +8,9 @@ use App\Models\CafeStaff;
 use App\Models\PosDevice;
 use App\Models\User;
 use App\Models\MenuItem;
+use App\Models\Transaction;
 use App\Models\TransactionEvent;
+use App\Models\TransactionItem;
 use App\Repository\InventoryServingRepository;
 use App\Repository\PosDeviceRepository;
 use App\Repository\PosSaleRepository;
@@ -36,8 +38,12 @@ use Laravel\Sanctum\PersonalAccessToken;
  */
 class PosDeviceService
 {
-    /** Sale statuses that count toward totals. Anything else (voided, refunded) is reported separately. */
-    private const SETTLED_STATUSES = ['completed', 'paid'];
+    /** Sale statuses that count toward totals (net of refunds). Anything else (voided, refunded) is reported separately. */
+    private const SETTLED_STATUSES = Transaction::SETTLED;
+
+    /** Discounts the register may apply, and their rate on the order subtotal. */
+    private const DISCOUNT_TYPES = ['PWD', 'Senior'];
+    private const DISCOUNT_RATE = 0.20;
 
     public function __construct(
         private readonly PosDeviceRepository $repo,
@@ -45,7 +51,8 @@ class PosDeviceService
         private readonly InventoryServingRepository $servings,
         private readonly BranchAlertService $alerts,
         private readonly PosSaleRepository $sales,
-        private readonly ActivityLogService $activity
+        private readonly ActivityLogService $activity,
+        private readonly RegisterApprovalService $approvals
     ) {
     }
 
@@ -483,6 +490,11 @@ class PosDeviceService
             ];
         }
 
+        // PWD / Senior: 20% of the order, worked out here from the server's own prices.
+        // The amount the register sends is ignored so it can't over- or under-discount.
+        $discountType = in_array($discountType, self::DISCOUNT_TYPES, true) ? $discountType : null;
+        $discountAmount = $discountType ? round($totalAmount * self::DISCOUNT_RATE, 2) : 0.0;
+
         // No VAT: the POS is not BIR-accredited, so prices are charged as-is.
         $grandTotal = $totalAmount - $discountAmount;
 
@@ -573,8 +585,9 @@ class PosDeviceService
 
         $monthTotal = $this->sales->monthTotal($branchId, Carbon::now(), $settled);
 
-        $netTotal = (float) $todaySettled->sum('total_amount');
-        $voidTotal = (float) $todayVoided->sum('total_amount');
+        // Partly refunded sales count what they kept; what they gave back sits with the voids and refunds.
+        $netTotal = round((float) $todaySettled->sum(fn ($t) => $t->netAmount()), 2);
+        $voidTotal = round((float) $todayVoided->sum('total_amount') + (float) $todaySettled->sum('refunded_amount'), 2);
 
         return [
             'success' => true,
@@ -590,6 +603,7 @@ class PosDeviceService
                 'created_at' => $t->created_at->toISOString(),
                 'staff_name' => $t->staff ? $t->staff->user->firstname . ' ' . $t->staff->user->lastname : 'Admin',
                 'total_amount' => (float) $t->total_amount,
+                'refunded_amount' => (float) $t->refunded_amount,
                 'status' => $t->status,
                 'order_type' => $t->order_type ?: 'dine_in',
                 'items_count' => $t->items_count,
@@ -634,6 +648,7 @@ class PosDeviceService
                 'discount_id_number' => $t->discount_id_number,
                 'discount_id_image' => $this->publicDiskUrl($t->discount_id_image),
                 'total_amount' => (float) $t->total_amount,
+                'refunded_amount' => (float) $t->refunded_amount,
                 'payment' => $payment ? [
                     'method' => $payment->payment_method_type,
                     'reference_number' => $payment->payment_instrument,
@@ -646,6 +661,7 @@ class PosDeviceService
                     'size_name' => $i->size_name,
                     'temperature' => $i->temperature,
                     'quantity' => $i->quantity,
+                    'refunded_quantity' => (int) $i->refunded_quantity,
                     'unit_price' => (float) $i->unit_price, // size price plus add-ons, per drink
                     'line_total' => round((float) $i->unit_price * $i->quantity, 2),
                     'addons' => ($i->addons ?? collect())->map(fn($a) => [
@@ -696,11 +712,17 @@ class PosDeviceService
     }
 
     /**
-     * Process a refund for a completed transaction, requiring manager PIN authorization.
+     * Refund some or all of a sale's items, requiring manager PIN authorization.
+     * $items: [{uuid: transaction item uuid, quantity}]; null refunds everything not refunded yet.
      * $restock: the order was never made, so its servings go back on sale. Otherwise
      * they were made and served, and count as refunded (still used up).
+     *
+     * Each item returns its line price less its share of the sale's discount. The refund
+     * that empties the sale returns exactly what is left, so refunds add up to what was paid.
+     *
+     * @param  array<int, array{uuid: string, quantity: int}>|null  $items
      */
-    public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null, bool $restock = false): array
+    public function refund(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null, bool $restock = false, ?array $items = null): array
     {
         if (!$device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked. Please unlock the register first.'];
@@ -712,68 +734,60 @@ class PosDeviceService
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
         }
 
-        if (in_array($transaction->status, ['refunded', 'voided'], true)) {
+        if (!in_array($transaction->status, self::SETTLED_STATUSES, true)) {
             return ['success' => false, 'http' => 422, 'message' => "This transaction has already been {$transaction->status}."];
         }
 
-        $managerUser = $this->repo->findActiveUserByUuid($managerUuid);
-
-        if (!$managerUser) {
-            return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
+        // Checked before the PIN so a wrong pick doesn't cost a PIN attempt; checked again under lock.
+        $planned = $this->refundPlan($transaction, $items);
+        if (isset($planned['message'])) {
+            return ['success' => false, 'http' => 422, 'message' => $planned['message']];
         }
 
-        // Authorizing user must be an active manager at this branch or the cafe owner
-        $isBranchManager = $this->repo->isActiveBranchManager($device->branch_id, $managerUser->user_id);
-
-        $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
-
-        if (!$isBranchManager && !$isCafeOwner) {
-            return ['success' => false, 'http' => 403, 'message' => 'Only an authorized Manager or Cafe Owner can approve refunds.'];
+        // An active manager at this branch or the cafe owner, with their PIN.
+        $approval = $this->approvals->approve($device, $managerUuid, $pin, 'refunds');
+        if (!$approval['success']) {
+            return $approval;
         }
+        $managerUser = $approval['user'];
 
-        if ($managerUser->mustChangePin()) {
-            return ['success' => false, 'http' => 409, 'message' => 'Manager must change their temporary PIN before approving refunds.'];
-        }
-
-        $check = $this->pins->verify($managerUser, $pin);
-        if (!$check['success']) {
-            if (!empty($check['just_locked'])) {
-                $this->alerts->pinLocked($device->branch, $managerUser);
+        $result = DB::transaction(function () use ($transaction, $device, $managerUser, $reason, $restock, $items) {
+            $locked = $this->sales->lockForRefund($transaction);
+            if (!in_array($locked->status, self::SETTLED_STATUSES, true)) {
+                return ['message' => "This transaction has already been {$locked->status}."];
             }
 
-            return [
-                'success' => false,
-                'http' => !empty($check['locked']) ? 423 : 422,
-                'message' => $check['message'] ?? 'Incorrect manager PIN.',
-                'attempts_left' => $check['attempts_left'] ?? null,
-            ];
-        }
+            $plan = $this->refundPlan($locked, $items);
+            if (isset($plan['message'])) {
+                return $plan; // changed since the check above (another refund got there first)
+            }
 
-        DB::transaction(function () use ($transaction, $device, $managerUser, $reason, $restock) {
             $actorRole = $managerUser->roleName() ?: 'Manager';
-            $refundNote = "Refunded by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
+            $refundNote = ($plan['complete'] ? 'Refunded' : 'Partly refunded')
+                . " by {$managerUser->firstname} {$managerUser->lastname} ({$actorRole})";
             if (!empty($reason)) {
                 $refundNote .= ': ' . trim($reason);
             }
-            if ($transaction->walk_in_note) {
-                $refundNote = $transaction->walk_in_note . ' | ' . $refundNote;
+            if ($locked->walk_in_note) {
+                $refundNote = $locked->walk_in_note . ' | ' . $refundNote;
             }
 
-            // Marks the sale and its payments refunded, and records who approved it.
-            $this->sales->markRefunded($transaction, $refundNote, [
+            // The event (who approved, why, which items), the lines' refunded counts,
+            // and the sale's refunded amount and status.
+            $this->sales->recordRefund($locked, $refundNote, $plan['complete'] ? 'refunded' : Transaction::PARTIALLY_REFUNDED, $plan['amount'], [
                 'event' => TransactionEvent::REFUNDED,
                 'user_id' => $managerUser->user_id,
                 'reason' => !empty($reason) ? trim($reason) : null,
                 'restocked' => $restock,
-            ]);
+            ], $plan['lines']);
 
-            // Take the servings off the day's sold count. Made servings can't be sold
-            // again, so they move to servings_refunded and what's left stays the same;
+            // Take the refunded servings off the day's sold count. Made servings can't be
+            // sold again, so they move to servings_refunded and what's left stays the same;
             // servings never made go back on sale.
-            foreach ($transaction->items as $item) {
-                $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
+            foreach ($plan['lines'] as ['item' => $item, 'quantity' => $refundQty]) {
+                $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $locked->created_at);
 
-                $qty = $serving ? min($serving->servings_sold, (int) $item->quantity) : 0;
+                $qty = $serving ? min($serving->servings_sold, $refundQty) : 0;
                 if ($qty <= 0) {
                     continue;
                 }
@@ -792,14 +806,22 @@ class PosDeviceService
 
                 $this->sales->saveServing($serving);
             }
+
+            return $plan;
         });
 
-        $this->alerts->refundApproved($device->branch, $transaction, $managerUser, $reason);
+        if (isset($result['message'])) {
+            return ['success' => false, 'http' => 409, 'message' => $result['message']];
+        }
+
+        $this->alerts->refundApproved($device->branch, $transaction, $managerUser, $reason, $result['amount']);
 
         Log::channel('auth')->info('POS transaction refunded.', [
             'transaction_uuid' => $transaction->uuid,
             'receipt_number' => $transaction->receipt_number,
-            'amount' => $transaction->total_amount,
+            'amount' => $result['amount'],
+            'complete' => $result['complete'],
+            'items' => collect($result['lines'])->map(fn ($l) => ['uuid' => $l['item']->uuid, 'quantity' => $l['quantity']])->all(),
             'manager_uuid' => $managerUser->uuid,
             'manager_name' => "{$managerUser->firstname} {$managerUser->lastname}",
             'reason' => $reason,
@@ -808,16 +830,87 @@ class PosDeviceService
 
         return [
             'success' => true,
-            'message' => 'Transaction successfully refunded.',
+            'message' => $result['complete'] ? 'Transaction successfully refunded.' : 'Items refunded.',
+            'refunded_amount' => $result['amount'],
             'transaction' => $this->transaction($device, $transaction->uuid)['transaction'] ?? null,
         ];
     }
 
     /**
+     * What a refund would return: the lines and quantities, the money for each, and
+     * whether it empties the sale. A message instead when the pick is not valid.
+     *
+     * @param  array<int, array{uuid: string, quantity: int}>|null  $picked  null: everything left
+     * @return array{lines: array<int, array{item: TransactionItem, quantity: int, amount: float}>, amount: float, complete: bool}|array{message: string}
+     */
+    private function refundPlan(Transaction $transaction, ?array $picked): array
+    {
+        $byUuid = $transaction->items->keyBy('uuid');
+        $wanted = [];
+
+        if ($picked === null) {
+            foreach ($transaction->items as $item) {
+                if ($item->refundableQuantity() > 0) {
+                    $wanted[$item->uuid] = $item->refundableQuantity();
+                }
+            }
+        } else {
+            foreach ($picked as $row) {
+                $uuid = (string) ($row['uuid'] ?? '');
+                $qty = (int) ($row['quantity'] ?? 0);
+                if (!$byUuid->has($uuid)) {
+                    return ['message' => 'An item to refund is not on this sale.'];
+                }
+                if ($qty < 1) {
+                    continue;
+                }
+                $wanted[$uuid] = ($wanted[$uuid] ?? 0) + $qty;
+            }
+        }
+
+        if (!$wanted) {
+            return ['message' => $picked === null ? 'Everything on this sale has already been refunded.' : 'Pick at least one item to refund.'];
+        }
+
+        $lines = [];
+        foreach ($wanted as $uuid => $qty) {
+            /** @var TransactionItem $item */
+            $item = $byUuid->get($uuid);
+            if ($qty > $item->refundableQuantity()) {
+                $name = $item->menuItem?->menu_name ?? 'An item';
+                return ['message' => $item->refundableQuantity() === 0
+                    ? "{$name} has already been refunded."
+                    : "Only {$item->refundableQuantity()} of {$name} can still be refunded."];
+            }
+            $lines[] = ['item' => $item, 'quantity' => $qty, 'amount' => 0.0];
+        }
+
+        // Share of the sale actually paid per peso of list price (1 without a discount).
+        $subtotal = $transaction->items->sum(fn ($i) => (float) $i->unit_price * (int) $i->quantity);
+        $paidRatio = $subtotal > 0 ? (float) $transaction->total_amount / $subtotal : 0.0;
+        $remaining = round((float) $transaction->total_amount - (float) $transaction->refunded_amount, 2);
+
+        $complete = $transaction->items->every(fn ($i) => $i->refundableQuantity() === (int) ($wanted[$i->uuid] ?? 0));
+
+        foreach ($lines as $i => $line) {
+            $lines[$i]['amount'] = round((float) $line['item']->unit_price * $line['quantity'] * $paidRatio, 2);
+        }
+        $amount = round(array_sum(array_column($lines, 'amount')), 2);
+
+        // The last refund returns exactly what is left; never more than what is left.
+        $target = $complete ? $remaining : min($amount, $remaining);
+        if ($lines && abs($target - $amount) > 0.0001) {
+            $last = array_key_last($lines);
+            $lines[$last]['amount'] = round($lines[$last]['amount'] + ($target - $amount), 2);
+        }
+
+        return ['lines' => $lines, 'amount' => max(0, round($target, 2)), 'complete' => $complete];
+    }
+
+    /**
      * Void a transaction completely, requiring manager PIN authorization.
-     * Cancels the sale and marks payments voided. Servings are not put back on
-     * sale: they leave the sold count for the voided count, so what's left stays
-     * the same (20 planned, 1 sold = 19 left; after the void still 19 left).
+     * Cancels the sale and marks payments voided. Its servings go back on sale
+     * (20 planned, 1 sold = 19 left; after the void 20 left again).
      */
     public function void(PosDevice $device, string $transactionUuid, string $managerUuid, string $pin, ?string $reason = null): array
     {
@@ -831,40 +924,19 @@ class PosDeviceService
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
         }
 
+        if ($transaction->status === Transaction::PARTIALLY_REFUNDED) {
+            return ['success' => false, 'http' => 422, 'message' => 'Some items on this sale were already refunded. Refund the rest instead of voiding it.'];
+        }
+
         if (in_array($transaction->status, ['refunded', 'voided'], true)) {
             return ['success' => false, 'http' => 422, 'message' => "This transaction has already been {$transaction->status}."];
         }
 
-        $managerUser = $this->repo->findActiveUserByUuid($managerUuid);
-
-        if (!$managerUser) {
-            return ['success' => false, 'http' => 404, 'message' => 'Manager account not found.'];
+        $approval = $this->approvals->approve($device, $managerUuid, $pin, 'voids');
+        if (!$approval['success']) {
+            return $approval;
         }
-
-        $isBranchManager = $this->repo->isActiveBranchManager($device->branch_id, $managerUser->user_id);
-        $isCafeOwner = ($device->branch?->cafe?->owner_id === $managerUser->user_id) || $managerUser->isOwner();
-
-        if (!$isBranchManager && !$isCafeOwner) {
-            return ['success' => false, 'http' => 403, 'message' => 'Only an authorized Manager or Cafe Owner can approve voids.'];
-        }
-
-        if ($managerUser->mustChangePin()) {
-            return ['success' => false, 'http' => 409, 'message' => 'Manager must change their temporary PIN before approving voids.'];
-        }
-
-        $check = $this->pins->verify($managerUser, $pin);
-        if (!$check['success']) {
-            if (!empty($check['just_locked'])) {
-                $this->alerts->pinLocked($device->branch, $managerUser);
-            }
-
-            return [
-                'success' => false,
-                'http' => !empty($check['locked']) ? 423 : 422,
-                'message' => $check['message'] ?? 'Incorrect manager PIN.',
-                'attempts_left' => $check['attempts_left'] ?? null,
-            ];
-        }
+        $managerUser = $approval['user'];
 
         DB::transaction(function () use ($transaction, $device, $managerUser, $reason) {
             $actorRole = $managerUser->roleName() ?: 'Manager';
@@ -880,11 +952,11 @@ class PosDeviceService
                 'event'     => TransactionEvent::VOIDED,
                 'user_id'   => $managerUser->user_id,
                 'reason'    => !empty($reason) ? trim($reason) : null,
-                'restocked' => false,
+                'restocked' => true,
             ]);
 
-            // Off the sold count (it is no longer a sale), onto the voided count, so
-            // the servings stay used up and the remaining count does not change.
+            // A void cancels the sale, so its servings go back on sale: off the sold
+            // count, and the remaining count goes up by the same amount.
             foreach ($transaction->items as $item) {
                 $serving = $this->sales->lockServing($item->men_item_id, $device->branch_id, $transaction->created_at);
 
@@ -893,8 +965,13 @@ class PosDeviceService
                     continue;
                 }
 
+                $ranOut = $serving->isUsedUp();
                 $serving->servings_sold -= $qty;
-                $serving->servings_voided += $qty;
+
+                // Sold out only because it ran out (not switched off by a manager): back on sale.
+                if ($serving->is_sold_out && $ranOut && !$serving->isUsedUp()) {
+                    $serving->is_sold_out = false;
+                }
 
                 $this->sales->saveServing($serving);
             }

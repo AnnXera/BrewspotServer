@@ -28,7 +28,8 @@ class SpoilageService
 {
     public function __construct(
         private readonly BranchAlertService $alerts,
-        private readonly SpoilageRepository $repo
+        private readonly SpoilageRepository $repo,
+        private readonly RegisterApprovalService $approvals
     ) {}
 
     // ── On the register (device token) ───────────────────────────────────
@@ -36,8 +37,9 @@ class SpoilageService
     /**
      * Items in sizes need the size thrown away; its price (or the base price
      * for items without sizes) is kept on the entry for the spoilage cost.
+     * A manager or the owner approves the entry with their PIN.
      */
-    public function logOnDevice(PosDevice $device, string $itemUuid, ?string $sizeUuid, int $quantity, ?string $reason): array
+    public function logOnDevice(PosDevice $device, string $itemUuid, ?string $sizeUuid, int $quantity, ?string $reason, string $managerUuid, string $pin): array
     {
         if (! $device->active_staff_id) {
             return ['success' => false, 'http' => 403, 'message' => 'Register is locked.'];
@@ -61,10 +63,17 @@ class SpoilageService
             return ['success' => false, 'http' => 422, 'message' => "{$item->menu_name} does not come in sizes."];
         }
 
+        // Checked after the item and size so a wrong pick doesn't cost a PIN attempt.
+        $approval = $this->approvals->approve($device, $managerUuid, $pin, 'spoilage');
+        if (! $approval['success']) {
+            return $approval;
+        }
+        $approverId = $approval['user']->user_id;
+
         $itemId    = $item->men_item_id;
         $unitValue = (float) ($size?->price ?? $item->base_price);
 
-        $result = DB::transaction(function () use ($device, $itemId, $size, $unitValue, $quantity, $reason) {
+        $result = DB::transaction(function () use ($device, $itemId, $size, $unitValue, $quantity, $reason, $approverId) {
             $serving = $this->repo->lockServingForDate($itemId, $device->branch_id, $this->today());
 
             if (! $serving) {
@@ -89,6 +98,7 @@ class SpoilageService
                 'size_name'   => $size?->name,
                 'staff_id'    => $device->active_staff_id,
                 'device_id'   => $device->device_id,
+                'approved_by' => $approverId,
                 'quantity'    => $quantity,
                 'unit_value'  => $unitValue,
                 'reason'      => $reason,
@@ -117,6 +127,7 @@ class SpoilageService
             'size'        => $log->size_name,
             'quantity'    => $quantity,
             'reason'      => $reason,
+            'approved_by' => $approval['user']->uuid,
         ]);
 
         $name = trim("{$log->size_name} {$log->serving->menuItem?->menu_name}");
@@ -212,6 +223,7 @@ class SpoilageService
             'staff.user',
             'device',
             'voidedBy',
+            'approvedBy',
         ];
     }
 

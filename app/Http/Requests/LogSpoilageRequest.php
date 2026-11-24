@@ -20,7 +20,17 @@ class LogSpoilageRequest extends FormRequest
             'menu_item_uuid' => ['required', 'string'],
             'size_uuid'      => ['nullable', 'string'], // required for items that come in sizes
             'quantity'       => ['required', 'integer', 'min:1', 'max:1000'],
-            'reason'         => ['nullable', 'string', Rule::in(ServingSpoilageLog::REASONS)],
+            'reason'         => ['required', 'string', Rule::in(ServingSpoilageLog::REASONS)],
+            // A manager or the owner approves the entry with their PIN.
+            'manager_uuid'   => ['required', 'string'],
+            'pin'            => ['required', 'string'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'reason.required' => 'Pick a reason for the spoilage.',
         ];
     }
 }

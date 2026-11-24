@@ -37,13 +37,21 @@ class TransactionItem extends Model
         'size_name', // snapshot at time of sale
         'temperature', // hot or iced, on items sold both ways
         'quantity',
+        'refunded_quantity', // running count refunded from this line
         'unit_price',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'refunded_quantity' => 'integer',
         'unit_price' => 'decimal:2',
     ];
+
+    /** How many of the line can still be refunded. */
+    public function refundableQuantity(): int
+    {
+        return max(0, (int) $this->quantity - (int) $this->refunded_quantity);
+    }
 
     protected static function booted(): void
     {

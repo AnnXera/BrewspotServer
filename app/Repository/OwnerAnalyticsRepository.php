@@ -7,6 +7,7 @@ use App\Models\InventoryServing;
 use App\Models\MenuItem;
 use App\Models\Reservation;
 use App\Models\Transaction;
+use App\Models\TransactionEventItem;
 use App\Models\TransactionItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,7 +22,13 @@ use Illuminate\Support\Facades\DB;
 class OwnerAnalyticsRepository
 {
     /** Sale statuses that count as income, same as the POS reports. */
-    public const SETTLED = ['completed', 'paid'];
+    public const SETTLED = Transaction::SETTLED;
+
+    /** A sale's income after item refunds. */
+    private const NET = '(transactions.total_amount - transactions.refunded_amount)';
+
+    /** Units kept on a line after item refunds. */
+    private const NET_QTY = '(transaction_items.quantity - transaction_items.refunded_quantity)';
 
     /**
      * The owner's branches, soft-deleted ones included (their past sales still count).
@@ -43,7 +50,7 @@ class OwnerAnalyticsRepository
     {
         return $this->settled($branchIds, $from, $to)
             ->selectRaw('COUNT(*) as orders,
-                COALESCE(SUM(total_amount), 0) as revenue,
+                COALESCE(SUM(' . self::NET . '), 0) as revenue,
                 COALESCE(SUM(discount_amount), 0) as discounts,
                 SUM(CASE WHEN discount_amount > 0 THEN 1 ELSE 0 END) as discounted_orders')
             ->toBase()
@@ -52,19 +59,23 @@ class OwnerAnalyticsRepository
 
     public function itemsSold(Collection $branchIds, Carbon $from, Carbon $to): int
     {
-        return (int) $this->settledItems($branchIds, $from, $to)->sum('transaction_items.quantity');
+        return (int) $this->settledItems($branchIds, $from, $to)->sum(DB::raw(self::NET_QTY));
     }
 
     /**
-     * Sales that did not settle (voided, refunded), reported beside the income.
+     * Money that did not settle, reported beside the income: sales voided or refunded in
+     * full (counted in `orders`), plus what partly refunded sales gave back.
      */
     public function unsettledTotals(Collection $branchIds, Carbon $from, Carbon $to): object
     {
+        $settled = collect(self::SETTLED)->map(fn ($s) => "'{$s}'")->implode(', ');
+
         return Transaction::query()
             ->whereIn('branch_id', $branchIds)
-            ->whereNotIn('status', self::SETTLED)
             ->whereBetween('created_at', [$from, $to])
-            ->selectRaw('COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as amount')
+            ->where(fn ($q) => $q->whereNotIn('status', self::SETTLED)->orWhere('refunded_amount', '>', 0))
+            ->selectRaw("COALESCE(SUM(CASE WHEN status IN ({$settled}) THEN 0 ELSE 1 END), 0) as orders,
+                COALESCE(SUM(CASE WHEN status IN ({$settled}) THEN refunded_amount ELSE total_amount END), 0) as amount")
             ->toBase()
             ->first();
     }
@@ -75,7 +86,7 @@ class OwnerAnalyticsRepository
     public function dailyTotals(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
         return $this->settled($branchIds, $from, $to)
-            ->selectRaw('DATE(created_at) as day, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as orders, COALESCE(SUM(' . self::NET . '), 0) as revenue')
             ->groupBy('day')
             ->toBase()
             ->get()
@@ -90,7 +101,7 @@ class OwnerAnalyticsRepository
         [$weekday, $hour] = $this->weekdayHourSql('created_at');
 
         return $this->settled($branchIds, $from, $to)
-            ->selectRaw("{$weekday} as weekday, {$hour} as hour, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue")
+            ->selectRaw("{$weekday} as weekday, {$hour} as hour, COUNT(*) as orders, COALESCE(SUM(" . self::NET . '), 0) as revenue')
             ->groupBy('weekday', 'hour')
             ->toBase()
             ->get();
@@ -125,7 +136,7 @@ class OwnerAnalyticsRepository
             ->whereIn('transactions.status', self::SETTLED)
             ->whereBetween('transactions.created_at', [$from, $to])
             ->groupBy('payments.payment_method_type')
-            ->selectRaw('payments.payment_method_type as method, COUNT(DISTINCT transactions.transaction_id) as orders, COALESCE(SUM(transactions.total_amount), 0) as amount')
+            ->selectRaw('payments.payment_method_type as method, COUNT(DISTINCT transactions.transaction_id) as orders, COALESCE(SUM(' . self::NET . '), 0) as amount')
             ->get();
     }
 
@@ -134,7 +145,7 @@ class OwnerAnalyticsRepository
     /** Status filter groups on the transaction log. The POS has written both "void" and "voided". */
     public const LOG_STATUSES = [
         'settled'  => self::SETTLED,
-        'refunded' => ['refunded'],
+        'refunded' => ['refunded', Transaction::PARTIALLY_REFUNDED],
         'void'     => ['void', 'voided'],
     ];
 
@@ -231,8 +242,8 @@ class OwnerAnalyticsRepository
             ->selectRaw('menu_items.men_item_id, menu_items.uuid, menu_items.menu_name,
                 menu_categories.uuid as category_uuid, menu_categories.name as category_name,
                 COUNT(DISTINCT transactions.transaction_id) as orders,
-                SUM(transaction_items.quantity) as quantity,
-                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                SUM(' . self::NET_QTY . ') as quantity,
+                SUM(' . self::NET_QTY . ' * transaction_items.unit_price) as sales')
             ->toBase()
             ->get();
     }
@@ -258,8 +269,8 @@ class OwnerAnalyticsRepository
             ->groupBy('menu_categories.uuid', 'menu_categories.name')
             ->selectRaw('menu_categories.uuid as category_uuid, menu_categories.name as category_name,
                 COUNT(DISTINCT transactions.transaction_id) as orders,
-                SUM(transaction_items.quantity) as quantity,
-                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                SUM(' . self::NET_QTY . ') as quantity,
+                SUM(' . self::NET_QTY . ' * transaction_items.unit_price) as sales')
             ->toBase()
             ->get();
     }
@@ -273,8 +284,8 @@ class OwnerAnalyticsRepository
             ->whereNotNull('transaction_items.size_name')
             ->groupBy('transaction_items.size_name')
             ->selectRaw('transaction_items.size_name as name,
-                SUM(transaction_items.quantity) as quantity,
-                SUM(transaction_items.quantity * transaction_items.unit_price) as sales')
+                SUM(' . self::NET_QTY . ') as quantity,
+                SUM(' . self::NET_QTY . ' * transaction_items.unit_price) as sales')
             ->toBase()
             ->get();
     }
@@ -289,8 +300,8 @@ class OwnerAnalyticsRepository
             ->groupBy('transaction_item_addons.addon_name')
             ->selectRaw('transaction_item_addons.addon_name as name,
                 COUNT(DISTINCT transaction_items.transaction_item_id) as line_count,
-                SUM(transaction_item_addons.quantity * transaction_items.quantity) as quantity,
-                SUM(transaction_item_addons.price * transaction_item_addons.quantity * transaction_items.quantity) as sales')
+                SUM(transaction_item_addons.quantity * ' . self::NET_QTY . ') as quantity,
+                SUM(transaction_item_addons.price * transaction_item_addons.quantity * ' . self::NET_QTY . ') as sales')
             ->toBase()
             ->get();
     }
@@ -306,7 +317,7 @@ class OwnerAnalyticsRepository
     {
         return $this->settled($branchIds, $from, $to)
             ->groupBy('branch_id')
-            ->selectRaw('branch_id, COUNT(*) as orders, COALESCE(SUM(total_amount), 0) as revenue')
+            ->selectRaw('branch_id, COUNT(*) as orders, COALESCE(SUM(' . self::NET . '), 0) as revenue')
             ->toBase()
             ->get()
             ->keyBy('branch_id');
@@ -329,7 +340,7 @@ class OwnerAnalyticsRepository
             ->groupBy('cafe_staff.uuid', 'cafe_staff.position', 'users.firstname', 'users.lastname', 'cafe_branches.branch_name')
             ->selectRaw('cafe_staff.uuid, cafe_staff.position, users.firstname, users.lastname,
                 cafe_branches.branch_name,
-                COUNT(*) as orders, COALESCE(SUM(transactions.total_amount), 0) as revenue,
+                COUNT(*) as orders, COALESCE(SUM(' . self::NET . '), 0) as revenue,
                 COALESCE(SUM(transactions.discount_amount), 0) as discounts')
             ->toBase()
             ->get();
@@ -430,11 +441,22 @@ class OwnerAnalyticsRepository
      */
     public function ingredientUsage(Collection $branchIds, Carbon $from, Carbon $to): Collection
     {
-        return $this->settledItems($branchIds, $from, $to)
+        // Made items used their ingredients even when refunded afterwards; only refunds of
+        // items never made take theirs back. Fully refunded sales count when their refund
+        // items are on record (older ones without them stay out, as before).
+        return TransactionItem::query()
+            ->join('transactions', 'transactions.transaction_id', '=', 'transaction_items.transaction_id')
+            ->leftJoinSub(TransactionEventItem::refundsPerLine(), 'r', 'r.transaction_item_id', '=', 'transaction_items.transaction_item_id')
             ->join('ingredient_consumption_logs', 'ingredient_consumption_logs.transaction_item_id', '=', 'transaction_items.transaction_item_id')
+            ->whereIn('transactions.branch_id', $branchIds)
+            ->whereBetween('transactions.created_at', [$from, $to])
+            ->where(fn ($q) => $q
+                ->whereIn('transactions.status', self::SETTLED)
+                ->orWhere(fn ($r) => $r->where('transactions.status', 'refunded')->where('r.tracked', '>', 0)))
+            ->whereRaw('transaction_items.quantity > COALESCE(r.unmade, 0)')
             ->groupBy('ingredient_consumption_logs.ingredient_name', 'ingredient_consumption_logs.unit')
             ->selectRaw('ingredient_consumption_logs.ingredient_name as name, ingredient_consumption_logs.unit,
-                SUM(ingredient_consumption_logs.quantity_consumed) as quantity,
+                SUM(ingredient_consumption_logs.quantity_consumed * (transaction_items.quantity - COALESCE(r.unmade, 0)) / transaction_items.quantity) as quantity,
                 COUNT(DISTINCT transaction_items.men_item_id) as items')
             ->toBase()
             ->get();
@@ -483,13 +505,15 @@ class OwnerAnalyticsRepository
             ->whereBetween('created_at', [$from, $to]);
     }
 
+    /** Lines of settled sales that still have something kept (fully refunded lines are left out). */
     private function settledItems(Collection $branchIds, Carbon $from, Carbon $to): Builder
     {
         return TransactionItem::query()
             ->join('transactions', 'transactions.transaction_id', '=', 'transaction_items.transaction_id')
             ->whereIn('transactions.branch_id', $branchIds)
             ->whereIn('transactions.status', self::SETTLED)
-            ->whereBetween('transactions.created_at', [$from, $to]);
+            ->whereBetween('transactions.created_at', [$from, $to])
+            ->whereColumn('transaction_items.quantity', '>', 'transaction_items.refunded_quantity');
     }
 
     /**

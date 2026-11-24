@@ -161,7 +161,7 @@ class PosSaleRepository
             ->whereIn('status', $statuses)
             ->whereMonth('created_at', $month->month)
             ->whereYear('created_at', $month->year)
-            ->sum('total_amount');
+            ->sum(\Illuminate\Support\Facades\DB::raw('total_amount - refunded_amount'));
     }
 
     public function findWithDetails(int $branchId, string $uuid): ?Transaction
@@ -180,17 +180,50 @@ class PosSaleRepository
             ->first();
     }
 
+    /** The sale and its lines again, locked, so two refunds can't return the same items. */
+    public function lockForRefund(Transaction $transaction): Transaction
+    {
+        $locked = Transaction::whereKey($transaction->transaction_id)->lockForUpdate()->firstOrFail();
+        $locked->setRelation('items', TransactionItem::where('transaction_id', $locked->transaction_id)
+            ->orderBy('transaction_item_id')
+            ->lockForUpdate()
+            ->get());
+
+        return $locked;
+    }
+
     // ── Refunds & Voids (call inside a transaction) ──────────────────────────────
 
-    public function markRefunded(Transaction $transaction, string $note, array $event): void
+    /**
+     * Records one refund: the event with the items it returned, the lines' refunded
+     * counts, and the sale's running refunded amount and status. Payments are marked
+     * refunded only once the whole sale is.
+     *
+     * @param  array<int, array{item: TransactionItem, quantity: int, amount: float}>  $lines
+     */
+    public function recordRefund(Transaction $transaction, string $note, string $status, float $amount, array $event, array $lines): void
     {
         $transaction->update([
-            'status'       => 'refunded',
-            'walk_in_note' => $note,
+            'status'          => $status,
+            'refunded_amount' => round((float) $transaction->refunded_amount + $amount, 2),
+            'walk_in_note'    => $note,
         ]);
 
-        $transaction->events()->create($event);
-        $transaction->payments()->update(['status' => 'refunded']);
+        $created = $transaction->events()->create($event);
+
+        foreach ($lines as ['item' => $item, 'quantity' => $quantity, 'amount' => $lineAmount]) {
+            $item->increment('refunded_quantity', $quantity);
+
+            $created->items()->create([
+                'transaction_item_id' => $item->transaction_item_id,
+                'quantity'            => $quantity,
+                'amount'              => $lineAmount,
+            ]);
+        }
+
+        if ($status === 'refunded') {
+            $transaction->payments()->update(['status' => 'refunded']);
+        }
     }
 
     public function markVoided(Transaction $transaction, string $note, array $event): void

@@ -17,7 +17,15 @@ class VoidPosRequest extends FormRequest
         return [
             'manager_uuid' => ['required', 'string'],
             'pin'          => ['required', 'string'],
-            'reason'       => ['nullable', 'string', 'max:255'],
+            'reason'       => ['required', 'string', 'max:255', 'not_regex:/^\s*$/'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'reason.required'  => 'Give a reason for the void.',
+            'reason.not_regex' => 'Give a reason for the void.',
         ];
     }
 }

@@ -40,4 +40,10 @@ class TransactionEvent extends Model
     {
         return $this->belongsTo(User::class, 'user_id', 'user_id');
     }
+
+    /** Refunds: the items this refund returned. Empty on voids and on refunds from before items were tracked. */
+    public function items(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(TransactionEventItem::class, 'transaction_event_id', 'transaction_event_id');
+    }
 }
