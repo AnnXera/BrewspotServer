@@ -93,6 +93,16 @@ class BranchDetailsUpdateTest extends FloorPlanTestCase
             ->assertOk()->assertJsonPath('branch.cafe_phonenumber', '0822991234');
     }
 
+    public function test_owner_cannot_change_branch_name_or_address(): void
+    {
+        $this->patchBranch($this->owner, ['branch_name' => 'Renamed', 'address' => 'Elsewhere'])->assertOk();
+
+        $branch = $this->mainBranch->fresh();
+        $this->assertSame('Main Branch', $branch->branch_name);
+        $this->assertSame('Davao City', $branch->address);
+        $this->assertSame(0, ActivityLog::where('action', ActivityLog::BRANCH_DETAILS_UPDATED)->count());
+    }
+
     public function test_manager_cannot_update_branch_details(): void
     {
         $this->patchBranch($this->manager, ['cafe_email' => 'sneaky@test.local'])->assertForbidden();

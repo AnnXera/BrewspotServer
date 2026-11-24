@@ -57,9 +57,10 @@ class UpdateBranchRequest extends FormRequest
     {
         $branchUuid = $this->route('uuid');
 
+        // Branch name and address are not owner-editable: they appear on the BIR COR, so an
+        // admin changes them on request. They are left out here, so validated() drops them.
         return [
-            'branch_name'          => ['nullable', 'string', 'max:150'],
-            'cafe_picture'         => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'cafe_picture'        => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'cafe_email'           => [
                 'nullable',
                 'email',
@@ -79,8 +80,7 @@ class UpdateBranchRequest extends FormRequest
                     ->whereNull('deleted_at')
                     ->ignore($branchUuid, 'uuid'),
             ],
-            'address'              => ['nullable', 'string'],
-            'status'               => ['nullable', 'string', 'in:active,inactive'],
+            'status'             => ['nullable', 'string', 'in:active,inactive'],
             'bir_file'             => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
             'bir_registered_at'    => ['nullable', 'date'],
             'tin_number'           => ['nullable', 'string', 'regex:' . Tin::FORMAT_REGEX, $this->tinRule()],
@@ -91,7 +91,6 @@ class UpdateBranchRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'branch_name.max'               => 'Branch name must not exceed 150 characters.',
             'cafe_picture.mimes'            => 'Branch picture must be jpg, jpeg, png, or webp.',
             'cafe_picture.max'              => 'Branch picture must not exceed 2MB.',
             'cafe_email.email'              => 'Please provide a valid email address.',

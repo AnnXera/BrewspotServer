@@ -210,11 +210,10 @@ class BranchService
                 $branchFolder = "users/{$owner->uuid}/cafes/{$cafe->uuid}/branches/{$branch->uuid}";
 
                 // Collect basic field updates
+                // Name and address are deliberately absent (BIR-registered; admin-only).
                 $updates = array_filter([
-                    'branch_name'      => $payload['branch_name'] ?? null,
                     'cafe_email'       => $payload['cafe_email'] ?? null,
                     'cafe_phonenumber' => $payload['cafe_phonenumber'] ?? null,
-                    'address'          => $payload['address'] ?? null,
                     'status'           => $payload['status'] ?? null,
                 ], fn ($v) => $v !== null);
 
