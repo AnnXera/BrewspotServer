@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\CafeBranchResource;
+use App\Models\ActivityLog;
 use App\Models\User;
 use App\Notifications\BranchSubmittedForApproval;
 
@@ -33,8 +34,16 @@ class BranchService
     public function __construct(
         private readonly BranchRepository $repo,
         private readonly SubscriptionRepository $subscriptionRepo,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly ActivityLogService $activity,
+        private readonly BranchAlertService $alerts
     ) {}
+
+    /** Contact fields the owner edits without admin review, with their audit-log labels. */
+    private const CONTACT_FIELDS = [
+        'cafe_email'       => 'Email',
+        'cafe_phonenumber' => 'Phone number',
+    ];
 
     public function createBranch(User $owner, array $payload): array
     {
@@ -182,6 +191,17 @@ class BranchService
             }
         }
 
+        // What changed in the contact details, for the activity log and the managers' notice.
+        $changes = [];
+        foreach (self::CONTACT_FIELDS as $field => $label) {
+            if (isset($payload[$field]) && $payload[$field] !== $branch->{$field}) {
+                $changes[] = ['field' => $label, 'before' => $branch->{$field}, 'after' => $payload[$field]];
+            }
+        }
+        if (isset($payload['cafe_picture'])) {
+            $changes[] = ['field' => 'Picture'];
+        }
+
         try {
             $result = [];
 
@@ -258,6 +278,15 @@ class BranchService
                     'branch'  => new CafeBranchResource($branch->fresh('documents')),
                 ];
             });
+
+            // After commit, so a rolled-back edit is never logged or announced.
+            if ($changes) {
+                $lower = array_map('strtolower', array_column($changes, 'field'));
+
+                $this->activity->branch($owner, $branch, ActivityLog::BRANCH_DETAILS_UPDATED,
+                    'Updated branch ' . implode(', ', $lower), ['changes' => $changes]);
+                $this->alerts->branchDetailsUpdated($branch, $owner, $lower);
+            }
 
             return $result;
 
