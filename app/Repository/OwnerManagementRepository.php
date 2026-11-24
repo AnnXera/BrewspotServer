@@ -88,6 +88,22 @@ class OwnerManagementRepository
     }
 
     /**
+     * Every approval entry the owner ever had (applications, resubmissions, side-branch
+     * submissions), oldest first. Branches include soft-deleted ones, since a rejected
+     * and resubmitted application archives its old branch.
+     */
+    public function approvalHistoryForOwner(int $userId): \Illuminate\Support\Collection
+    {
+        return \App\Models\ApprovalList::where('user_id', $userId)
+            ->with([
+                'branch' => fn ($q) => $q->withTrashed(),
+                'reviewer:user_id,firstname,lastname',
+            ])
+            ->orderBy('approval_id')
+            ->get();
+    }
+
+    /**
      * Used by updateStatus() for the approve/reject decision only.
      * A user is only ever actionable here while still pending_approval —
      * once already decided, re-hitting the same uuid should 404 rather

@@ -71,6 +71,44 @@ class OwnerManagementService
     /**
      * Get full owner profile with cafes, branches, documents, subscription, and payment history.
      */
+    /**
+     * The owner's applications and branch submissions, newest first. `kind` is
+     * application (first main-branch application), resubmission (a main-branch
+     * application after an earlier rejection) or branch (a side branch).
+     */
+    private function applicationHistory(int $userId): array
+    {
+        $rejectedBefore = false;
+        $rows = [];
+
+        foreach ($this->repo->approvalHistoryForOwner($userId) as $entry) {
+            $isMain = ($entry->branch?->branch_type ?? 'main') === 'main';
+            $kind   = ! $isMain ? 'branch' : ($rejectedBefore ? 'resubmission' : 'application');
+
+            if ($isMain && $entry->status === 'rejected') {
+                $rejectedBefore = true;
+            }
+
+            $reviewer = $entry->reviewer
+                ? trim("{$entry->reviewer->firstname} {$entry->reviewer->lastname}")
+                : null;
+
+            $rows[] = [
+                'uuid'         => $entry->uuid,
+                'kind'         => $kind,
+                'status'       => $entry->status, // pending_approval | approved | rejected
+                'branch_name'  => $entry->branch?->branch_name,
+                'reason'       => $entry->reason,
+                'can_resubmit' => (bool) $entry->can_resubmit,
+                'submitted_at' => $entry->created_at?->toISOString(),
+                'reviewed_at'  => $entry->reviewed_at?->toISOString(),
+                'reviewed_by'  => $reviewer ?: null,
+            ];
+        }
+
+        return array_reverse($rows);
+    }
+
     public function getOwnerDetails(string $uuid): array
     {
         $owner = $this->repo->findOwnerByUuid($uuid);
@@ -118,6 +156,12 @@ class OwnerManagementService
                             'branch_doc_id' => $doc->branch_doc_id,
                             'doc_type'      => $doc->doc_type,
                             'download_url'  => "/api/documents/branch/{$doc->branch_doc_id}",
+                            // BIR registration details (null on other document types)
+                            'tin_number'    => $doc->tin_number,
+                            'vat'           => $doc->vat, // vat-registered | non-vat
+                            'registered_at' => $doc->registered_at?->toISOString(),
+                            'expired_at'    => $doc->expired_at?->toISOString(),
+                            'uploaded_at'   => ($doc->updated_at ?? $doc->created_at)?->toISOString(),
                         ]),
                     ]),
                 ];
@@ -136,6 +180,8 @@ class OwnerManagementService
                 'payment_method' => $currentSubscription->latestPayment?->payment_instrument
                     ?? ($currentSubscription->latestPayment?->payment_method_type ? 'PayMongo' : null),
             ] : null,
+
+            'application_history' => $this->applicationHistory($owner->user_id),
 
             'payment_history' => $owner->payments->sortByDesc('created_at')->map(function ($payment) {
                 $rawId = $payment->uuid;
