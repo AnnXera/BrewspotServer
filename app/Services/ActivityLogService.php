@@ -104,6 +104,20 @@ class ActivityLogService
         $this->forBranch($actor, $branch, ActivityLog::CATEGORY_BRANCH, $action, $description, $meta);
     }
 
+    /** A cafe-wide change not tied to one branch (e.g. a cafe name change request or its review). */
+    public function cafe(User $actor, int $cafeId, string $action, string $description, array $meta = []): void
+    {
+        $this->write([
+            'cafe_id'     => $cafeId,
+            'branch_id'   => null,
+            ...$this->actor($actor),
+            'category'    => ActivityLog::CATEGORY_BRANCH,
+            'action'      => $action,
+            'description' => $description,
+            'meta'        => $meta ?: null,
+        ]);
+    }
+
     /**
      * A menu change. Cafe-wide (adding, editing or deleting an item or category) when
      * $branch is null; tied to one branch for availability at that branch.

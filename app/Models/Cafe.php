@@ -78,6 +78,11 @@ class Cafe extends Model
         return $this->hasMany(MenuItem::class, 'cafe_id', 'cafe_id');
     }
 
+    public function updateRequests(): HasMany
+    {
+        return $this->hasMany(CafeUpdateRequest::class, 'cafe_id', 'cafe_id');
+    }
+
     public function openingHours(): HasMany
     {
         return $this->hasMany(CafeOpeningHour::class, 'cafe_id', 'cafe_id');

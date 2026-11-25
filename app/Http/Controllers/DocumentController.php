@@ -42,6 +42,14 @@ class DocumentController extends Controller
     }
 
     /**
+     * GET /api/documents/cafe-update/{requestDocId}
+     */
+    public function cafeUpdateDocument(Request $request, int $requestDocId): StreamedResponse
+    {
+        return $this->stream($this->service->cafeUpdateDocument($request->user(), $requestDocId));
+    }
+
+    /**
      * GET /api/branch-picture/{uuid}
      * Public — serves the branch's display picture with correct Content-Type.
      */

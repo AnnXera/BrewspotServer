@@ -15,6 +15,7 @@ use App\Http\Resources\ApprovalListResource;
 use App\Http\Resources\CafeBranchResource;
 
 use App\Repository\OwnerManagementRepository;
+use App\Repository\CafeUpdateRepository;
 
 use App\Contracts\MailAdapterInterface;
 
@@ -33,7 +34,8 @@ class OwnerManagementService
     public function __construct(
         private readonly OwnerManagementRepository $repo,
         private readonly MailAdapterInterface $mailer,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly CafeUpdateRepository $cafeUpdates
     ) {}
 
     /**
@@ -115,7 +117,31 @@ class OwnerManagementService
             ];
         }
 
-        return array_reverse($rows);
+        $rows = array_reverse($rows); // newest first
+
+        // Cafe name changes sit in the same timeline
+        foreach ($this->cafeUpdates->historyForOwner($userId)->reverse() as $request) {
+            $reviewer = $request->reviewer
+                ? trim("{$request->reviewer->firstname} {$request->reviewer->lastname}")
+                : null;
+
+            $rows[] = [
+                'uuid'         => $request->uuid,
+                'kind'         => 'name_change',
+                'status'       => $request->status,
+                'branch_name'  => "{$request->old_name} → {$request->new_name}",
+                'reason'       => $request->reason,
+                'can_resubmit' => (bool) $request->can_resubmit,
+                'submitted_at' => $request->created_at?->toISOString(),
+                'reviewed_at'  => $request->reviewed_at?->toISOString(),
+                'reviewed_by'  => $reviewer ?: null,
+            ];
+        }
+
+        // Merge by date, newest first; the sort is stable, so same-second entries keep the order above
+        usort($rows, fn ($a, $b) => strcmp($b['submitted_at'] ?? '', $a['submitted_at'] ?? ''));
+
+        return $rows;
     }
 
     public function getOwnerDetails(string $uuid): array

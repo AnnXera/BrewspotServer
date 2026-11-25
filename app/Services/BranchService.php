@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\BranchSubmittedForApproval;
 
 use App\Repository\BranchRepository;
+use App\Repository\CafeUpdateRepository;
 use App\Repository\SubscriptionRepository;
 
 use Illuminate\Http\UploadedFile;
@@ -36,8 +37,15 @@ class BranchService
         private readonly SubscriptionRepository $subscriptionRepo,
         private readonly NotificationService $notifications,
         private readonly ActivityLogService $activity,
-        private readonly BranchAlertService $alerts
+        private readonly BranchAlertService $alerts,
+        private readonly CafeUpdateRepository $cafeUpdates
     ) {}
+
+    /**
+     * A branch's COR carries the cafe name, so while a name change is under review a new
+     * or resubmitted branch would be registered under a name that is about to change.
+     */
+    private const NAME_CHANGE_PENDING = 'Your cafe name change is still being reviewed. Add or resubmit branches after it is decided, so their COR shows the right name.';
 
     /** Contact fields the owner edits without admin review, with their audit-log labels. */
     private const CONTACT_FIELDS = [
@@ -59,6 +67,10 @@ class BranchService
 
         if ($blocked = $this->multiBranchBlock($owner)) {
             return ['success' => false, 'message' => $blocked];
+        }
+
+        if ($this->cafeUpdates->hasPendingForCafe($cafe->cafe_id)) {
+            return ['success' => false, 'message' => self::NAME_CHANGE_PENDING];
         }
 
         $result = [];
@@ -186,6 +198,10 @@ class BranchService
 
         if ($blocked = $this->multiBranchBlock($owner)) {
             return ['success' => false, 'message' => $blocked];
+        }
+
+        if ($this->cafeUpdates->hasPendingForCafe($branch->cafe_id)) {
+            return ['success' => false, 'message' => self::NAME_CHANGE_PENDING];
         }
 
         if (! isset($payload['bir_file']) && ! $branch->documents->firstWhere('doc_type', 'BIR')) {
