@@ -34,7 +34,13 @@ class SubscriptionCancelController extends Controller
      */
     public function handleGetCancel(Request $request): RedirectResponse
     {
-        $this->service->cancelPendingCheckout($this->sessionId($request));
+        // Checkouts opened since the cancel link was signed name their subscription; an edited or
+        // unsigned link closes nothing but still sends the owner back to the subscription page.
+        if ($request->hasValidSignature() && $request->filled('subscription')) {
+            $this->service->cancelPendingCheckoutForSubscription($request->query('subscription'));
+        } else {
+            $this->service->cancelPendingCheckout($this->sessionId($request));
+        }
 
         return redirect(config('services.paymongo.cancel_url'));
     }

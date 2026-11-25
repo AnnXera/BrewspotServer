@@ -14,6 +14,13 @@ class UpdateReservationRequest extends FormRequest
 {
     use RespondsWithJsonErrors;
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('customer_phone')) {
+            $this->merge(['customer_phone' => StoreReservationRequest::normalizePhone($this->input('customer_phone'))]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -31,7 +38,7 @@ class UpdateReservationRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'customer_phone.regex'  => 'Enter a valid phone number.',
+            'customer_phone.regex'  => StoreReservationRequest::PHONE_MESSAGE,
             'reservation_end.after' => 'The end time must be after the start time.',
         ];
     }

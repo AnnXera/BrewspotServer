@@ -175,9 +175,6 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::patch('/branches/{uuid}/status', [OwnerManagementController::class, 'updateBranchStatus']); //approve/reject a single branch (owner already active)
     });
 
-    // Public payment webhook and return URL handling
-    Route::get('/payment/cancel', [SubscriptionCancelController::class, 'handleGetCancel']);
-
     // Cafe Owner only
     Route::middleware('role:Cafe Owner')->prefix('owner')->group(function () use ($branchScopedRoutes) {
         Route::get('/profile', [OwnerProfileController::class, 'profile']);
@@ -341,6 +338,11 @@ Route::get('/branch-picture/{uuid}', [DocumentController::class, 'branchPicture'
 Route::get('/user-photo/{uuid}', [UserProfileController::class, 'photo']);
 
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PayMongoWebhookController::class, 'handle']);
+
+// PayMongo's cancel_url. The owner's browser is redirected here with no API token, so it must sit
+// outside auth:sanctum (inside, Laravel answered with a "Route [login] not defined" error page).
+// The link is signed per checkout (SubscriptionCheckoutService), so only that checkout can be closed.
+Route::get('/payment/cancel', [SubscriptionCancelController::class, 'handleGetCancel'])->name('payment.cancel');
 // CI deploy hook: run pending migrations on hosts without SSH (see deploy/hostinger/README.md).
 Route::post('/deploy/migrate', function (\Illuminate\Http\Request $request) {
     $token = config('app.deploy_token');

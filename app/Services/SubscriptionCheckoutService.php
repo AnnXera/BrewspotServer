@@ -13,6 +13,7 @@ use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionPlanRepository;
 use App\Repository\SubscriptionRepository;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 /**
@@ -104,10 +105,13 @@ class SubscriptionCheckoutService
             ];
         }
 
-        // Pick the correct price based on billing cycle
-        $price = $billingCycle === 'yearly'
-            ? ($plan->yearly_price ?? $plan->price)
-            : $plan->price;
+        // A yearly price of 0 or null means the plan has no yearly option. Falling back to the
+        // monthly price would sell a 366-day term for one month's money (or charge ₱0).
+        if ($billingCycle === 'yearly' && ! ((float) $plan->yearly_price > 0)) {
+            return ['success' => false, 'message' => "The {$plan->sub_name} has no yearly option. Choose monthly billing instead."];
+        }
+
+        $price = $billingCycle === 'yearly' ? $plan->yearly_price : $plan->price;
 
         $subscription = $this->subscriptionRepo->createPending($owner->user_id, $plan, $billingCycle);
 
@@ -120,8 +124,10 @@ class SubscriptionCheckoutService
                 'description' => "Subscription - {$plan->sub_name} ({$billingCycle})",
                 'success_url' => config('services.paymongo.success_url'),
                 // Routed through the API so an abandoned checkout is marked cancelled
-                // before the owner is redirected on to the frontend.
-                'cancel_url'  => url('/api/payment/cancel'),
+                // before the owner is redirected on to the frontend. PayMongo adds nothing to
+                // this URL, so it names the checkout itself; the signature stops anyone from
+                // editing it to close a different owner's checkout.
+                'cancel_url'  => URL::signedRoute('payment.cancel', ['subscription' => $subscription->uuid]),
                 'metadata'    => [
                     'subscription_uuid' => $subscription->uuid,
                     'owner_uuid'        => $owner->uuid,
@@ -443,6 +449,59 @@ class SubscriptionCheckoutService
             return;
         }
 
+        $this->closePendingPayment($payment);
+    }
+
+    /**
+     * Same as cancelPendingCheckout(), found through the subscription the checkout was opened
+     * for — what PayMongo's (signed) cancel_url carries, since it adds no session id itself.
+     */
+    public function cancelPendingCheckoutForSubscription(?string $subscriptionUuid): void
+    {
+        if (! $subscriptionUuid) {
+            return;
+        }
+
+        $subscription = $this->subscriptionRepo->findByUuid($subscriptionUuid);
+
+        if (! $subscription || $subscription->status !== 'pending') {
+            return;
+        }
+
+        $payment = $this->paymentRepo->findPendingForSubscription($subscription);
+
+        if (! $payment) {
+            return;
+        }
+
+        $this->closePendingPayment($payment);
+    }
+
+    /**
+     * Close checkouts that were opened but never finished — the owner closed PayMongo's tab or
+     * stopped on its failed-payment page, so no cancel link and no webhook ever arrived.
+     *
+     * Closing is safe even if the money did move: a late checkout_session.payment.paid webhook
+     * still marks the payment paid and activates the subscription (it only skips payments that
+     * already succeeded).
+     */
+    public function closeStalePendingCheckouts(int $olderThanHours): int
+    {
+        $stale = \App\Models\Payment::where('status', 'pending')
+            ->where('payable_type', Subscription::class)
+            ->where('payment_method_type', 'paymongo_checkout')
+            ->where('created_at', '<', now()->subHours($olderThanHours))
+            ->get();
+
+        foreach ($stale as $payment) {
+            $this->closePendingPayment($payment);
+        }
+
+        return $stale->count();
+    }
+
+    private function closePendingPayment(\App\Models\Payment $payment): void
+    {
         $this->paymentRepo->markFailed($payment, 'paymongo');
 
         $subscription = $payment->payable;
@@ -452,7 +511,8 @@ class SubscriptionCheckoutService
         }
 
         Log::channel('owner')->info('Cancelled pending checkout.', [
-            'checkout_session_id' => $sessionId,
+            'checkout_session_id' => $payment->gateway_transaction_id,
+            'subscription_uuid'   => $subscription?->uuid,
         ]);
     }
 }

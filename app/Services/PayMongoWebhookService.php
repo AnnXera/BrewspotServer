@@ -201,9 +201,10 @@ class PayMongoWebhookService
         }
 
         $plan    = $subscription->plan;
+        // Matches what checkout charged: a yearly price of 0 or null means no yearly option.
         $amount  = number_format(
-            $subscription->billing_cycle === 'yearly'
-                ? ($plan->yearly_price ?? $plan->price)
+            $subscription->billing_cycle === 'yearly' && (float) $plan->yearly_price > 0
+                ? $plan->yearly_price
                 : $plan->price,
             2
         );

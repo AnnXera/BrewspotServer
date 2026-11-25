@@ -63,6 +63,20 @@ class ReservationTest extends FloorPlanTestCase
             ->assertStatus(422)->assertJsonValidationErrors('reservation_end');
     }
 
+    public function test_phone_must_be_an_11_digit_number_starting_with_09(): void
+    {
+        $token = $this->tokenFor($this->manager);
+
+        foreach (['897897797', '89789779712', '0817 123 4567', '+639171234567', '0917123456'] as $i => $phone) {
+            $this->api('POST', $this->url(), $token, $this->booking($this->table("P{$i}"), ['customer_phone' => $phone]))
+                ->assertStatus(422)->assertJsonValidationErrors('customer_phone');
+        }
+
+        // Spaces and dashes are stripped before checking, and the plain digits are saved.
+        $this->api('POST', $this->url(), $token, $this->booking($this->table('OK'), ['customer_phone' => '0917-123-4567']))
+            ->assertCreated()->assertJsonPath('reservation.customer_phone', '09171234567');
+    }
+
     public function test_duration_limits(): void
     {
         $table = $this->table();
