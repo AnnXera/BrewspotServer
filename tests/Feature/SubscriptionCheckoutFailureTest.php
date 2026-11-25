@@ -24,18 +24,19 @@ class SubscriptionCheckoutFailureTest extends FloorPlanTestCase
     }
 
     // A checkout as SubscriptionCheckoutService leaves it once PayMongo has opened the session.
-    private function pendingCheckout(string $sessionId = 'cs_test_123'): array
+    private function pendingCheckout(string $sessionId = 'cs_test_123', ?string $intentId = null): array
     {
         $subscription = app(SubscriptionRepository::class)->createPending($this->owner->user_id, $this->plan, 'monthly');
 
         $payment = Payment::create([
-            'user_id'                => $this->owner->user_id,
-            'payable_type'           => Subscription::class,
-            'payable_id'             => $subscription->sub_id,
-            'amount'                 => 49900,
-            'payment_method_type'    => 'paymongo_checkout',
-            'gateway_transaction_id' => $sessionId,
-            'status'                 => 'pending',
+            'user_id'                   => $this->owner->user_id,
+            'payable_type'              => Subscription::class,
+            'payable_id'                => $subscription->sub_id,
+            'amount'                    => 49900,
+            'payment_method_type'       => 'paymongo_checkout',
+            'gateway_transaction_id'    => $sessionId,
+            'gateway_payment_intent_id' => $intentId,
+            'status'                    => 'pending',
         ]);
 
         return [$subscription, $payment];
@@ -116,6 +117,48 @@ class SubscriptionCheckoutFailureTest extends FloorPlanTestCase
 
         $this->assertSame('succeeded', $payment->fresh()->status);
         $this->assertSame('active', $subscription->fresh()->status);
+    }
+
+    // A payment.* webhook as PayMongo sends it for a GCash payment inside a checkout: no
+    // metadata, just the checkout's payment intent (the handler past the signature check).
+    private function paymentEvent(string $outcome, string $intentId): void
+    {
+        $handler = new \ReflectionMethod(\App\Services\PayMongoWebhookService::class, 'handlePaymentEvent');
+        $handler->invoke(app(\App\Services\PayMongoWebhookService::class), [
+            'id'         => 'pay_test_' . $outcome,
+            'attributes' => ['metadata' => null, 'payment_intent_id' => $intentId, 'source' => ['type' => 'gcash']],
+        ], $outcome);
+    }
+
+    public function test_a_failed_e_wallet_payment_marks_its_checkout_failed(): void
+    {
+        [$subscription, $payment] = $this->pendingCheckout('cs_test_gcash', 'pi_test_gcash');
+
+        $this->paymentEvent('failed', 'pi_test_gcash');
+
+        $this->assertSame('failed', $payment->fresh()->status);
+        $this->assertSame('cancelled', $subscription->fresh()->status);
+    }
+
+    public function test_retrying_after_a_failed_e_wallet_payment_still_activates_the_plan(): void
+    {
+        [$subscription, $payment] = $this->pendingCheckout('cs_test_retry', 'pi_test_retry');
+
+        $this->paymentEvent('failed', 'pi_test_retry');
+        $this->paymentEvent('paid', 'pi_test_retry');
+
+        $this->assertSame('succeeded', $payment->fresh()->status);
+        $this->assertSame('active', $subscription->fresh()->status);
+    }
+
+    public function test_a_payment_event_for_an_unknown_intent_changes_nothing(): void
+    {
+        [$subscription, $payment] = $this->pendingCheckout('cs_test_known', 'pi_test_known');
+
+        $this->paymentEvent('failed', 'pi_test_someone_else');
+
+        $this->assertSame('pending', $payment->fresh()->status);
+        $this->assertSame('pending', $subscription->fresh()->status);
     }
 
     public function test_yearly_checkout_is_refused_for_a_plan_without_a_yearly_price(): void

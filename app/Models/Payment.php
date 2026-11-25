@@ -27,6 +27,7 @@ class Payment extends Model
         'payment_method_type',
         'payment_instrument',
         'gateway_transaction_id',
+        'gateway_payment_intent_id',
         'status',
     ];
 
