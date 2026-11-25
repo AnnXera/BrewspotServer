@@ -5,6 +5,7 @@ namespace App\Repository;
 use App\Models\BranchDocument;
 use App\Models\CafeBranch;
 use App\Models\CafeDocument;
+use App\Models\CafeUpdateRequestDocument;
 use App\Models\UserDocument;
 
 /**
@@ -30,6 +31,11 @@ class DocumentRepository
         return BranchDocument::withTrashed()
             ->with(['branch' => fn ($q) => $q->withTrashed()->with(['cafe' => fn ($q2) => $q2->withTrashed()])])
             ->find($id);
+    }
+
+    public function findCafeUpdateDocument(int $id): ?CafeUpdateRequestDocument
+    {
+        return CafeUpdateRequestDocument::with(['request.cafe' => fn ($q) => $q->withTrashed()])->find($id);
     }
 
     public function findBranchByUuid(string $uuid): ?CafeBranch

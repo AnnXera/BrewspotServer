@@ -173,6 +173,12 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::get('/payments', [PaymentController::class, 'index']); // admin - global payment history
 
         Route::patch('/branches/{uuid}/status', [OwnerManagementController::class, 'updateBranchStatus']); //approve/reject a single branch (owner already active)
+
+        // Cafe name changes (Approval Status > Cafe Updates)
+        Route::get('/cafe-updates', [\App\Http\Controllers\CafeUpdateController::class, 'index']);
+        Route::get('/cafe-updates/stats', [\App\Http\Controllers\CafeUpdateController::class, 'stats']); // before {uuid}
+        Route::get('/cafe-updates/{uuid}', [\App\Http\Controllers\CafeUpdateController::class, 'show']);
+        Route::patch('/cafe-updates/{uuid}/status', [\App\Http\Controllers\CafeUpdateController::class, 'review']); // approve / reject
     });
 
     // Cafe Owner only
@@ -205,6 +211,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::patch('/branches/{uuid}', [BranchController::class, 'update']); // edit branch details + toggle status
         Route::delete('/branches/{uuid}', [BranchController::class, 'destroy']); // soft-delete branch (withdraws a pending one)
         Route::post('/branches/{uuid}/resubmit', [BranchController::class, 'resubmit']); // edit a rejected side branch and send it back for review
+
+        // Cafe name change: latest request + branches needing a COR, send one, cancel one
+        Route::get('/cafe-name-change', [\App\Http\Controllers\CafeUpdateController::class, 'overview']);
+        Route::post('/cafe-name-change', [\App\Http\Controllers\CafeUpdateController::class, 'submit'])->middleware('throttle:10,1');
+        Route::delete('/cafe-name-change/{uuid}', [\App\Http\Controllers\CafeUpdateController::class, 'withdraw']);
 
         // Feature-Gated: Staff Management
         Route::middleware('plan.feature:staff_management')->group(function () {
@@ -329,6 +340,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::get('/documents/user/{userDocId}/{side?}', [DocumentController::class, 'userDocument']);
         Route::get('/documents/cafe/{cafeDocId}', [DocumentController::class, 'cafeDocument']);
         Route::get('/documents/branch/{branchDocId}', [DocumentController::class, 'branchDocument']);
+        Route::get('/documents/cafe-update/{requestDocId}', [DocumentController::class, 'cafeUpdateDocument']);
     });
 
     // Public Webhooks (Moved outside auth middleware)

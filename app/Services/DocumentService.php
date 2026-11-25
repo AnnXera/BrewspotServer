@@ -60,6 +60,18 @@ class DocumentService
         return $this->deny($viewer, $document->branch->cafe->user_id) ?? $this->privateFile($document->file);
     }
 
+    /** An updated COR sent with a cafe name change request. */
+    public function cafeUpdateDocument(User $viewer, int $id): array
+    {
+        $document = $this->repo->findCafeUpdateDocument($id);
+
+        if (! $document || ! $document->request?->cafe) {
+            return $this->notFound();
+        }
+
+        return $this->deny($viewer, $document->request->cafe->user_id) ?? $this->privateFile($document->file);
+    }
+
     /** Public: a branch's display picture. */
     public function branchPicture(string $uuid): array
     {
