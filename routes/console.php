@@ -18,4 +18,8 @@ Schedule::call($inProcess('subscriptions:send-expiration-reminders'))->name('sub
 
 Schedule::call($inProcess('registrations:cleanup-abandoned --hours=24'))->name('registrations:cleanup-abandoned')->daily();
 
+// Checkouts the owner never finished or backed out of (closed tab, failed e-wallet page) would
+// otherwise sit "pending" forever. A late payment confirmation still activates the plan.
+Schedule::call($inProcess('subscriptions:close-stale-checkouts --hours=24'))->name('subscriptions:close-stale-checkouts')->hourly();
+
 Schedule::call($inProcess('app:cleanup-temp-uploads'))->name('app:cleanup-temp-uploads')->daily();

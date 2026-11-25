@@ -16,6 +16,7 @@ use App\Repository\PaymentRepository;
 use App\Repository\SubscriptionRepository;
 use App\Support\Tin;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class OwnerProfileService
 {
@@ -218,6 +219,25 @@ class OwnerProfileService
 
         if (! $plan) {
             return null;
+        }
+
+        // A free trial can't be renewed or bought (checkout refuses a second trial), so offering
+        // it would be a button that only ever fails. The owner picks a paid plan instead.
+        $endedTrial = ! $ended->pendingPlan && (
+            $ended->billing_cycle === 'trial'
+            || Str::contains(strtolower($plan->sub_name), 'trial')
+            || (float) $plan->price <= 0
+        );
+
+        if ($endedTrial) {
+            return [
+                'plan'          => null,
+                'trial_ended'   => true,
+                'billing_cycle' => null,
+                'was_scheduled' => false,
+                'previous_plan' => $plan->sub_name,
+                'ended_on'      => $ended->end_date?->toISOString(),
+            ];
         }
 
         return [
