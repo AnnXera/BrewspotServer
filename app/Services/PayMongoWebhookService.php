@@ -103,6 +103,13 @@ class PayMongoWebhookService
     {
         $subscriptionUuid = $resource['attributes']['metadata']['subscription_uuid'] ?? null;
 
+        // E-wallet payments made inside a checkout (GCash, Maya…) arrive with no metadata, only
+        // the checkout's payment intent, so match on that instead.
+        if (! $subscriptionUuid && ($intentId = $resource['attributes']['payment_intent_id'] ?? null)) {
+            $this->settleByPaymentIntent($intentId, $outcome, $resource);
+            return;
+        }
+
         if (! $subscriptionUuid) {
             Log::channel('admin')->info('PayMongo payment event carried no subscription metadata — ignoring.', [
                 'outcome'    => $outcome,
@@ -144,6 +151,57 @@ class PayMongoWebhookService
             'subscription_uuid' => $subscription->uuid,
             'outcome'           => $outcome,
             'payment_id'        => $resource['id'] ?? null,
+        ]);
+
+        $this->sendPaymentEmail($subscription, $outcome === 'paid' ? 'active' : 'failed');
+    }
+
+    /**
+     * Settle the checkout whose payment intent a metadata-less payment.* event names.
+     *
+     * A failed attempt marks the checkout failed, so the owner's history stops showing it as
+     * pending. The PayMongo checkout itself stays open, so the owner can still retry in it: a later
+     * success (checkout_session.payment.paid, or payment.paid here) moves the same rows on to paid
+     * and active, since neither path skips a payment just because an earlier attempt failed.
+     */
+    private function settleByPaymentIntent(string $intentId, string $outcome, array $resource): void
+    {
+        $payment = \App\Models\Payment::where('gateway_payment_intent_id', $intentId)
+            ->whereIn('status', $outcome === 'paid' ? ['pending', 'failed'] : ['pending'])
+            ->latest('payments_id')
+            ->first();
+
+        if (! $payment) {
+            Log::channel('admin')->info('PayMongo payment event — no open checkout for its payment intent.', [
+                'outcome'           => $outcome,
+                'payment_intent_id' => $intentId,
+                'payment_id'        => $resource['id'] ?? null,
+            ]);
+
+            return;
+        }
+
+        $subscription = $payment->payable;
+
+        if (! $subscription instanceof Subscription) {
+            return;
+        }
+
+        if ($outcome === 'paid') {
+            $this->paymentRepo->markSucceeded($payment, 'paymongo', $this->resolvePaymentInstrument($resource));
+            $subscription = $this->subscriptionRepo->activate($subscription);
+            $this->subscriptionRepo->cancelOtherActiveSubscriptions($subscription->user_id, $subscription->sub_id);
+        } else {
+            $this->paymentRepo->markFailed($payment, 'paymongo');
+            if ($subscription->status === 'pending') {
+                $subscription = $this->subscriptionRepo->markFailed($subscription);
+            }
+        }
+
+        Log::channel('admin')->info('Subscription settled via PayMongo payment intent.', [
+            'subscription_uuid' => $subscription->uuid,
+            'outcome'           => $outcome,
+            'payment_intent_id' => $intentId,
         ]);
 
         $this->sendPaymentEmail($subscription, $outcome === 'paid' ? 'active' : 'failed');

@@ -61,6 +61,8 @@ class PayMongoAdapter implements PaymentAdapterInterface
         return [
             'id' => $data['id'],
             'checkout_url' => $data['attributes']['checkout_url'],
+            // payment.* webhooks for this checkout name this intent instead of the session.
+            'payment_intent_id' => $data['attributes']['payment_intent']['id'] ?? null,
         ];
     }
 

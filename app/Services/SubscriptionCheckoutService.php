@@ -158,6 +158,7 @@ class SubscriptionCheckoutService
             'amount'                 => $amount,
             'payment_method_type'    => 'paymongo_checkout',
             'gateway_transaction_id' => $checkout['id'],
+            'gateway_payment_intent_id' => $checkout['payment_intent_id'] ?? null,
             'status'                 => 'pending',
         ]);
 
