@@ -69,10 +69,19 @@ class OwnerProfileService
         $cafe     = $this->repo->findPrimaryCafeByOwner($owner->user_id);
         $cafeId   = $cafe?->cafe_id;
         $prefix   = $cafeId ? Tin::prefix(Tin::mainBranchTin($cafeId)) : null;
+        $byStatus = $this->repo->countBranchesByStatus($owner->user_id);
 
         return [
             'success'                     => true,
             'cafe_name'                   => $cafe?->cafe_name,
+            // All of the owner's branches, whatever page, search or status filter is showing.
+            'branch_counts'               => [
+                'total'    => array_sum($byStatus),
+                'active'   => $byStatus['active'] ?? 0,
+                'inactive' => $byStatus['inactive'] ?? 0,
+                'pending'  => $byStatus['pending_approval'] ?? 0,
+                'rejected' => $byStatus['rejected'] ?? 0,
+            ],
             'low_stock_threshold_percent' => $cafe?->lowStockThresholdPercent(),
             // New side branches must reuse this 9-digit TIN (XXX-XXX-XXX)
             'main_tin_prefix'             => $prefix ? Tin::formatPrefix($prefix) : null,

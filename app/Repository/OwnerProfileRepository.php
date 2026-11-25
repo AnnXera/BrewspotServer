@@ -50,7 +50,20 @@ class OwnerProfileRepository
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($sub) use ($search) {
                     $sub->where('branch_name', 'like', "%{$search}%")
-                        ->orWhereHas('cafe', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"));
+                        ->orWhereHas('cafe', fn ($cq) => $cq->where('cafe_name', 'like', "%{$search}%"))
+                        // The search box says "branch or manager": match the same active managers
+                        // the list's Manager column shows. Every word has to match their first or
+                        // last name, so "Maria", "Santos" and "Maria Santos" all find Maria Santos.
+                        ->orWhereHas('staff', fn ($staff) => $staff
+                            ->where('employment_status', CafeStaff::STATUS_ACTIVE)
+                            ->whereHas('user.role', fn ($r) => $r->where('role_name', 'Manager'))
+                            ->whereHas('user', function ($u) use ($search) {
+                                foreach (preg_split('/\s+/', trim($search)) as $word) {
+                                    $u->where(fn ($w) => $w
+                                        ->where('firstname', 'like', "%{$word}%")
+                                        ->orWhere('lastname', 'like', "%{$word}%"));
+                                }
+                            }));
                 });
             })
             // Active managers only, for the "Manager" column on the branch list.
@@ -60,6 +73,22 @@ class OwnerProfileRepository
                 ->with('user:user_id,firstname,lastname')])
             ->latest('created_at')
             ->paginate($perPage);
+    }
+
+    /**
+     * How many of the owner's branches are in each status, across all of them — not just the
+     * page or filter the list is showing — for the summary cards above the branch list.
+     *
+     * @return array<string, int> status => count
+     */
+    public function countBranchesByStatus(int $userId): array
+    {
+        return CafeBranch::whereHas('cafe', fn ($q) => $q->where('user_id', $userId))
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status')
+            ->map(fn ($n) => (int) $n)
+            ->all();
     }
 
     public function findBranchByUuid(int $userId, string $branchUuid): ?CafeBranch
