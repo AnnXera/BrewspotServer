@@ -217,6 +217,11 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         Route::post('/cafe-name-change', [\App\Http\Controllers\CafeUpdateController::class, 'submit'])->middleware('throttle:10,1');
         Route::delete('/cafe-name-change/{uuid}', [\App\Http\Controllers\CafeUpdateController::class, 'withdraw']);
 
+        // Branch address change: the new address plus the updated COR showing it
+        Route::get('/branches/{uuid}/address-change', [\App\Http\Controllers\CafeUpdateController::class, 'addressOverview']);
+        Route::post('/branches/{uuid}/address-change', [\App\Http\Controllers\CafeUpdateController::class, 'submitAddress'])->middleware('throttle:10,1');
+        Route::delete('/branches/{uuid}/address-change/{requestUuid}', [\App\Http\Controllers\CafeUpdateController::class, 'withdrawAddress']);
+
         // Feature-Gated: Staff Management
         Route::middleware('plan.feature:staff_management')->group(function () {
             Route::get('/staff', [CafeStaffController::class, 'index']);

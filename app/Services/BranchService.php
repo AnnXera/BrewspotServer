@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\CafeBranchResource;
 use App\Models\ActivityLog;
+use App\Models\CafeUpdateRequest;
 use App\Models\User;
 use App\Notifications\BranchSubmittedForApproval;
 
@@ -69,7 +70,7 @@ class BranchService
             return ['success' => false, 'message' => $blocked];
         }
 
-        if ($this->cafeUpdates->hasPendingForCafe($cafe->cafe_id)) {
+        if ($this->cafeUpdates->hasPendingForCafe($cafe->cafe_id, CafeUpdateRequest::TYPE_NAME_CHANGE)) {
             return ['success' => false, 'message' => self::NAME_CHANGE_PENDING];
         }
 
@@ -200,7 +201,7 @@ class BranchService
             return ['success' => false, 'message' => $blocked];
         }
 
-        if ($this->cafeUpdates->hasPendingForCafe($branch->cafe_id)) {
+        if ($this->cafeUpdates->hasPendingForCafe($branch->cafe_id, CafeUpdateRequest::TYPE_NAME_CHANGE)) {
             return ['success' => false, 'message' => self::NAME_CHANGE_PENDING];
         }
 

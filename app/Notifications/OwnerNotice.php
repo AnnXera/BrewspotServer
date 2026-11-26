@@ -41,6 +41,17 @@ class OwnerNotice extends AppNotice
                 $reason ? "{$newName}: {$reason}" : "Your cafe stays {$oldName}. Open Cafe Management for details.", '/owner/cafes');
     }
 
+    public static function branchAddressChange(string $branchName, ?string $branchUuid, string $newAddress, string $status, ?string $reason = null): self
+    {
+        $link = $branchUuid ? "/owner/branches/{$branchUuid}" : '/owner/cafes';
+
+        return $status === 'approved'
+            ? new self('branch_address_approved', 'Branch address change approved',
+                "{$branchName} is now at {$newAddress}.", $link)
+            : new self('branch_address_rejected', 'Branch address change not approved',
+                $reason ? "{$branchName}: {$reason}" : "{$branchName} keeps its current address. Open the branch for details.", $link);
+    }
+
     // ---- Subscription and billing ----
 
     public static function paymentReceived(string $subscriptionUuid, string $planName, string $amount, ?string $endDate): self
