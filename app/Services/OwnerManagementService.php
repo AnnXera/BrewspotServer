@@ -232,7 +232,7 @@ class OwnerManagementService
                     'raw_id'         => $rawId,
                     'date'           => $payment->created_at?->toISOString(),
                     'description'    => 'Subscription - ' . $subName,
-                    'amount'         => number_format($payment->amount, 2),
+                    'amount'         => $payment->amount / 100, // stored in centavos, like PaymentResource
                     'status'         => $payment->status,
                     'payment_gateway' => $payment->payment_instrument ?? $payment->payment_method_type ?? 'PayMongo',
                 ];
