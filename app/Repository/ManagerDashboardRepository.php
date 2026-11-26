@@ -103,11 +103,12 @@ class ManagerDashboardRepository
         return $query->paginate($perPage);
     }
 
-    /** Counts and completed revenue for one day, or null columns when there were none. */
-    public function dayTotals(int $branchId, Carbon $day): ?Transaction
+    /** Counts and completed revenue for whole days [from, to], or null columns when there were none. */
+    public function totalsBetween(int $branchId, Carbon $from, Carbon $to): ?Transaction
     {
         return Transaction::where('branch_id', $branchId)
-            ->whereDate('created_at', $day)
+            ->whereDate('created_at', '>=', $from->toDateString())
+            ->whereDate('created_at', '<=', $to->toDateString())
             ->selectRaw("
                 COUNT(*) as total_count,
                 SUM(CASE WHEN status IN ('completed', 'paid', 'partially_refunded') THEN 1 ELSE 0 END) as completed_count,

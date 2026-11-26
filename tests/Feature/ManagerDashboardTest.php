@@ -35,6 +35,32 @@ class ManagerDashboardTest extends FloorPlanTestCase
             ->assertJsonPath('peak_hours.grid.3.12.orders', 0);
     }
 
+    public function test_transactions_total_the_requested_dates_not_today(): void
+    {
+        // Now: Monday 2026-10-05 08:00
+        $this->sale($this->mainBranch, '2026-09-20 10:00:00', 120);
+        $this->sale($this->mainBranch, '2026-09-20 15:00:00', 30, 'paid');
+        $this->sale($this->mainBranch, '2026-09-20 16:00:00', 999, 'void');
+        $this->sale($this->mainBranch, '2026-09-21 09:00:00', 500);              // the next day
+        $this->sale($this->mainBranch, '2026-10-05 07:30:00', 60);               // today
+        $this->sale($this->otherBranch, '2026-09-20 10:00:00', 999);             // another branch
+
+        $token = $this->tokenFor($this->manager);
+
+        $this->api('GET', $this->base('manager') . '/transactions?from=2026-09-20&to=2026-09-20&status=completed&per_page=1', $token)
+            ->assertOk()
+            ->assertJsonPath('period_stats.completed_count', 2)
+            ->assertJsonPath('period_stats.completed_amount', 150)
+            ->assertJsonPath('period_stats.void_count', 1)
+            ->assertJsonPath('today_stats.completed_count', 1)
+            ->assertJsonPath('today_stats.completed_amount', 60);
+
+        $this->api('GET', $this->base('manager') . '/transactions?from=2026-09-20&to=2026-09-21', $token)
+            ->assertOk()
+            ->assertJsonPath('period_stats.completed_count', 3)
+            ->assertJsonPath('period_stats.completed_amount', 650);
+    }
+
     public function test_manager_cannot_read_another_branch(): void
     {
         $this->api('GET', $this->base('manager', $this->otherBranch) . '/dashboard-stats', $this->tokenFor($this->manager))

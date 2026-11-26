@@ -4,15 +4,39 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\DashboardRangeRequest;
 use App\Http\Requests\ManagerTransactionsRequest;
+use App\Http\Requests\OwnerTransactionLogRequest;
 use App\Services\ManagerDashboardService;
+use App\Services\OwnerAnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ManagerDashboardController extends Controller
 {
     public function __construct(
-        private readonly ManagerDashboardService $service
+        private readonly ManagerDashboardService $service,
+        private readonly OwnerAnalyticsService $analytics
     ) {}
+
+    /**
+     * GET /api/manager/branches/{branchUuid}/transaction-log?from=&to=&status=&search=&page=&per_page=
+     * The owner dashboard's transaction log, for this branch only (a branch param is ignored).
+     */
+    public function transactionLog(OwnerTransactionLogRequest $request, string $branchUuid): JsonResponse
+    {
+        return $this->respond(
+            $this->analytics->branchTransactions($request->attributes->get('branch'), $request->validated())
+        );
+    }
+
+    /**
+     * GET /api/manager/branches/{branchUuid}/transaction-log/{transactionUuid}
+     */
+    public function transactionLogReceipt(Request $request, string $branchUuid, string $transactionUuid): JsonResponse
+    {
+        return $this->respond(
+            $this->analytics->branchTransaction($request->attributes->get('branch'), $transactionUuid)
+        );
+    }
 
     /**
      * GET /api/manager/branches/{branchUuid}/dashboard-stats?range=daily|weekly|monthly

@@ -284,6 +284,8 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
             Route::get('/branches/{branchUuid}/dashboard-stats', [ManagerDashboardController::class, 'stats']);
             Route::get('/branches/{branchUuid}/transactions', [ManagerDashboardController::class, 'transactions']);
             Route::get('/branches/{branchUuid}/transactions/{transactionUuid}', [ManagerDashboardController::class, 'transaction']);
+            Route::get('/branches/{branchUuid}/transaction-log', [ManagerDashboardController::class, 'transactionLog']);
+            Route::get('/branches/{branchUuid}/transaction-log/{transactionUuid}', [ManagerDashboardController::class, 'transactionLogReceipt']);
         });
 
         // Only branches with an active assignment (enforced by branch.access).
