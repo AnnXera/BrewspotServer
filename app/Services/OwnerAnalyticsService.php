@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CafeBranch;
 use App\Models\Transaction;
 use App\Models\TransactionEvent;
 use App\Models\User;
@@ -119,6 +120,32 @@ class OwnerAnalyticsService
             return $scope['error'];
         }
 
+        return $this->transactionLog($scope, $filters);
+    }
+
+    /**
+     * The same log for one branch, for that branch's manager dashboard.
+     */
+    public function branchTransactions(CafeBranch $branch, array $filters): array
+    {
+        $scope = $this->window($filters) + [
+            'branch'     => $branch,
+            'branch_ids' => collect([$branch->branch_id]),
+        ];
+
+        return $this->transactionLog($scope, $filters);
+    }
+
+    /**
+     * One sale's receipt with its refund details, if it was rung up at this branch.
+     */
+    public function branchTransaction(CafeBranch $branch, string $uuid): array
+    {
+        return $this->receipt(collect([$branch->branch_id]), $uuid);
+    }
+
+    private function transactionLog(array $scope, array $filters): array
+    {
         $page = $this->repo->transactionLog(
             $scope['branch_ids'],
             $scope['from'],
@@ -148,8 +175,12 @@ class OwnerAnalyticsService
      */
     public function transaction(User $owner, string $uuid): array
     {
-        $branchIds = $this->repo->branchesByOwner($owner->user_id)->pluck('branch_id');
-        $t         = $this->repo->findTransaction($branchIds, $uuid);
+        return $this->receipt($this->repo->branchesByOwner($owner->user_id)->pluck('branch_id'), $uuid);
+    }
+
+    private function receipt(Collection $branchIds, string $uuid): array
+    {
+        $t = $this->repo->findTransaction($branchIds, $uuid);
 
         if (! $t) {
             return ['success' => false, 'http' => 404, 'message' => 'Transaction not found.'];
@@ -575,12 +606,7 @@ class OwnerAnalyticsService
      */
     private function scope(User $owner, array $filters): array
     {
-        $to   = isset($filters['to']) ? Carbon::parse($filters['to'])->endOfDay() : Carbon::today()->endOfDay();
-        $from = isset($filters['from']) ? Carbon::parse($filters['from'])->startOfDay() : $to->copy()->subDays(29)->startOfDay();
-
-        $days     = (int) $from->diffInDays($to->copy()->startOfDay()) + 1;
-        $prevTo   = $from->copy()->subDay()->endOfDay();
-        $prevFrom = $prevTo->copy()->subDays($days - 1)->startOfDay();
+        $window = $this->window($filters);
 
         $branches = $this->repo->branchesByOwner($owner->user_id);
         $branch   = null;
@@ -593,16 +619,32 @@ class OwnerAnalyticsService
             }
         }
 
-        return [
-            'from'       => $from,
-            'to'         => $to,
-            'days'       => $days,
-            'prev_from'  => $prevFrom,
-            'prev_to'    => $prevTo,
+        return $window + [
             'branches'   => $branches,
             'branch'     => $branch,
             'branch_ids' => $branch ? collect([$branch->branch_id]) : $branches->pluck('branch_id'),
             'cafe_ids'   => $branch ? collect([$branch->cafe_id]) : $branches->pluck('cafe_id')->unique()->values(),
+        ];
+    }
+
+    /**
+     * The window [from, to] (default: the last 30 days) and the same-length window before it.
+     */
+    private function window(array $filters): array
+    {
+        $to   = isset($filters['to']) ? Carbon::parse($filters['to'])->endOfDay() : Carbon::today()->endOfDay();
+        $from = isset($filters['from']) ? Carbon::parse($filters['from'])->startOfDay() : $to->copy()->subDays(29)->startOfDay();
+
+        $days     = (int) $from->diffInDays($to->copy()->startOfDay()) + 1;
+        $prevTo   = $from->copy()->subDay()->endOfDay();
+        $prevFrom = $prevTo->copy()->subDays($days - 1)->startOfDay();
+
+        return [
+            'from'      => $from,
+            'to'        => $to,
+            'days'      => $days,
+            'prev_from' => $prevFrom,
+            'prev_to'   => $prevTo,
         ];
     }
 

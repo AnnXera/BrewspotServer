@@ -248,20 +248,31 @@ class ManagerDashboardService
         ];
     }
 
+    private function totalsRow(?Transaction $totals): array
+    {
+        return [
+            'total_count'      => (int) ($totals->total_count ?? 0),
+            'completed_count'  => (int) ($totals->completed_count ?? 0),
+            'void_count'       => (int) ($totals->void_count ?? 0),
+            'refunded_count'   => (int) ($totals->refunded_count ?? 0),
+            'completed_amount' => (float) ($totals->completed_amount ?? 0),
+        ];
+    }
+
     public function transactions(CafeBranch $branch, array $filters, int $perPage = 15): array
     {
-        $paginator   = $this->repo->paginateTransactions($branch->branch_id, $filters, $perPage);
-        $todayTotals = $this->repo->dayTotals($branch->branch_id, Carbon::today());
+        $paginator = $this->repo->paginateTransactions($branch->branch_id, $filters, $perPage);
+        $today     = Carbon::today();
+
+        // The requested window (default: today), whatever the page size, so a picked date
+        // or range gets its own totals rather than today's.
+        $from = ! empty($filters['from']) ? Carbon::parse($filters['from']) : (! empty($filters['to']) ? Carbon::parse($filters['to']) : $today);
+        $to   = ! empty($filters['to']) ? Carbon::parse($filters['to']) : $today;
 
         return [
             'success'      => true,
-            'today_stats'  => [
-                'total_count'      => (int) ($todayTotals->total_count ?? 0),
-                'completed_count'  => (int) ($todayTotals->completed_count ?? 0),
-                'void_count'       => (int) ($todayTotals->void_count ?? 0),
-                'refunded_count'   => (int) ($todayTotals->refunded_count ?? 0),
-                'completed_amount' => (float) ($todayTotals->completed_amount ?? 0),
-            ],
+            'today_stats'  => $this->totalsRow($this->repo->totalsBetween($branch->branch_id, $today, $today)),
+            'period_stats' => $this->totalsRow($this->repo->totalsBetween($branch->branch_id, $from, $to)),
             'transactions' => [
                 'data'         => $paginator->getCollection()->map(fn (Transaction $t) => $this->transactionRow($t))->values()->all(),
                 'current_page' => $paginator->currentPage(),
