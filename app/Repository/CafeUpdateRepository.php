@@ -18,7 +18,10 @@ class CafeUpdateRepository
      */
     public const BRANCH_STATUSES_NEEDING_COR = ['active', 'inactive', 'pending_approval', 'suspended'];
 
-    private const WITH = ['cafe', 'owner', 'reviewer', 'documents.branch'];
+    /** Branches that can ask for an address change: approved ones (pending/rejected ones are edited by resubmitting). */
+    public const BRANCH_STATUSES_FOR_ADDRESS_CHANGE = ['active', 'inactive'];
+
+    private const WITH = ['cafe', 'branch', 'owner', 'reviewer', 'documents.branch'];
 
     public function branchesNeedingCor(int $cafeId): Collection
     {
@@ -30,24 +33,50 @@ class CafeUpdateRepository
             ->get();
     }
 
+    /** The cafe's latest name change (address changes are per branch, see latestForBranch). */
     public function latestForCafe(int $cafeId): ?CafeUpdateRequest
     {
         return CafeUpdateRequest::where('cafe_id', $cafeId)
+            ->where('type', CafeUpdateRequest::TYPE_NAME_CHANGE)
             ->with(self::WITH)
             ->latest('request_id')
             ->first();
     }
 
-    public function pendingForCafe(int $cafeId): ?CafeUpdateRequest
+    /** The branch's latest address change. */
+    public function latestForBranch(int $branchId): ?CafeUpdateRequest
     {
-        return CafeUpdateRequest::where('cafe_id', $cafeId)
-            ->where('status', 'pending_approval')
+        return CafeUpdateRequest::where('branch_id', $branchId)
+            ->where('type', CafeUpdateRequest::TYPE_ADDRESS_CHANGE)
+            ->with(self::WITH)
+            ->latest('request_id')
             ->first();
     }
 
-    public function hasPendingForCafe(int $cafeId): bool
+    /** Whether the cafe has a request waiting; $type limits it to one kind (null: any kind). */
+    public function hasPendingForCafe(int $cafeId, ?string $type = null): bool
     {
-        return CafeUpdateRequest::where('cafe_id', $cafeId)->where('status', 'pending_approval')->exists();
+        return CafeUpdateRequest::where('cafe_id', $cafeId)
+            ->where('status', 'pending_approval')
+            ->when($type, fn ($q) => $q->where('type', $type))
+            ->exists();
+    }
+
+    public function hasPendingAddressChange(int $branchId): bool
+    {
+        return CafeUpdateRequest::where('branch_id', $branchId)
+            ->where('type', CafeUpdateRequest::TYPE_ADDRESS_CHANGE)
+            ->where('status', 'pending_approval')
+            ->exists();
+    }
+
+    /** An approved branch of the owner's cafe, with its documents. */
+    public function branchForOwner(int $userId, string $branchUuid): ?CafeBranch
+    {
+        return CafeBranch::where('uuid', $branchUuid)
+            ->whereHas('cafe', fn ($q) => $q->where('user_id', $userId))
+            ->with(['cafe', 'documents'])
+            ->first();
     }
 
     public function findForOwner(int $userId, string $uuid): ?CafeUpdateRequest
@@ -71,6 +100,19 @@ class CafeUpdateRepository
             'old_name' => $cafe->cafe_name,
             'new_name' => $newName,
             'status'   => 'pending_approval',
+        ]);
+    }
+
+    public function createAddressChange(CafeBranch $branch, int $userId, string $newAddress): CafeUpdateRequest
+    {
+        return CafeUpdateRequest::create([
+            'cafe_id'     => $branch->cafe_id,
+            'branch_id'   => $branch->branch_id,
+            'user_id'     => $userId,
+            'type'        => CafeUpdateRequest::TYPE_ADDRESS_CHANGE,
+            'old_address' => $branch->address,
+            'new_address' => $newAddress,
+            'status'      => 'pending_approval',
         ]);
     }
 
@@ -100,6 +142,9 @@ class CafeUpdateRepository
             $query->where(fn ($q) => $q
                 ->where('old_name', 'like', "%{$search}%")
                 ->orWhere('new_name', 'like', "%{$search}%")
+                ->orWhere('old_address', 'like', "%{$search}%")
+                ->orWhere('new_address', 'like', "%{$search}%")
+                ->orWhereHas('branch', fn ($b) => $b->where('branch_name', 'like', "%{$search}%"))
                 ->orWhereHas('owner', fn ($o) => $o
                     ->where('firstname', 'like', "%{$search}%")
                     ->orWhere('lastname', 'like', "%{$search}%")
@@ -127,7 +172,7 @@ class CafeUpdateRepository
     /** Every request an owner sent, oldest first (for the admin's Application History). */
     public function historyForOwner(int $userId): Collection
     {
-        return CafeUpdateRequest::where('user_id', $userId)->with('reviewer')->orderBy('request_id')->get();
+        return CafeUpdateRequest::where('user_id', $userId)->with(['reviewer', 'branch'])->orderBy('request_id')->get();
     }
 
     public function currentBir(int $branchId): ?BranchDocument

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\SubmitBranchAddressChangeRequest;
 use App\Http\Requests\SubmitCafeNameChangeRequest;
 use App\Http\Requests\UpdateBranchStatusRequest;
 use App\Services\CafeUpdateService;
@@ -9,8 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Cafe name changes: owners request them, admins review them on the
- * Approval Status page (Cafe Updates tab).
+ * Cafe name and branch address changes: owners request them, admins review them
+ * on the Approval Status page (Cafe Updates tab).
  */
 class CafeUpdateController extends Controller
 {
@@ -43,6 +44,34 @@ class CafeUpdateController extends Controller
     public function withdraw(Request $request, string $uuid): JsonResponse
     {
         $result = $this->service->withdraw($request->user(), $uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** GET /api/owner/branches/{uuid}/address-change */
+    public function addressOverview(Request $request, string $uuid): JsonResponse
+    {
+        $result = $this->service->addressOverview($request->user(), $uuid);
+
+        return response()->json($result, $result['success'] ? 200 : 404);
+    }
+
+    /** POST /api/owner/branches/{uuid}/address-change */
+    public function submitAddress(SubmitBranchAddressChangeRequest $request, string $uuid): JsonResponse
+    {
+        $result = $this->service->submitAddressChange($request->user(), $uuid, [
+            'new_address'   => $request->validated('new_address'),
+            'file'          => $request->file('file'),
+            'registered_at' => $request->validated('registered_at'),
+        ]);
+
+        return response()->json($result, $result['success'] ? 201 : 422);
+    }
+
+    /** DELETE /api/owner/branches/{uuid}/address-change/{requestUuid} */
+    public function withdrawAddress(Request $request, string $uuid, string $requestUuid): JsonResponse
+    {
+        $result = $this->service->withdraw($request->user(), $requestUuid);
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }

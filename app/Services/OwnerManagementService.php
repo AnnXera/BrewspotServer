@@ -119,7 +119,7 @@ class OwnerManagementService
 
         $rows = array_reverse($rows); // newest first
 
-        // Cafe name changes sit in the same timeline
+        // Cafe name and branch address changes sit in the same timeline
         foreach ($this->cafeUpdates->historyForOwner($userId)->reverse() as $request) {
             $reviewer = $request->reviewer
                 ? trim("{$request->reviewer->firstname} {$request->reviewer->lastname}")
@@ -127,9 +127,11 @@ class OwnerManagementService
 
             $rows[] = [
                 'uuid'         => $request->uuid,
-                'kind'         => 'name_change',
+                'kind'         => $request->type, // name_change | address_change
                 'status'       => $request->status,
-                'branch_name'  => "{$request->old_name} → {$request->new_name}",
+                'branch_name'  => $request->isAddressChange()
+                    ? ($request->branch?->branch_name ?? 'Deleted branch') . " → {$request->new_address}"
+                    : "{$request->old_name} → {$request->new_name}",
                 'reason'       => $request->reason,
                 'can_resubmit' => (bool) $request->can_resubmit,
                 'submitted_at' => $request->created_at?->toISOString(),
@@ -232,7 +234,7 @@ class OwnerManagementService
                     'raw_id'         => $rawId,
                     'date'           => $payment->created_at?->toISOString(),
                     'description'    => 'Subscription - ' . $subName,
-                    'amount'         => number_format($payment->amount, 2),
+                    'amount'         => $payment->amount / 100, // stored in centavos, like PaymentResource
                     'status'         => $payment->status,
                     'payment_gateway' => $payment->payment_instrument ?? $payment->payment_method_type ?? 'PayMongo',
                 ];
