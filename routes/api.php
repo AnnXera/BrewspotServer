@@ -44,6 +44,9 @@ $branchScopedRoutes = function () {
     // This branch's activity log, plus cafe-wide menu changes (?from=&to=&category=&role=&search=)
     Route::get('/activity-logs', [\App\Http\Controllers\BranchActivityLogController::class, 'index']);
 
+    // Read-only cafe hours: the dashboard's "Open now" and reservation time slots. Not plan-gated.
+    Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'branch']);
+
     Route::middleware('plan.feature:staff_management')->group(function () {
         Route::get('/staff', [BranchStaffController::class, 'index']);
         Route::get('/staff/stats', [BranchStaffController::class, 'stats']); // before {userUuid}
@@ -90,7 +93,6 @@ $branchScopedRoutes = function () {
         Route::put('/floor-plans/{planUuid}/layout', [FloorPlanController::class, 'saveLayout']);
         Route::patch('/tables/{tableUuid}/status', [FloorPlanController::class, 'tableStatus']);
 
-        Route::get('/opening-hours', [\App\Http\Controllers\CafeOpeningHourController::class, 'branch']); // read-only, for reservation time slots
         Route::get('/reservations', [ReservationController::class, 'index']);
         Route::post('/reservations', [ReservationController::class, 'store']);
         Route::get('/reservations/{reservationUuid}', [ReservationController::class, 'show']);
