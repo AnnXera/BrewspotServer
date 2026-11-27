@@ -14,6 +14,7 @@ use App\Models\TransactionItem;
 use App\Repository\InventoryServingRepository;
 use App\Repository\PosDeviceRepository;
 use App\Repository\PosSaleRepository;
+use App\Support\OpeningWindows;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -145,9 +146,24 @@ class PosDeviceService
 
     public function current(PosDevice $device): array
     {
+        $device->load(['branch.cafe', 'registeredBy', 'activeStaff.user']);
+
+        $hours = ['is_open' => true, 'closes_at' => null, 'opens_at' => null];
+        if (config('pos.enforce_opening_hours') && $device->branch?->cafe_id) {
+            $hours = OpeningWindows::forCafe($device->branch->cafe_id)->status(Carbon::now());
+
+            // Closed: nobody stays signed in on the register.
+            if (! $hours['is_open'] && $device->active_staff_id) {
+                $this->lock($device);
+                $device->unsetRelation('activeStaff');
+                $device->active_staff_id = null;
+            }
+        }
+
         return [
             'success' => true,
-            'device' => new PosDeviceResource($device->load(['branch.cafe', 'registeredBy', 'activeStaff.user'])),
+            'device'  => new PosDeviceResource($device),
+            'hours'   => $hours,
         ];
     }
 

@@ -10,8 +10,8 @@ use App\Models\Reservation;
 use App\Models\User;
 use App\Repository\FloorPlanRepository;
 use App\Repository\ReservationRepository;
+use App\Support\OpeningWindows;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -371,7 +371,7 @@ class ReservationService
             return $this->invalid('party_size', "{$table->table_name} seats {$table->capacity}, but the party is {$partySize}.");
         }
 
-        if (! $this->withinOpeningHours($this->repo->openingHours($branch->cafe_id), $start, $end)) {
+        if (! (new OpeningWindows($this->repo->openingHours($branch->cafe_id)))->covers($start, $end)) {
             return $this->invalid('reservation_date', 'The reservation must be within the cafe\'s opening hours.');
         }
 
@@ -403,73 +403,6 @@ class ReservationService
         }
 
         return null;
-    }
-
-    /**
-     * True when [start, end] sits inside one continuous opening window.
-     * Handles cafes that close after midnight and 24-hour days (adjacent
-     * windows are merged), and skips the check when the cafe has no hours set.
-     *
-     * @param Collection<string, \App\Models\CafeOpeningHour> $hours keyed by day name
-     */
-    private function withinOpeningHours(Collection $hours, Carbon $start, Carbon $end): bool
-    {
-        if ($hours->isEmpty()) {
-            return true;
-        }
-
-        $windows = [];
-
-        foreach ([-1, 0, 1] as $offset) {
-            $day = $start->copy()->startOfDay()->addDays($offset);
-            $row = $hours->get($day->englishDayOfWeek);
-
-            if (! $row || $row->is_closed) {
-                continue;
-            }
-
-            if ($row->is_24_hours) {
-                $windows[] = [$day->copy(), $day->copy()->addDay()];
-                continue;
-            }
-
-            if (! $row->open_time || ! $row->close_time) {
-                continue;
-            }
-
-            $open  = $day->copy()->setTimeFromTimeString($row->open_time);
-            $close = $day->copy()->setTimeFromTimeString($row->close_time);
-
-            if ($row->closesAfterMidnight()) {
-                $close->addDay();
-            }
-
-            $windows[] = [$open, $close];
-        }
-
-        usort($windows, fn ($a, $b) => $a[0] <=> $b[0]);
-
-        $merged = [];
-
-        foreach ($windows as [$open, $close]) {
-            $last = count($merged) - 1;
-
-            if ($last >= 0 && $open <= $merged[$last][1]) {
-                if ($close > $merged[$last][1]) {
-                    $merged[$last][1] = $close;
-                }
-            } else {
-                $merged[] = [$open, $close];
-            }
-        }
-
-        foreach ($merged as [$open, $close]) {
-            if ($start >= $open && $end <= $close) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
