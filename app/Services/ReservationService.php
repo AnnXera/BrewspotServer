@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  *   Counter seating (shared tables) holds seats instead: parties can overlap as long as
  *   the seats taken at any moment stay within the capacity.
  * - Table status stays manual, except: seating a reservation marks the table
- *   occupied, completing it marks the table cleaning, and cancelling or a no-show
+ *   occupied, completing it frees the table (available), and cancelling or a no-show
  *   turns a reserved table back to available.
  *
  * Booking, editing and cancelling from the owner or manager dashboard is written to the
@@ -226,7 +226,8 @@ class ReservationService
             if ($status === 'seated') {
                 $table->update(['status' => 'occupied']);
             } elseif ($status === 'completed' && ! $table->trashed()) {
-                $table->update(['status' => 'cleaning']);
+                // The party has left: the table is ready for the next guests straight away.
+                $table->update(['status' => 'available']);
             } elseif (in_array($status, ['cancelled', 'no_show'], true) && ! $table->trashed() && $table->status === 'reserved') {
                 // The party isn't coming, so release the hold. Occupied or cleaning tables are someone else's.
                 $table->update(['status' => 'available']);
