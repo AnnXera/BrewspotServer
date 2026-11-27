@@ -18,6 +18,7 @@ use App\Rules\BranchTin;
 use App\Services\StaffPinService;
 use App\Support\Tin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -764,6 +765,72 @@ class StaffAndPosTest extends TestCase
 
         $this->api('POST', '/api/pos/device/lock', $device)->assertOk();
         $this->api('GET', '/api/pos/device', $device)->assertJsonPath('device.active_staff', null);
+    }
+
+    // ── Opening hours ────────────────────────────────────────────────────
+
+    public function test_register_only_works_during_opening_hours(): void
+    {
+        config(['pos.enforce_opening_hours' => true]);
+        $monday = Carbon::now()->next('Monday'); // default hours: Mon-Fri 09:00-17:00
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $unlock = "/api/pos/device/staff/{$this->cashier->uuid}/unlock";
+
+        // Before opening: no unlocking, and the register says when it opens.
+        Carbon::setTestNow($monday->copy()->setTime(8, 30));
+        $this->api('POST', $unlock, $device, ['pin' => '123456'])
+            ->assertStatus(423)
+            ->assertJsonPath('closed', true)
+            ->assertJsonPath('opens_at', $monday->copy()->setTime(9, 0)->toIso8601String());
+        $this->api('GET', '/api/pos/device', $device)->assertOk()->assertJsonPath('hours.is_open', false);
+
+        // Open: works as usual.
+        Carbon::setTestNow($monday->copy()->setTime(10, 0));
+        $this->api('POST', $unlock, $device, ['pin' => '123456'])->assertOk();
+        $this->api('GET', '/api/pos/device', $device)
+            ->assertJsonPath('hours.is_open', true)
+            ->assertJsonPath('hours.closes_at', $monday->copy()->setTime(17, 0)->toIso8601String());
+
+        // After closing: actions are refused and the cashier is signed out.
+        Carbon::setTestNow($monday->copy()->setTime(17, 0));
+        $this->api('GET', '/api/pos/device/menu', $device)->assertStatus(423);
+        $this->api('GET', '/api/pos/device', $device)
+            ->assertJsonPath('device.active_staff', null)
+            ->assertJsonPath('hours.opens_at', $monday->copy()->addDay()->setTime(9, 0)->toIso8601String());
+        $this->api('POST', '/api/pos/device/lock', $device)->assertOk(); // still allowed
+
+        // Weekend: closed until Monday.
+        Carbon::setTestNow($monday->copy()->addDays(5)->setTime(12, 0));
+        $this->api('GET', '/api/pos/device/staff', $device)
+            ->assertStatus(423)
+            ->assertJsonPath('opens_at', $monday->copy()->addWeek()->setTime(9, 0)->toIso8601String());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_register_stays_open_past_midnight_and_on_24_hour_days(): void
+    {
+        config(['pos.enforce_opening_hours' => true]);
+        $monday = Carbon::now()->next('Monday');
+        $device = $this->registerDevice($this->owner, $this->mainBranch);
+        $cafe   = $this->mainBranch->cafe;
+
+        $cafe->openingHours()->where('day_of_week', 'Monday')->update(['open_time' => '18:00', 'close_time' => '02:00']);
+        $cafe->openingHours()->whereIn('day_of_week', ['Wednesday', 'Thursday'])
+            ->update(['is_24_hours' => true, 'open_time' => null, 'close_time' => null]);
+
+        Carbon::setTestNow($monday->copy()->addDay()->setTime(1, 30)); // Tuesday 01:30, Monday's late shift
+        $this->api('GET', '/api/pos/device/staff', $device)->assertOk();
+
+        Carbon::setTestNow($monday->copy()->addDay()->setTime(2, 0));
+        $this->api('GET', '/api/pos/device/staff', $device)->assertStatus(423);
+
+        Carbon::setTestNow($monday->copy()->addDays(2)->setTime(3, 0)); // Wednesday, 24 hours
+        $this->api('GET', '/api/pos/device', $device)
+            ->assertJsonPath('hours.is_open', true)
+            ->assertJsonPath('hours.closes_at', $monday->copy()->addDays(4)->startOfDay()->toIso8601String()); // Wed + Thu 24h merge: closes Friday 00:00
+
+        Carbon::setTestNow();
     }
 
     // ── Activity log ─────────────────────────────────────────────────────

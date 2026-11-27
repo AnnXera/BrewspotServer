@@ -307,16 +307,18 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         });
 
         // Device token only. Branch comes from the token, never the request.
+        // Always available, so a closed register can still show its status, lock and unregister.
         Route::middleware('pos.device')->prefix('device')->group(function () {
-            Route::get('/', [PosDeviceController::class, 'current']);
+            Route::get('/', [PosDeviceController::class, 'current']); // includes opening-hours status
             Route::delete('/', [PosDeviceController::class, 'unregister']);
-            Route::get('/menu', [PosDeviceController::class, 'menu']);
-            Route::get('/transactions', [PosDeviceController::class, 'transactions']);
-            Route::post('/checkout', [PosDeviceController::class, 'checkout']);
+            Route::post('/lock', [PosDeviceController::class, 'lock']);
+        });
+
+        // Everything else only during the cafe's opening hours (pos.open).
+        Route::middleware(['pos.device', 'pos.open'])->prefix('device')->group(function () {
             Route::get('/staff', [PosDeviceController::class, 'staff']); // lock-screen names
             Route::post('/staff/{userUuid}/unlock', [PosDeviceController::class, 'unlock'])->middleware('throttle:pos-unlock');
             Route::post('/staff/{userUuid}/change-pin', [PosDeviceController::class, 'changePin'])->middleware('throttle:pos-unlock'); // replace temporary PIN
-            Route::post('/lock', [PosDeviceController::class, 'lock']);
             Route::get('/menu', [PosDeviceController::class, 'menu']);
             Route::post('/checkout', [PosDeviceController::class, 'checkout']);
             Route::get('/spoilage', [SpoilageController::class, 'deviceIndex']);
@@ -329,7 +331,7 @@ Route::middleware('auth:sanctum')->group(function () use ($branchScopedRoutes) {
         });
 
         // Floor plan on the register: needs the cafe's `reservations` feature and an unlocked register.
-        Route::middleware(['pos.device', 'plan.feature:reservations'])->prefix('device')->group(function () {
+        Route::middleware(['pos.device', 'pos.open', 'plan.feature:reservations'])->prefix('device')->group(function () {
             Route::get('/floor-plan', [PosFloorPlanController::class, 'floorPlan']);
             Route::patch('/tables/{tableUuid}/status', [PosFloorPlanController::class, 'tableStatus']);
             Route::get('/reservations', [PosFloorPlanController::class, 'reservations']);
