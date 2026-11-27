@@ -290,7 +290,7 @@ class ReservationTest extends FloorPlanTestCase
         $this->assertSame('occupied', $table->fresh()->status);
 
         $this->api('POST', $url, $token, ['status' => 'completed'])->assertOk();
-        $this->assertSame('cleaning', $table->fresh()->status);
+        $this->assertSame('available', $table->fresh()->status); // finished: free again, no cleaning step
     }
 
     public function test_invalid_status_jumps_are_refused(): void
